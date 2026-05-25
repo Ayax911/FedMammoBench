@@ -158,6 +158,8 @@ class FedMammoClient(fl.client.NumPyClient):
     ) -> tuple[float, int, dict[str, Scalar]]:
         load_ndarrays_to_state_dict(self.model, parameters, strict=True)
         if self.val_loader is None:
+            # Reporting num_examples=0 ensures Flower's weighted aggregator
+            # ignores this client's row instead of polluting the global mean.
             return 0.0, 0, {"warning": "no_local_val"}
         result = self.evaluator.evaluate(self.val_loader, criterion=self.criterion)
         loss = float(result.get("loss", 0.0))

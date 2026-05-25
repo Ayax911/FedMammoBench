@@ -16,6 +16,7 @@ experiment with RadImageNet pretrained weights.
 │  • Loads RadImageNet-resnet50.pth           │
 │  • Builds initial parameters                │
 │  • FedAvg aggregation                       │
+│  • Federated evaluation (default, no images)│
 │  • Centralized evaluation (optional)        │
 │  • Listens on 0.0.0.0:8080                  │
 └──────────────────┬──────────────────────────┘
@@ -40,6 +41,46 @@ experiment with RadImageNet pretrained weights.
 
 **gRPC message size**: ResNet50 state_dict ≈ 100 MB per client (FP32).
 Flower's default limit is 512 MB — sufficient for this configuration.
+
+---
+
+## 1.1 — How the Global Model is Validated
+
+The server supports **two evaluation modes**, controlled by the server-side
+`data.name` field:
+
+| Mode | `data.name` | Where validation runs | Server needs images? | Output CSV |
+|---|---|---|---|---|
+| **Pure federated** (default, recommended) | `none` | Every client evaluates the aggregated model on its own local val split; server weighted-averages the metrics | **No** | `server_federated_metrics.csv` |
+| **Federated + centralized holdout** (opt-in) | `mammo_bench` / `cbis_ddsm` / `vindr_mammo` / `synthetic` | Same federated path *plus* a centralized eval on a holdout the server operator owns (e.g. a public benchmark) | **Yes** | both `server_metrics.csv` and `server_federated_metrics.csv` |
+
+The federated path is always active when `min_evaluate_clients ≥ 1` and the
+clients have `val_fraction > 0`. The centralized path activates only when the
+server's `build_dataset` produces a non-empty `test` split.
+
+### Why federated-by-default
+
+Hosting images on the server breaks the FL principle whenever the holdout is
+sourced from the clients themselves (data leakage) and it always adds
+storage/compliance overhead. Pure federated evaluation keeps every image
+inside its hospital of origin while still producing per-round AUC/F1/sens/spec.
+
+### Caveats of weighted-averaged metrics
+
+`AUC_weighted = Σ(AUC_i · n_i) / Σ n_i` is **not** the same as AUC computed
+on the pooled predictions. For ranking metrics this is an approximation; for
+linear metrics (loss, accuracy, sensitivity, specificity at a fixed threshold)
+the weighted mean is exact under the usual i.i.d. assumption inside each
+client. If you need the true pooled AUC you must either accept centralized
+holdout (and the data-governance cost) or wire a secure aggregation of
+predictions (out of scope here).
+
+### Picking a server config
+
+- `configs/radimagenet_resnet50_grpc_server_no_holdout.yaml` — pure federated.
+- `configs/fedavg_mammobench_server_no_holdout.yaml` — pure federated, Mammo-Bench.
+- `configs/radimagenet_resnet50_grpc_server.yaml` — legacy, hosts a test set.
+- `configs/fedavg_mammobench_server.yaml` — legacy, hosts a test set.
 
 ---
 
@@ -201,8 +242,9 @@ Artifacts written:
 runs/radimagenet_exp1/
 ├── server.log
 ├── config.snapshot.yaml
-├── server_metrics.csv       # per-round centralized metrics
-└── tb/                      # TensorBoard logs
+├── server_metrics.csv              # per-round centralized metrics (only if data.name != 'none')
+├── server_federated_metrics.csv    # per-round federated metrics (always)
+└── tb/                             # TensorBoard logs (server/centralized + server/federated)
 ```
 
 Per-client:

@@ -80,7 +80,7 @@ class DataConfig:
         balance_classes: If True, build a WeightedRandomSampler at train time.
     """
 
-    name: Literal["cbis_ddsm", "vindr_mammo", "synthetic", "mammo_bench"] = "synthetic"
+    name: Literal["cbis_ddsm", "vindr_mammo", "synthetic", "mammo_bench", "none"] = "synthetic"
     manifest_path: str | None = None
     annotations_path: str | None = None
     image_root: str | None = None

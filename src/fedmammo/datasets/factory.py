@@ -37,6 +37,13 @@ def build_dataset(cfg: ExperimentConfig) -> dict[str, MammographyDataset]:
     )
 
     name = cfg.data.name
+    if name == "none":
+        # Sentinel: the caller (typically a gRPC server with no holdout) does
+        # not want any local dataset constructed. Returning an empty mapping
+        # signals downstream code to disable any dataset-dependent path
+        # (centralized evaluation, loss-from-labels heuristics, etc.).
+        _logger.info("data.name='none' — skipping dataset construction.")
+        return {}
     if name == "synthetic":
         return _build_synthetic(cfg, train_tx, eval_tx)
     if name == "cbis_ddsm":

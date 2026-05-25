@@ -1,21 +1,33 @@
 """Server entrypoint: configure FedAvg (or any registered strategy) and run
 ``flwr.simulation.start_simulation``.
 
-Server-side **centralized evaluation** is optional and wired through the
-``evaluate_fn`` parameter of the strategy: after each round, the aggregated
-parameters are loaded into a held-out model and tested against the global
-test set.
+This server prefers **federated evaluation**: after each round, every selected
+client evaluates the freshly aggregated parameters on its *own* local
+validation split and reports back ``(loss, num_examples, metrics)``. The
+strategy's ``evaluate_metrics_aggregation_fn`` then weighted-averages those
+metrics; Flower itself weighted-averages the losses. The result is logged
+to ``server_federated_metrics.csv`` (alongside the legacy
+``server_metrics.csv`` which is reserved for the centralized phase) and to
+TensorBoard under ``server/federated``.
+
+The legacy server-side **centralized evaluation** path remains available but
+is now opt-in: only when ``cfg.data`` produces a non-empty ``test`` split
+(typically via an independent dataset the server operator owns, e.g. a
+public benchmark) does the server build an ``evaluate_fn`` and log rows
+with ``phase="centralized"``. Set ``data.name: none`` (or ``test_fraction:
+0.0`` with no manifest) to keep the server image-free.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import flwr as fl
 import torch
-from flwr.common import NDArrays, Scalar
+from flwr.common import EvaluateRes, NDArrays, Scalar
 from flwr.server import ServerConfig
+from flwr.server.client_proxy import ClientProxy
 
 from fedmammo.configs.schema import ExperimentConfig
 from fedmammo.datasets import MammographyDataset, build_dataloader, build_dataset
@@ -93,6 +105,76 @@ def _build_evaluate_fn(
     return evaluate_fn
 
 
+_METRIC_KEYS: tuple[str, ...] = (
+    "loss",
+    "accuracy",
+    "precision",
+    "recall",
+    "f1",
+    "roc_auc",
+    "sensitivity",
+    "specificity",
+)
+
+
+def _attach_federated_logging(
+    strategy: Any,
+    tb_writer: TensorBoardWriter | None,
+    csv_logger: CSVLogger | None,
+) -> None:
+    """Wrap ``strategy.aggregate_evaluate`` to log per-round federated metrics.
+
+    Flower's :meth:`Strategy.aggregate_evaluate` returns ``(loss, metrics)``
+    after weighted-averaging the per-client evaluate responses. This wrapper
+    preserves that return value and, as a side effect, writes a CSV row and
+    a TensorBoard scalar group under ``server/federated``. The original
+    callable is left in place if no sinks are provided.
+    """
+    if tb_writer is None and csv_logger is None:
+        return
+
+    original = strategy.aggregate_evaluate
+
+    def wrapped(
+        server_round: int,
+        results: Sequence[tuple[ClientProxy, EvaluateRes]],
+        failures: Sequence[Any],
+    ) -> tuple[float | None, dict[str, Scalar]]:
+        loss, metrics = original(server_round, results, failures)
+        num_examples_total = int(sum(r.num_examples for _, r in results))
+        row: dict[str, Any] = {
+            "round": server_round,
+            "phase": "federated",
+            "num_examples_total": num_examples_total,
+            "num_clients": len(results),
+        }
+        if loss is not None:
+            row["loss"] = float(loss)
+        for k in _METRIC_KEYS:
+            if k == "loss":
+                continue
+            v = metrics.get(k)
+            if isinstance(v, (int, float)) and v == v:  # filter NaN
+                row[k] = float(v)
+        _logger.info(
+            "[server] round %d federated: clients=%d n=%d loss=%s auc=%s f1=%s",
+            server_round,
+            row["num_clients"],
+            num_examples_total,
+            row.get("loss", "n/a"),
+            row.get("roc_auc", "n/a"),
+            row.get("f1", "n/a"),
+        )
+        if tb_writer is not None:
+            numeric = {k: v for k, v in row.items() if isinstance(v, (int, float))}
+            tb_writer.log_scalars("server/federated", numeric, server_round)
+        if csv_logger is not None:
+            csv_logger.append(row)
+        return loss, metrics
+
+    strategy.aggregate_evaluate = wrapped  # type: ignore[method-assign]
+
+
 def _initial_parameters(cfg: ExperimentConfig):  # noqa: ANN201
     """Build an untrained model and serialize it as Flower initial parameters."""
     device = resolve_device(cfg.device)
@@ -120,9 +202,20 @@ def run_simulation(
     out_root.mkdir(parents=True, exist_ok=True)
     tb_writer = TensorBoardWriter(out_root / "tb")
     csv_logger = CSVLogger(out_root / "server_metrics.csv")
+    # Federated phase metrics live in a separate CSV so the two phases do not
+    # fight over CSVLogger's locked-header schema (centralized vs federated
+    # have a different set of columns).
+    fed_csv_logger = CSVLogger(out_root / "server_federated_metrics.csv")
 
     _logger.info("Building datasets for federated simulation (%s)", cfg.data.name)
     datasets = build_dataset(cfg)
+    if not datasets or "train" not in datasets:
+        raise ValueError(
+            "run_simulation requires a 'train' dataset for clients. "
+            "data.name='none' is only valid for the gRPC server, where clients "
+            "bring their own data. Use a real dataset name (synthetic, "
+            "mammo_bench, ...) for simulation runs."
+        )
 
     # Strategy ----------------------------------------------------------
     strategy_kwargs: dict[str, Any] = {
@@ -144,6 +237,7 @@ def run_simulation(
     }
     strategy_kwargs.update(cfg.federated.strategy.params)
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
+    _attach_federated_logging(strategy, tb_writer, fed_csv_logger)
 
     client_fn = client_fn_factory(cfg, datasets)
 
@@ -216,23 +310,34 @@ def run_grpc_server(
     out_root.mkdir(parents=True, exist_ok=True)
     tb_writer = TensorBoardWriter(out_root / "tb")
     csv_logger = CSVLogger(out_root / "server_metrics.csv")
+    # Federated phase metrics live in a separate CSV so the two phases do not
+    # fight over CSVLogger's locked-header schema (centralized vs federated
+    # have a different set of columns).
+    fed_csv_logger = CSVLogger(out_root / "server_federated_metrics.csv")
 
-    _logger.info(
-        "Building server-side test dataset for centralized evaluation (%s)",
-        cfg.data.name,
-    )
-    datasets = build_dataset(cfg)
-    test_dataset = datasets.get("test")
-    if test_dataset is None or len(test_dataset) == 0:
-        # In gRPC mode the server has no train labels, but the loss factory
-        # needs a fallback. Use test labels if available, otherwise None.
-        _logger.warning(
-            "Server build_dataset(cfg) produced no test split. Centralized "
-            "evaluation will be disabled."
+    if cfg.data.name == "none":
+        _logger.info(
+            "data.name='none' — skipping server-side dataset construction. "
+            "Validation will be 100%% federated (aggregated client metrics)."
         )
+        test_dataset = None
         train_labels_for_loss = None
     else:
-        train_labels_for_loss = test_dataset.labels
+        _logger.info(
+            "Building server-side test dataset for centralized evaluation (%s)",
+            cfg.data.name,
+        )
+        datasets = build_dataset(cfg)
+        test_dataset = datasets.get("test")
+        if test_dataset is None or len(test_dataset) == 0:
+            _logger.warning(
+                "Server build_dataset(cfg) produced no test split. Centralized "
+                "evaluation will be disabled; metrics will come from federated "
+                "client evaluation only."
+            )
+            train_labels_for_loss = None
+        else:
+            train_labels_for_loss = test_dataset.labels
 
     strategy_kwargs: dict[str, Any] = {
         "fraction_fit": cfg.federated.fraction_fit,
@@ -253,6 +358,7 @@ def run_grpc_server(
     }
     strategy_kwargs.update(cfg.federated.strategy.params)
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
+    _attach_federated_logging(strategy, tb_writer, fed_csv_logger)
 
     server_config = ServerConfig(num_rounds=cfg.federated.rounds)
 
