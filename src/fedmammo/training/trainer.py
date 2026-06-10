@@ -79,7 +79,7 @@ class Trainer:
         *,
         epoch: int,
         proximal_mu: float = 0.0,
-        global_params: list[torch.Tensor] | None = None,
+        global_params: torch.Tensor | None = None,
     ) -> dict[str, float]:
         """Run a single epoch and return mean loss + sample count.
 
@@ -89,11 +89,15 @@ class Trainer:
             proximal_mu: FedProx regularization strength. When > 0 and
                 ``global_params`` is provided, adds
                 ``(mu/2) * ||w - w_global||²`` to the task loss each batch.
-            global_params: Frozen copy of the global model parameters received
-                from the server at the start of the round. Required when
-                ``proximal_mu > 0``; ignored otherwise.
+            global_params: Flat parameter vector (from
+                ``torch.nn.utils.parameters_to_vector``) captured from the
+                global model at the start of the round. Required when
+                ``proximal_mu > 0``; ignored otherwise. Using a single flat
+                tensor instead of a list of per-layer tensors reduces Python
+                GC overhead and memory fragmentation.
         """
         self.model.train()
+        total_task_loss = 0.0
         total_loss = 0.0
         n_samples = 0
         use_prox = proximal_mu > 0.0 and global_params is not None
@@ -105,13 +109,17 @@ class Trainer:
             if self._scaler is not None:
                 with torch.cuda.amp.autocast():
                     logits = self.model(images)
-                    loss = self.criterion(logits, targets)
-                    if use_prox:
-                        prox = sum(
-                            ((p - g) ** 2).sum()
-                            for p, g in zip(self.model.parameters(), global_params, strict=True)
-                        )
-                        loss = loss + (proximal_mu / 2.0) * prox
+                    task_loss = self.criterion(logits, targets)
+                loss = task_loss
+                if use_prox:
+                    # Proximal term computed in FP32 (via flat vector) to prevent
+                    # FP16 underflow when drift is small (early rounds, low mu).
+                    with torch.cuda.amp.autocast(enabled=False):
+                        current = torch.nn.utils.parameters_to_vector(
+                            self.model.parameters()
+                        ).float()
+                        prox = ((current - global_params.float()) ** 2).sum()
+                    loss = task_loss + (proximal_mu / 2.0) * prox
                 self._scaler.scale(loss).backward()
                 if self.grad_clip_norm > 0:
                     self._scaler.unscale_(self.optimizer)
@@ -120,28 +128,33 @@ class Trainer:
                 self._scaler.update()
             else:
                 logits = self.model(images)
-                loss = self.criterion(logits, targets)
+                task_loss = self.criterion(logits, targets)
+                loss = task_loss
                 if use_prox:
-                    prox = sum(
-                        ((p - g) ** 2).sum()
-                        for p, g in zip(self.model.parameters(), global_params, strict=True)
-                    )
-                    loss = loss + (proximal_mu / 2.0) * prox
+                    current = torch.nn.utils.parameters_to_vector(self.model.parameters())
+                    prox = ((current - global_params) ** 2).sum()
+                    loss = task_loss + (proximal_mu / 2.0) * prox
                 loss.backward()
                 if self.grad_clip_norm > 0:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
                 self.optimizer.step()
 
-            total_loss += float(loss.item()) * targets.size(0)
-            n_samples += int(targets.size(0))
+            batch_n = targets.size(0)
+            total_task_loss += float(task_loss.item()) * batch_n
+            total_loss += float(loss.item()) * batch_n
+            n_samples += int(batch_n)
             self._global_step += 1
 
+        mean_task_loss = total_task_loss / max(n_samples, 1)
         mean_loss = total_loss / max(n_samples, 1)
         if self.scheduler is not None and not isinstance(
             self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
         ):
             self.scheduler.step()
         if self.tb_writer is not None:
+            # task_loss: cross-entropy only (comparable across FedAvg and FedProx)
+            # train_loss: task_loss + proximal penalty (equals task_loss for FedAvg)
+            self.tb_writer.log_scalar(f"{self.log_tag}/task_loss", mean_task_loss, epoch)
             self.tb_writer.log_scalar(f"{self.log_tag}/train_loss", mean_loss, epoch)
             self.tb_writer.log_scalar(
                 f"{self.log_tag}/lr",
@@ -149,13 +162,14 @@ class Trainer:
                 epoch,
             )
         _logger.info(
-            "[%s] epoch %d: train_loss=%.4f (samples=%d)",
+            "[%s] epoch %d: task_loss=%.4f train_loss=%.4f (samples=%d)",
             self.log_tag,
             epoch,
+            mean_task_loss,
             mean_loss,
             n_samples,
         )
-        return {"loss": mean_loss, "samples": n_samples}
+        return {"loss": mean_loss, "task_loss": mean_task_loss, "samples": n_samples}
 
     # ------------------------------------------------------------------
 

@@ -18,7 +18,7 @@ output_dir: runs
 device: auto
 
 data:
-  name: synthetic          # replace with cbis_ddsm or mammo_bench for real data
+  name: mammo_bench          # replace with cbis_ddsm or mammo_bench for real data
   image_size: 224
   grayscale: true
   num_classes: 2

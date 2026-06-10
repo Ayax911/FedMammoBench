@@ -241,7 +241,11 @@ def run_simulation(
 
     client_fn = client_fn_factory(cfg, datasets)
 
-    server_config = ServerConfig(num_rounds=cfg.federated.rounds)
+    round_timeout = cfg.federated.round_timeout_seconds or None
+    server_config = ServerConfig(
+        num_rounds=cfg.federated.rounds,
+        round_timeout=float(round_timeout) if round_timeout else None,
+    )
 
     _logger.info(
         "Starting simulation: %d clients, %d rounds, strategy=%s",
@@ -360,21 +364,29 @@ def run_grpc_server(
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
     _attach_federated_logging(strategy, tb_writer, fed_csv_logger)
 
-    server_config = ServerConfig(num_rounds=cfg.federated.rounds)
+    round_timeout = cfg.federated.round_timeout_seconds or None
+    server_config = ServerConfig(
+        num_rounds=cfg.federated.rounds,
+        round_timeout=float(round_timeout) if round_timeout else None,
+    )
 
     _logger.info(
         "Starting gRPC server on %s for %d rounds (strategy=%s, "
-        "min_available_clients=%d). Waiting for clients to connect ...",
+        "min_available_clients=%d, grpc_max_msg=%d MB, round_timeout=%s). "
+        "Waiting for clients to connect ...",
         cfg.federated.server_address,
         cfg.federated.rounds,
         cfg.federated.strategy.name,
         cfg.federated.min_available_clients,
+        cfg.federated.grpc_max_message_length // (1024 * 1024),
+        f"{round_timeout}s" if round_timeout else "none",
     )
     try:
         fl.server.start_server(
             server_address=cfg.federated.server_address,
             config=server_config,
             strategy=strategy,
+            grpc_max_message_length=cfg.federated.grpc_max_message_length,
         )
     finally:
         tb_writer.close()

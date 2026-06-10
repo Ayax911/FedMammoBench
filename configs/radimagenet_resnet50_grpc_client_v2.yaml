@@ -39,7 +39,7 @@ data:
   #   manifest_path: /path/to/nodeN_manifest.csv   (overridden by --manifest)
   #   image_root: /path/to/images                  (overridden by --data-dir)
   #   balance_classes: true
-  name: synthetic
+  name: mammo_bench
   image_size: 224
   grayscale: true
   num_classes: 2

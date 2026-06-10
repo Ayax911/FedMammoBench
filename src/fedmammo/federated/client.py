@@ -118,11 +118,15 @@ class FedMammoClient(fl.client.NumPyClient):
         local_epochs = int(config.get("local_epochs", self.cfg.training.local_epochs))
         proximal_mu = float(config.get("proximal_mu", 0.0))
 
-        # Capture global parameters before any local update so the proximal
-        # term can measure drift from the server's model.
-        global_params: list[torch.Tensor] | None = None
+        # Capture global parameters as a single flat vector before any local update.
+        # Using parameters_to_vector reduces memory fragmentation and GC overhead
+        # versus a list of per-layer tensors (~100 separate allocations for ResNet50).
+        global_params: torch.Tensor | None = None
         if proximal_mu > 0.0:
-            global_params = [p.detach().clone() for p in self.model.parameters()]
+            with torch.no_grad():
+                global_params = torch.nn.utils.parameters_to_vector(
+                    self.model.parameters()
+                ).detach()
 
         # Fresh optimizer each round — standard in Flower; cross-round state
         # would otherwise pollute aggregation.
@@ -145,9 +149,13 @@ class FedMammoClient(fl.client.NumPyClient):
                 global_params=global_params,
             )
         n_samples = int(last.get("samples", len(self.train_loader.dataset)))  # type: ignore[arg-type]
+        # train_loss includes the proximal penalty for FedProx; task_loss is
+        # cross-entropy only and is the correct metric for strategy comparisons.
         train_loss = float(last.get("loss", 0.0))
+        task_loss = float(last.get("task_loss", train_loss))
         metrics: dict[str, Scalar] = {
             "train_loss": train_loss,
+            "task_loss": task_loss,
             "client_id": self.client_id,
             "num_samples": n_samples,
         }
@@ -201,18 +209,21 @@ def _materialize_client_partitions(
     """Return a list of (train_subset, val_subset) for each client.
 
     Training data is partitioned according to ``cfg.partitioning``. The
-    validation set is replicated to each client (a shared held-out set is the
-    most common federated setup; per-client local validation can be added by
-    further partitioning ``datasets["val"]``).
+    validation set is also partitioned into per-client subsets using the same
+    scheme so that each client evaluates on a locally-distinct validation split.
+    This ensures federated validation metrics reflect true local distributions
+    rather than a shared held-out set evaluated identically by all clients.
     """
     train_ds = datasets["train"]
     val_ds = datasets.get("val")
     labels = train_ds.labels
 
     # Build patient-id array; fall back to sample-level partitioning when any
-    # patient_id is None (e.g. incomplete annotations or fully synthetic data).
+    # patient_id is None or NaN (pandas reads missing values as float NaN).
+    from fedmammo.configs.data_config import check_patient_ids_for_nan
+
     raw_pids = train_ds.patient_ids
-    if any(pid is None for pid in raw_pids):
+    if check_patient_ids_for_nan(raw_pids):
         _logger.warning(
             "Some training samples have no patient_id; falling back to "
             "sample-level partitioning (patient leakage not prevented)."
@@ -232,10 +243,28 @@ def _materialize_client_partitions(
         quantity_skew_sigma=cfg.partitioning.quantity_skew_sigma,
         seed=cfg.seed,
     )
+
+    # Partition val_ds per client (IID) so each client validates on a distinct
+    # local subset, making federated evaluation metrics methodologically sound.
+    val_client_indices: list[list[int]] | None = None
+    if val_ds is not None and len(val_ds) >= cfg.federated.num_clients:
+        val_labels = val_ds.labels
+        val_client_indices = partition_indices(
+            val_labels,
+            num_clients=cfg.federated.num_clients,
+            patient_ids=None,
+            scheme="iid",
+            seed=cfg.seed + 1000,  # distinct seed from train partition
+        )
+
     pairs: list[tuple[MammographyDataset, MammographyDataset | None]] = []
     for ci, idxs in enumerate(client_indices):
         sub_train = train_ds.subset(idxs)
-        pairs.append((sub_train, val_ds))
+        if val_client_indices is not None:
+            sub_val: MammographyDataset | None = val_ds.subset(val_client_indices[ci])  # type: ignore[union-attr]
+        else:
+            sub_val = val_ds  # fallback: shared val when too small to partition
+        pairs.append((sub_train, sub_val))
         _logger.info(
             "Client %d: %d train samples (class counts=%s)",
             ci,

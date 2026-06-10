@@ -199,12 +199,15 @@ class MammoBenchDataset(MammographyDataset):
                 elif sv in {"test", "testing"}:
                     splits["test"].append(i)
             if not splits["val"] and val_fraction > 0 and splits["train"]:
-                rng = np.random.default_rng(seed)
-                train_idx = np.array(splits["train"])
-                rng.shuffle(train_idx)
-                n_val = int(len(train_idx) * val_fraction)
-                splits["val"] = train_idx[:n_val].tolist()
-                splits["train"] = train_idx[n_val:].tolist()
+                # Manifest has train/test only — carve val from train at patient level
+                # to prevent the same patient appearing in both train and val.
+                train_samples = [samples[i] for i in splits["train"]]
+                sub_splits = _stratified_patient_split(
+                    train_samples, val_fraction, 0.0, seed
+                )
+                orig = splits["train"]
+                splits["train"] = [orig[i] for i in sub_splits["train"]]
+                splits["val"] = [orig[i] for i in sub_splits["val"]]
         else:
             # Patient-disjoint stratified split.
             splits = _stratified_patient_split(samples, val_fraction, test_fraction, seed)

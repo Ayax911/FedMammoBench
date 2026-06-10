@@ -31,7 +31,7 @@ data:
   #   image_root: /absolute/path/to/images
   #   val_fraction: 0.0
   #   test_fraction: 1.0    # entire server manifest → test set
-  name: synthetic
+  name: none               # server has no images; evaluation is 100% federated
   image_size: 224
   grayscale: true
   num_classes: 2
@@ -50,6 +50,8 @@ model:
   dropout: 0.2
   freeze_backbone: true     # rounds 0-2: head-only warm-up
   unfreeze_at_epoch: 3      # round 3+: full fine-tune
+  checkpoint_path: checkpoints/radimagenet/RadImageNet-resnet50.pth
+
 
 training:
   local_epochs: 1
@@ -73,7 +75,7 @@ evaluation:
 
 federated:
   num_clients: 2
-  rounds: 5                 # 3 frozen + 2 unfrozen; increase for real training
+  rounds: 100                 # 3 frozen + 2 unfrozen; increase for real training
   fraction_fit: 1.0
   fraction_evaluate: 1.0
   min_fit_clients: 2

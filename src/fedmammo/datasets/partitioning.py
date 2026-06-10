@@ -99,13 +99,15 @@ def partition_indices(
             scheme,
         )
         if scheme == "iid":
-            return _iid_partition_patients(index_groups, num_clients, rng)
+            return _iid_partition_patients(index_groups, num_clients, rng, min_per_client)
         if scheme == "dirichlet":
             return _dirichlet_partition_patients(
                 patient_labels, index_groups, num_clients, alpha, min_per_client, max_retries, rng
             )
         if scheme == "quantity_skew":
-            return _quantity_skew_partition_patients(index_groups, num_clients, quantity_skew_sigma, rng)
+            return _quantity_skew_partition_patients(
+                index_groups, num_clients, quantity_skew_sigma, rng, min_per_client
+            )
         raise ValueError(f"Unknown partitioning scheme: {scheme!r}")
 
     if scheme == "iid":
@@ -155,6 +157,7 @@ def _iid_partition_patients(
     index_groups: list[list[int]],
     num_clients: int,
     rng: np.random.Generator,
+    min_per_client: int = 1,
 ) -> list[list[int]]:
     """IID partition at the patient level."""
     P = len(index_groups)
@@ -168,6 +171,27 @@ def _iid_partition_patients(
             indices.extend(index_groups[pi])
         rng.shuffle(indices)
         client_idx.append(indices)
+
+    # Enforce min_per_client by redistributing from the largest client.
+    sizes = [len(c) for c in client_idx]
+    for ci, sz in enumerate(sizes):
+        if sz < min_per_client:
+            donor = int(np.argmax(sizes))
+            needed = min_per_client - sz
+            if sizes[donor] - needed >= min_per_client:
+                client_idx[ci].extend(client_idx[donor][-needed:])
+                client_idx[donor] = client_idx[donor][:-needed]
+                sizes[ci] = len(client_idx[ci])
+                sizes[donor] = len(client_idx[donor])
+            else:
+                _logger.warning(
+                    "IID patient partition: client %d has %d samples < min_per_client=%d "
+                    "and redistribution is not possible. Increase dataset size or reduce "
+                    "num_clients.",
+                    ci,
+                    sz,
+                    min_per_client,
+                )
     return client_idx
 
 
@@ -242,6 +266,7 @@ def _quantity_skew_partition_patients(
     num_clients: int,
     sigma: float,
     rng: np.random.Generator,
+    min_per_client: int = 1,
 ) -> list[list[int]]:
     """Quantity-skew partition at the patient level."""
     if sigma < 0:
@@ -263,6 +288,26 @@ def _quantity_skew_partition_patients(
             indices.extend(index_groups[pi])
         client_idx.append(indices)
         cursor += count
+
+    # Enforce min_per_client by redistributing from the largest client.
+    sizes = [len(c) for c in client_idx]
+    for ci, sz in enumerate(sizes):
+        if sz < min_per_client:
+            donor = int(np.argmax(sizes))
+            needed = min_per_client - sz
+            if sizes[donor] - needed >= min_per_client:
+                client_idx[ci].extend(client_idx[donor][-needed:])
+                client_idx[donor] = client_idx[donor][:-needed]
+                sizes[ci] = len(client_idx[ci])
+                sizes[donor] = len(client_idx[donor])
+            else:
+                _logger.warning(
+                    "Quantity-skew patient partition: client %d has %d samples < "
+                    "min_per_client=%d and redistribution is not possible.",
+                    ci,
+                    sz,
+                    min_per_client,
+                )
     return client_idx
 
 
