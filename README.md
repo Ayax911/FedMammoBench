@@ -181,6 +181,9 @@ pytest tests/ -v --tb=short
 
 CI runs automatically on push to `main` and `feature/**` branches via `.github/workflows/ci.yml`.
 
+**Extending the framework** — adding a strategy, model, dataset, or config field?
+See [docs/EXTENDING.md](docs/EXTENDING.md) for the step-by-step pipeline per module.
+
 ---
 
 ## Project Structure
