@@ -19,7 +19,7 @@ NORMALIZE_PRESETS: dict[str, dict[str, tuple[float, ...]]] = {
     "radimagenet_rgb": {"mean": (0.5, 0.5, 0.5), "std": (0.5, 0.5, 0.5)},
     # Single-channel RadImageNet (grayscale mammography)
     "radimagenet_gray": {"mean": (0.5,), "std": (0.5,)},
-    # Legacy default used in earlier fedmammo configs
+    # Legacy default used in earlier fedmammobench configs
     "mammo_default": {"mean": (0.5,), "std": (0.25,)},
 }
 
@@ -38,7 +38,7 @@ class ModelConfig:
     """Model architecture and head settings.
 
     Attributes:
-        name: Model identifier registered in :mod:`fedmammo.models.factory`.
+        name: Model identifier registered in :mod:`fedmammobench.models.factory`.
         pretrained: Legacy flag — kept for backward compatibility. When
             ``weight_source`` is ``"auto"`` (default), this flag is consulted:
             ``True`` → ``"imagenet"``, ``False`` → ``"none"``. Explicit
@@ -52,7 +52,7 @@ class ModelConfig:
             ``"none"`` keeps random initialization.
         checkpoint_path: Absolute (or ``~``-expanded) path to a ``.pth``
             checkpoint file. Required when ``weight_source="custom"``.
-            For ``"radimagenet"`` this overrides the ``FEDMAMMO_RADIMAGENET_DIR``
+            For ``"radimagenet"`` this overrides the ``FEDMAMMOBENCH_RADIMAGENET_DIR``
             environment variable lookup.
         pretrained_num_classes: Number of output classes in the source
             checkpoint's head. Used for shape validation; the loaded head is
@@ -94,7 +94,7 @@ class ModelConfig:
 
         Args:
             normalize_preset: The augmentation normalize_preset from
-                :class:`~fedmammo.configs.training_config.AugmentationConfig`,
+                :class:`~fedmammobench.configs.training_config.AugmentationConfig`,
                 used to cross-check channel counts.
         """
         # RadImageNet weight source requires a supported architecture

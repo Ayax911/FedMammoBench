@@ -1,8 +1,8 @@
-"""Console entrypoint: ``fedmammo-evaluate``."""
+"""Console entrypoint: ``fedmammobench-evaluate``."""
 
 from __future__ import annotations
 
-from fedmammo.cli.centralized import _load_script_main
+from fedmammobench.cli.centralized import _load_script_main
 
 
 def main() -> int:

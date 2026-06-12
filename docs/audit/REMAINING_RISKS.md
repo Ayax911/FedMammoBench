@@ -1,6 +1,6 @@
 # REMAINING_RISKS.md — Catálogo priorizado de riesgos remanentes y nuevos
 
-> **Propósito**: única fuente de verdad sobre qué riesgos persisten en `fedmammo` tras los fixes C1/C2/C3, ordenados por urgencia. Es la entrada al diseño de las próximas fases.
+> **Propósito**: única fuente de verdad sobre qué riesgos persisten en `fedmammobench` tras los fixes C1/C2/C3, ordenados por urgencia. Es la entrada al diseño de las próximas fases.
 > **Cross-refs**: detalles técnicos por hallazgo en `POST_FIX_AUDIT.md`. Defensibilidad de cada configuración en `FEDERATED_VALIDITY_REVIEW.md`. Estado RadImageNet en `RADIMAGENET_READINESS_REPORT.md`.
 
 ---

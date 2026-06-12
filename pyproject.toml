@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fedmammo"
-version = "0.2.0"
+name = "fedmammobench"
+version = "0.3.0"
 description = "Federated learning for binary mammography classification (benign vs malignant)."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
@@ -50,16 +50,16 @@ dev = [
 ]
 
 [project.scripts]
-fedmammo-centralized = "fedmammo.cli.centralized:main"
-fedmammo-federated = "fedmammo.cli.federated:main"
-fedmammo-evaluate = "fedmammo.cli.evaluate:main"
+fedmammobench-centralized = "fedmammobench.cli.centralized:main"
+fedmammobench-federated = "fedmammobench.cli.federated:main"
+fedmammobench-evaluate = "fedmammobench.cli.evaluate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["fedmammo*"]
+include = ["fedmammobench*"]
 
 [tool.setuptools.package-data]
-fedmammo = ["py.typed"]
+fedmammobench = ["py.typed"]
 
 [tool.ruff]
 line-length = 100

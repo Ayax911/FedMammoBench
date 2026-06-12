@@ -25,8 +25,12 @@ class DataConfig:
     """Dataset selection and IO settings.
 
     Attributes:
-        name: Dataset identifier registered in :mod:`fedmammo.datasets.factory`.
-            One of ``cbis_ddsm``, ``vindr_mammo``, ``synthetic``, ``mammo_bench``.
+        name: Dataset identifier resolved through
+            :mod:`fedmammobench.datasets.registry`. Built-in names are
+            ``cbis_ddsm``, ``vindr_mammo``, ``mammo_bench``, plus the sentinel
+            ``none`` (no local dataset). Any name registered via
+            ``@register_dataset`` is accepted — this is a plain ``str`` rather
+            than a closed ``Literal`` so new datasets need no edit here.
         manifest_path: Optional path to a CSV manifest (CBIS-DDSM, Mammo-Bench).
         annotations_path: Optional path to breast-level annotations (VinDr-Mammo).
         image_root: Root directory containing the image files.
@@ -46,13 +50,11 @@ class DataConfig:
         normal_policy: Mammo-Bench only. How to treat rows whose
             ``classification`` column is ``Normal``: map to benign (``benign``,
             default) or drop them (``drop``).
-        synthetic_num_samples: For the synthetic loader, how many samples to
-            generate per split.
         columns: Column-name mapping for tabular manifests.
         balance_classes: If True, build a WeightedRandomSampler at train time.
     """
 
-    name: Literal["cbis_ddsm", "vindr_mammo", "synthetic", "mammo_bench", "none"] = "synthetic"
+    name: str = "cbis_ddsm"
     manifest_path: str | None = None
     annotations_path: str | None = None
     image_root: str | None = None
@@ -66,7 +68,6 @@ class DataConfig:
     test_fraction: float = 0.1
     birads_3_policy: Literal["drop", "benign", "malignant"] = "drop"
     normal_policy: Literal["benign", "drop"] = "benign"
-    synthetic_num_samples: int = 256
     columns: DataColumnMapping = field(default_factory=DataColumnMapping)
     balance_classes: bool = True
 
@@ -78,10 +79,8 @@ class DataConfig:
                 f"val_fraction ({self.val_fraction}) + test_fraction ({self.test_fraction}) "
                 "must be <= 1.0."
             )
-        if total == 1.0 and self.name not in ("none", "synthetic"):
-            # Allowed for gRPC server configs where the full local dataset is
-            # used as a centralized evaluation holdout (no training on server).
-            pass
+        # total == 1.0 is allowed: gRPC server configs may use the full local
+        # dataset as a centralized evaluation holdout (no training on server).
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {self.batch_size}")
         if self.image_size < 1:

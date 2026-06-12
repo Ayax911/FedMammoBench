@@ -27,7 +27,7 @@ if str(SRC_PATH) not in sys.path:
 
 def _make_cfg(**overrides):
     """Return a minimal ModelConfig for testing."""
-    from fedmammo.configs.schema import ModelConfig
+    from fedmammobench.configs.schema import ModelConfig
 
     defaults = dict(
         name="resnet18",
@@ -53,28 +53,28 @@ class TestNormalizePresets:
     """Tests for NORMALIZE_PRESETS and AugmentationConfig defaults."""
 
     def test_radimagenet_gray_preset_values(self):
-        from fedmammo.configs.schema import NORMALIZE_PRESETS
+        from fedmammobench.configs.schema import NORMALIZE_PRESETS
 
         p = NORMALIZE_PRESETS["radimagenet_gray"]
         assert p["mean"] == (0.5,)
         assert p["std"] == (0.5,)
 
     def test_imagenet_rgb_preset_length(self):
-        from fedmammo.configs.schema import NORMALIZE_PRESETS
+        from fedmammobench.configs.schema import NORMALIZE_PRESETS
 
         p = NORMALIZE_PRESETS["imagenet_rgb"]
         assert len(p["mean"]) == 3
         assert len(p["std"]) == 3
 
     def test_mammo_default_preset(self):
-        from fedmammo.configs.schema import NORMALIZE_PRESETS
+        from fedmammobench.configs.schema import NORMALIZE_PRESETS
 
         p = NORMALIZE_PRESETS["mammo_default"]
         assert p["mean"] == (0.5,)
         assert p["std"] == (0.25,)
 
     def test_five_presets_defined(self):
-        from fedmammo.configs.schema import NORMALIZE_PRESETS
+        from fedmammobench.configs.schema import NORMALIZE_PRESETS
 
         assert len(NORMALIZE_PRESETS) == 5
 
@@ -82,8 +82,8 @@ class TestNormalizePresets:
 
     def test_preset_resolution_correct_channels(self):
         pytest.importorskip("albumentations")
-        from fedmammo.configs.schema import AugmentationConfig
-        from fedmammo.datasets.transforms import _resolve_norm
+        from fedmammobench.configs.schema import AugmentationConfig
+        from fedmammobench.datasets.transforms import _resolve_norm
 
         aug = AugmentationConfig(normalize_preset="radimagenet_gray")
         mean, std = _resolve_norm(aug, in_channels=1)
@@ -92,8 +92,8 @@ class TestNormalizePresets:
 
     def test_preset_channel_mismatch_raises(self):
         pytest.importorskip("albumentations")
-        from fedmammo.configs.schema import AugmentationConfig
-        from fedmammo.datasets.transforms import _resolve_norm
+        from fedmammobench.configs.schema import AugmentationConfig
+        from fedmammobench.datasets.transforms import _resolve_norm
 
         aug = AugmentationConfig(normalize_preset="imagenet_rgb")  # 3-channel preset
         with pytest.raises(ValueError, match="in_channels"):
@@ -101,8 +101,8 @@ class TestNormalizePresets:
 
     def test_unknown_preset_raises(self):
         pytest.importorskip("albumentations")
-        from fedmammo.configs.schema import AugmentationConfig
-        from fedmammo.datasets.transforms import _resolve_norm
+        from fedmammobench.configs.schema import AugmentationConfig
+        from fedmammobench.datasets.transforms import _resolve_norm
 
         aug = AugmentationConfig(normalize_preset="bad_preset")
         with pytest.raises(ValueError, match="Unknown normalize_preset"):
@@ -110,8 +110,8 @@ class TestNormalizePresets:
 
     def test_scalar_mean_replicates_to_channels(self):
         pytest.importorskip("albumentations")
-        from fedmammo.configs.schema import AugmentationConfig
-        from fedmammo.datasets.transforms import _resolve_norm
+        from fedmammobench.configs.schema import AugmentationConfig
+        from fedmammobench.datasets.transforms import _resolve_norm
 
         aug = AugmentationConfig(normalize_mean=0.5, normalize_std=0.25)
         mean, std = _resolve_norm(aug, in_channels=3)
@@ -120,8 +120,8 @@ class TestNormalizePresets:
 
     def test_list_mean_passthrough(self):
         pytest.importorskip("albumentations")
-        from fedmammo.configs.schema import AugmentationConfig
-        from fedmammo.datasets.transforms import _resolve_norm
+        from fedmammobench.configs.schema import AugmentationConfig
+        from fedmammobench.datasets.transforms import _resolve_norm
 
         aug = AugmentationConfig(
             normalize_mean=[0.485, 0.456, 0.406],
@@ -133,8 +133,8 @@ class TestNormalizePresets:
 
     def test_deprecated_grayscale_kwarg_warns(self):
         pytest.importorskip("albumentations")
-        from fedmammo.configs.schema import AugmentationConfig
-        from fedmammo.datasets.transforms import build_transforms
+        from fedmammobench.configs.schema import AugmentationConfig
+        from fedmammobench.datasets.transforms import build_transforms
 
         aug = AugmentationConfig()
         with warnings.catch_warnings(record=True) as w:
@@ -152,7 +152,7 @@ class TestKeymaps:
 
     def test_strip_module_prefix(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders._keymaps import remap_radimagenet_keys
+        from fedmammobench.models.weight_loaders._keymaps import remap_radimagenet_keys
 
         raw = {
             "module.conv1.weight": "t1",
@@ -165,7 +165,7 @@ class TestKeymaps:
 
     def test_drop_fc_keys_resnet50(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders._keymaps import remap_radimagenet_keys
+        from fedmammobench.models.weight_loaders._keymaps import remap_radimagenet_keys
 
         raw = {"conv1.weight": "t", "fc.weight": "t2", "fc.bias": "t3"}
         new, _ = remap_radimagenet_keys(raw, "resnet50")
@@ -175,7 +175,7 @@ class TestKeymaps:
 
     def test_drop_classifier_keys_densenet121(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders._keymaps import remap_radimagenet_keys
+        from fedmammobench.models.weight_loaders._keymaps import remap_radimagenet_keys
 
         raw = {"features.conv0.weight": "t", "classifier.weight": "t2"}
         new, _ = remap_radimagenet_keys(raw, "densenet121")
@@ -184,7 +184,7 @@ class TestKeymaps:
 
     def test_drop_auxlogits_inception_v3(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders._keymaps import remap_radimagenet_keys
+        from fedmammobench.models.weight_loaders._keymaps import remap_radimagenet_keys
 
         raw = {
             "Conv2d_1a_3x3.conv.weight": "t",
@@ -198,7 +198,7 @@ class TestKeymaps:
 
     def test_supported_archs_constant(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders._keymaps import SUPPORTED_ARCHS
+        from fedmammobench.models.weight_loaders._keymaps import SUPPORTED_ARCHS
 
         assert "resnet50" in SUPPORTED_ARCHS
         assert "densenet121" in SUPPORTED_ARCHS
@@ -214,35 +214,35 @@ class TestKeymaps:
 class TestResolveSource:
     def test_auto_pretrained_true_resolves_imagenet(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders import resolve_source
+        from fedmammobench.models.weight_loaders import resolve_source
 
         cfg = _make_cfg(pretrained=True, weight_source="auto")
         assert resolve_source(cfg) == "imagenet"
 
     def test_auto_pretrained_false_resolves_none(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders import resolve_source
+        from fedmammobench.models.weight_loaders import resolve_source
 
         cfg = _make_cfg(pretrained=False, weight_source="auto")
         assert resolve_source(cfg) == "none"
 
     def test_explicit_radimagenet_wins_over_pretrained_flag(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders import resolve_source
+        from fedmammobench.models.weight_loaders import resolve_source
 
         cfg = _make_cfg(pretrained=False, weight_source="radimagenet")
         assert resolve_source(cfg) == "radimagenet"
 
     def test_explicit_none_wins_over_pretrained_true(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders import resolve_source
+        from fedmammobench.models.weight_loaders import resolve_source
 
         cfg = _make_cfg(pretrained=True, weight_source="none")
         assert resolve_source(cfg) == "none"
 
     def test_explicit_custom_resolves(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders import resolve_source
+        from fedmammobench.models.weight_loaders import resolve_source
 
         cfg = _make_cfg(weight_source="custom", checkpoint_path="/some/path.pth")
         assert resolve_source(cfg) == "custom"
@@ -255,7 +255,7 @@ class TestResolveSource:
 class TestChannelAdaptation:
     def test_adapt_3_to_1_sum_preserving(self):
         torch = pytest.importorskip("torch")
-        from fedmammo.models._adapt import adapt_weight_tensor
+        from fedmammobench.models._adapt import adapt_weight_tensor
 
         w = torch.ones(4, 3, 3, 3)
         adapted = adapt_weight_tensor(w, target_in_channels=1)
@@ -264,7 +264,7 @@ class TestChannelAdaptation:
 
     def test_adapt_1_to_3_correct_scale(self):
         torch = pytest.importorskip("torch")
-        from fedmammo.models._adapt import adapt_weight_tensor
+        from fedmammobench.models._adapt import adapt_weight_tensor
 
         w = torch.ones(4, 1, 3, 3)
         adapted = adapt_weight_tensor(w, target_in_channels=3)
@@ -273,7 +273,7 @@ class TestChannelAdaptation:
 
     def test_adapt_no_op_when_channels_equal(self):
         torch = pytest.importorskip("torch")
-        from fedmammo.models._adapt import adapt_weight_tensor
+        from fedmammobench.models._adapt import adapt_weight_tensor
 
         w = torch.randn(4, 3, 3, 3)
         adapted = adapt_weight_tensor(w, target_in_channels=3)
@@ -281,7 +281,7 @@ class TestChannelAdaptation:
 
     def test_legacy_mean_no_scale_factor(self):
         torch = pytest.importorskip("torch")
-        from fedmammo.models._adapt import adapt_weight_tensor
+        from fedmammobench.models._adapt import adapt_weight_tensor
 
         w = torch.ones(4, 3, 3, 3)
         adapted = adapt_weight_tensor(w, target_in_channels=1, strategy="legacy_mean")
@@ -289,7 +289,7 @@ class TestChannelAdaptation:
 
     def test_sum_preserving_3x_magnitude_of_legacy_mean(self):
         torch = pytest.importorskip("torch")
-        from fedmammo.models._adapt import adapt_weight_tensor
+        from fedmammobench.models._adapt import adapt_weight_tensor
 
         w = torch.ones(1, 3, 3, 3)
         sp = adapt_weight_tensor(w, 1, strategy="sum_preserving")
@@ -305,7 +305,7 @@ class TestChannelAdaptation:
 class TestRadImageNetLoader:
     def test_unsupported_arch_raises_value_error(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         loader = RadImageNetLoader()
 
@@ -318,24 +318,24 @@ class TestRadImageNetLoader:
 
     def test_missing_checkpoint_raises_file_not_found(self, monkeypatch):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         loader = RadImageNetLoader()
-        monkeypatch.delenv("FEDMAMMO_RADIMAGENET_DIR", raising=False)
+        monkeypatch.delenv("FEDMAMMOBENCH_RADIMAGENET_DIR", raising=False)
 
         class DummyModel:
             pass
 
         cfg = _make_cfg(name="resnet50", weight_source="radimagenet")
-        with pytest.raises(FileNotFoundError, match="FEDMAMMO_RADIMAGENET_DIR"):
+        with pytest.raises(FileNotFoundError, match="FEDMAMMOBENCH_RADIMAGENET_DIR"):
             loader.load(DummyModel(), cfg)
 
     def test_error_message_is_actionable(self, monkeypatch):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         loader = RadImageNetLoader()
-        monkeypatch.delenv("FEDMAMMO_RADIMAGENET_DIR", raising=False)
+        monkeypatch.delenv("FEDMAMMOBENCH_RADIMAGENET_DIR", raising=False)
 
         class DummyModel:
             pass
@@ -349,7 +349,7 @@ class TestRadImageNetLoader:
 
     def test_resolve_path_via_explicit_checkpoint_path(self, tmp_path):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         loader = RadImageNetLoader()
         fake_ckpt = tmp_path / "my_ckpt.pth"
@@ -360,19 +360,19 @@ class TestRadImageNetLoader:
 
     def test_resolve_path_via_env_var(self, tmp_path, monkeypatch):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         loader = RadImageNetLoader()
         fake_ckpt = tmp_path / "RadImageNet-resnet50.pth"
         fake_ckpt.touch()
-        monkeypatch.setenv("FEDMAMMO_RADIMAGENET_DIR", str(tmp_path))
+        monkeypatch.setenv("FEDMAMMOBENCH_RADIMAGENET_DIR", str(tmp_path))
         cfg_obj = type("C", (), {"checkpoint_path": None, "name": "resnet50"})()
         resolved = loader._resolve_path(cfg_obj)
         assert resolved == fake_ckpt
 
     def test_unwrap_state_dict_key(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         raw = {"state_dict": {"conv1.weight": "tensor"}}
         unwrapped = RadImageNetLoader._unwrap(raw)
@@ -380,7 +380,7 @@ class TestRadImageNetLoader:
 
     def test_unwrap_model_state_dict_key(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         raw = {"model_state_dict": {"conv1.weight": "tensor"}}
         unwrapped = RadImageNetLoader._unwrap(raw)
@@ -388,7 +388,7 @@ class TestRadImageNetLoader:
 
     def test_unwrap_plain_dict_passthrough(self):
         pytest.importorskip("torch")
-        from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
+        from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
 
         raw = {"conv1.weight": "tensor"}
         unwrapped = RadImageNetLoader._unwrap(raw)
@@ -403,7 +403,7 @@ class TestFreezePolicy:
     def test_no_freeze_all_trainable(self):
         torch = pytest.importorskip("torch")
         from torch import nn
-        from fedmammo.models.weight_loaders import apply_freeze_policy
+        from fedmammobench.models.weight_loaders import apply_freeze_policy
 
         model = nn.Linear(4, 2)
         cfg = _make_cfg(freeze_backbone=False, freeze_head=False)
@@ -414,7 +414,7 @@ class TestFreezePolicy:
     def test_freeze_backbone_report_keys(self):
         torch = pytest.importorskip("torch")
         from torch import nn
-        from fedmammo.models.weight_loaders import apply_freeze_policy
+        from fedmammobench.models.weight_loaders import apply_freeze_policy
 
         model = nn.Linear(4, 2)
         cfg = _make_cfg(freeze_backbone=True)
@@ -426,7 +426,7 @@ class TestFreezePolicy:
     def test_progressive_unfreeze_below_threshold(self):
         torch = pytest.importorskip("torch")
         from torch import nn
-        from fedmammo.models.weight_loaders import apply_freeze_policy
+        from fedmammobench.models.weight_loaders import apply_freeze_policy
 
         model = nn.Linear(4, 2)
         for p in model.parameters():
@@ -441,7 +441,7 @@ class TestFreezePolicy:
     def test_progressive_unfreeze_at_threshold(self):
         torch = pytest.importorskip("torch")
         from torch import nn
-        from fedmammo.models.weight_loaders import apply_freeze_policy
+        from fedmammobench.models.weight_loaders import apply_freeze_policy
 
         model = nn.Linear(4, 2)
         for p in model.parameters():
@@ -460,7 +460,7 @@ class TestFreezePolicy:
 class TestConfigBC:
     def test_new_radimagenet_configs_parse(self):
         configs_dir = Path(__file__).resolve().parent.parent / "configs"
-        from fedmammo.configs.loader import load_config
+        from fedmammobench.configs.loader import load_config
 
         for name in [
             "radimagenet_resnet50_centralized.yaml",
@@ -474,9 +474,9 @@ class TestConfigBC:
 
     def test_existing_configs_not_broken(self):
         configs_dir = Path(__file__).resolve().parent.parent / "configs"
-        from fedmammo.configs.loader import load_config
+        from fedmammobench.configs.loader import load_config
 
-        for name in ["base.yaml", "fedavg_synthetic.yaml"]:
+        for name in ["base.yaml", "fedavg_cbis_ddsm.yaml"]:
             cfg = load_config(str(configs_dir / name))
             assert cfg.model.weight_source == "auto"
             assert cfg.model.freeze_backbone is False

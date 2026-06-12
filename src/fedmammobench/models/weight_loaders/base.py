@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from torch import nn
 
 if TYPE_CHECKING:
-    from fedmammo.configs.schema import ModelConfig
+    from fedmammobench.configs.schema import ModelConfig
 
 
 @dataclass

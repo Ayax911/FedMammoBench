@@ -3,7 +3,7 @@
 Mammo-Bench (https://github.com/...) consolidates ~19,700 mammography images
 from six public sources (INbreast, DDSM, KAU-BCMD, CMMD, CDD-CESM, DMID) into
 a single CSV manifest plus a tree of preprocessed JPG files. This loader
-mirrors :class:`fedmammo.datasets.CBISDDSMDataset` so its usage is consistent.
+mirrors :class:`fedmammobench.datasets.CBISDDSMDataset` so its usage is consistent.
 
 Expected CSV columns (defaults; not currently overridable via YAML):
 
@@ -32,9 +32,10 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from fedmammo.datasets.base import BENIGN, MALIGNANT, MammographyDataset, Sample
-from fedmammo.datasets.cbis_ddsm import _stratified_patient_split
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.datasets.base import BENIGN, MALIGNANT, MammographyDataset, Sample
+from fedmammobench.datasets.cbis_ddsm import _stratified_patient_split
+from fedmammobench.datasets.registry import register_dataset
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
@@ -228,6 +229,25 @@ class MammoBenchDataset(MammographyDataset):
                 out[split_name].class_counts(),
             )
         return out
+
+
+@register_dataset("mammo_bench")
+def _build_mammo_bench(cfg, train_tx, eval_tx):  # noqa: ANN001, ANN201
+    """Registered builder for the Mammo-Bench dataset."""
+    if not cfg.data.manifest_path or not cfg.data.image_root:
+        raise ValueError("data.name=mammo_bench requires both `manifest_path` and `image_root`.")
+    return MammoBenchDataset.from_manifest(
+        manifest_path=cfg.data.manifest_path,
+        image_root=cfg.data.image_root,
+        normal_policy=cfg.data.normal_policy,
+        image_format=cfg.data.image_format,
+        val_fraction=cfg.data.val_fraction,
+        test_fraction=cfg.data.test_fraction,
+        seed=cfg.seed,
+        grayscale=cfg.data.grayscale,
+        transform_train=train_tx,
+        transform_eval=eval_tx,
+    )
 
 
 __all__ = ["MammoBenchDataset"]

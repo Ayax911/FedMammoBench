@@ -8,7 +8,7 @@
 # ── BEFORE STARTING ───────────────────────────────────────────────────
 # 1. Obtain RadImageNet-resnet50.pth from the BMEII-AI/RadImageNet repo.
 # 2. Set the checkpoint location (choose one):
-#      (a) export FEDMAMMO_RADIMAGENET_DIR=/path/to/dir/containing/checkpoint
+#      (a) export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/dir/containing/checkpoint
 #      (b) set model.checkpoint_path below to the absolute .pth path
 # 3. Start the server FIRST (Terminal 1).
 # 4. Then start both clients (Terminals 2 and 3).
@@ -24,7 +24,7 @@ device: auto
 
 data:
   # The server loads data only for centralized evaluation after each round.
-  # synthetic: quick smoke test — no real images needed.
+  # name: none → no server-side dataset; evaluation is 100% federated.
   # To enable real centralized eval, switch to:
   #   name: mammo_bench
   #   manifest_path: /absolute/path/to/server_test_manifest.csv
@@ -39,12 +39,11 @@ data:
   num_workers: 0            # 0 avoids gRPC/fork conflicts
   val_fraction: 0.0
   test_fraction: 1.0
-  synthetic_num_samples: 32
 
 model:
   name: resnet50
   weight_source: radimagenet
-  checkpoint_path: null     # leave null → uses $FEDMAMMO_RADIMAGENET_DIR
+  checkpoint_path: null     # leave null → uses $FEDMAMMOBENCH_RADIMAGENET_DIR
   in_channels: 1
   num_classes: 2
   dropout: 0.2

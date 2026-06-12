@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from torch import nn
 
-from fedmammo.configs.schema import ModelConfig
-from fedmammo.models.weight_loaders.base import LoadReport
+from fedmammobench.configs.schema import ModelConfig
+from fedmammobench.models.weight_loaders.base import LoadReport
 
 
 class NoneLoader:

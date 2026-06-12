@@ -7,10 +7,10 @@ between communication rounds.
 Server side: injects ``proximal_mu`` into each client's ``FitIns.config``
 via :meth:`configure_fit`. Aggregation is identical to FedAvg.
 
-Client side: :class:`fedmammo.federated.client.FedMammoClient` reads
+Client side: :class:`fedmammobench.federated.client.FedMammoBenchClient` reads
 ``config["proximal_mu"]`` in :meth:`fit`, captures the global parameters
 before any local update, and adds the proximal penalty each batch via
-:meth:`fedmammo.training.Trainer.train_one_epoch`.
+:meth:`fedmammobench.training.Trainer.train_one_epoch`.
 """
 
 from __future__ import annotations
@@ -22,9 +22,9 @@ from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.strategy import FedAvg
 
-from fedmammo.federated.strategies.fedavg import _weighted_average
-from fedmammo.federated.strategies.registry import register_strategy
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.federated.strategies.fedavg import _weighted_average
+from fedmammobench.federated.strategies.registry import register_strategy
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 

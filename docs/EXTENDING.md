@@ -1,16 +1,19 @@
-# Extending FedMammo
+# Extending FedMammoBench
 
 This guide is the **pipeline for adding or modifying each important module** of the
 federated infrastructure. Every section is a self-contained recipe: which files to
 touch, in what order, and which test to add.
 
-The codebase exposes three extension styles:
+The codebase exposes two extension styles:
 
 | Mechanism | Used by | How a new entry is discovered |
 |-----------|---------|-------------------------------|
-| **Registry + decorator** | strategies, models, weight loaders | `@register_*` at import time |
-| **Factory `if/elif`** | datasets | explicit branch in `build_dataset()` |
+| **Registry + decorator** | strategies, models, weight loaders, **datasets** | `@register_*` at import time |
 | **Dataclass + `validate()`** | configs | new field/section + validation rule |
+
+> Datasets used to be a manual `if/elif` chain in `build_dataset()`; as of v0.3.0
+> they use a `@register_dataset` registry like strategies and models, so adding a
+> dataset no longer means editing the factory.
 
 > **Golden rule for reproducibility:** any change that alters RNG consumption order,
 > default values, the `Trainer` signature, or aggregation math is a *breaking change*.
@@ -23,17 +26,17 @@ The codebase exposes three extension styles:
 
 Strategies use the **registry pattern** — the cleanest extension point in the repo.
 
-**Files:** `src/fedmammo/federated/strategies/<name>.py`, `strategies/__init__.py`
+**Files:** `src/fedmammobench/federated/strategies/<name>.py`, `strategies/__init__.py`
 
-1. **Create the module** `src/fedmammo/federated/strategies/my_strategy.py`. Inherit
+1. **Create the module** `src/fedmammobench/federated/strategies/my_strategy.py`. Inherit
    from `flwr.server.strategy.Strategy` or, more commonly, subclass `FedAvg` so you
    only override what differs (`configure_fit`, `aggregate_fit`, ...):
 
    ```python
    from typing import Any
    from flwr.server.strategy import FedAvg
-   from fedmammo.federated.strategies.fedavg import _weighted_average
-   from fedmammo.federated.strategies.registry import register_strategy
+   from fedmammobench.federated.strategies.fedavg import _weighted_average
+   from fedmammobench.federated.strategies.registry import register_strategy
 
    class MyStrategy(FedAvg):
        def __init__(self, *, my_param: float = 0.1, **kwargs: Any) -> None:
@@ -51,7 +54,7 @@ Strategies use the **registry pattern** — the cleanest extension point in the 
    runs at package import (the registry is only populated by importing the module):
 
    ```python
-   from fedmammo.federated.strategies import my_strategy  # noqa: F401
+   from fedmammobench.federated.strategies import my_strategy  # noqa: F401
    ```
 
 3. **Use it** in YAML — no other code changes:
@@ -67,8 +70,8 @@ Strategies use the **registry pattern** — the cleanest extension point in the 
 
 4. **If clients must do extra work** (like FedProx's proximal term), pass data through
    the per-round config: set keys in `configure_fit()` (server side) and read them in
-   `FedMammoClient.fit()` via `config.get(...)` (client side). See
-   [fedprox.py](../src/fedmammo/federated/strategies/fedprox.py) as the reference
+   `FedMammoBenchClient.fit()` via `config.get(...)` (client side). See
+   [fedprox.py](../src/fedmammobench/federated/strategies/fedprox.py) as the reference
    end-to-end example.
 
 **Test:** `assert "my_strategy" in list_strategies()` and that `build_strategy("my_strategy", my_param=0.2)` returns your class.
@@ -80,16 +83,16 @@ Strategies use the **registry pattern** — the cleanest extension point in the 
 Models also use a **registry** (`register_model`), plus a build pipeline that wires in
 pretrained weights and the freeze policy automatically.
 
-**Files:** `src/fedmammo/models/<arch>.py`, `models/__init__.py`, `configs/model_config.py`
+**Files:** `src/fedmammobench/models/<arch>.py`, `models/__init__.py`, `configs/model_config.py`
 
-1. **Implement the builder** in `src/fedmammo/models/my_arch.py`. It receives a
+1. **Implement the builder** in `src/fedmammobench/models/my_arch.py`. It receives a
    `ModelConfig` and must return an `nn.Module` with the correct `in_channels`,
    `num_classes`, and `dropout`:
 
    ```python
    from torch import nn
-   from fedmammo.configs.schema import ModelConfig
-   from fedmammo.models.factory import register_model
+   from fedmammobench.configs.schema import ModelConfig
+   from fedmammobench.models.factory import register_model
 
    @register_model("my_arch")
    def _build_my_arch(cfg: ModelConfig) -> nn.Module:
@@ -103,11 +106,11 @@ pretrained weights and the freeze policy automatically.
 2. **Side-effect import** in `models/__init__.py`:
 
    ```python
-   from fedmammo.models.my_arch import MyArchClassifier  # noqa: F401
+   from fedmammobench.models.my_arch import MyArchClassifier  # noqa: F401
    ```
 
 3. **Add the name to the config Literal** in
-   [model_config.py](../src/fedmammo/configs/model_config.py) so validation accepts it:
+   [model_config.py](../src/fedmammobench/configs/model_config.py) so validation accepts it:
 
    ```python
    name: Literal[
@@ -127,20 +130,19 @@ module; a dummy forward pass with shape `(B, in_channels, H, W)` yields `(B, num
 
 ## 3. Add a dataset
 
-> **Note — architectural inconsistency:** datasets are the one module that does **not**
-> use a registry. `build_dataset()` is a manual `if/elif` chain. Adding a dataset
-> therefore touches more places than a strategy or model. See section 5 for the
-> proposal to unify this.
+Datasets use the **registry** (`register_dataset`), symmetric with strategies and
+models. Adding one no longer touches `factory.py` — you write a loader module, a
+registered builder, and a side-effect import.
 
-**Files:** `src/fedmammo/datasets/<name>.py`, `datasets/factory.py`, `datasets/__init__.py`, `configs/data_config.py`
+**Files:** `src/fedmammobench/datasets/<name>.py`, `datasets/__init__.py`
 
-1. **Subclass `MammographyDataset`** in `src/fedmammo/datasets/my_dataset.py`. The base
+1. **Subclass `MammographyDataset`** in `src/fedmammobench/datasets/my_dataset.py`. The base
    class handles image IO and transforms; your job is to produce a list of `Sample`
    records. **Critically, populate `patient_id`** on every `Sample` — it is what
    prevents patient leakage during federated partitioning:
 
    ```python
-   from fedmammo.datasets.base import MammographyDataset, Sample
+   from fedmammobench.datasets.base import MammographyDataset, Sample
 
    class MyDataset(MammographyDataset):
        @classmethod
@@ -154,12 +156,16 @@ module; a dummy forward pass with shape `(B, in_channels, H, W)` yields `(B, num
 
    **Do the train/val/test split at the patient level**, never by shuffling images —
    this was bug C1. Reuse `_stratified_patient_split()` from
-   [cbis_ddsm.py](../src/fedmammo/datasets/cbis_ddsm.py) rather than reimplementing it.
+   [cbis_ddsm.py](../src/fedmammobench/datasets/cbis_ddsm.py) rather than reimplementing it.
 
-2. **Add a branch** in [factory.py](../src/fedmammo/datasets/factory.py) `build_dataset()`:
+2. **Register a builder** in the same module. The builder receives
+   `(cfg, train_tx, eval_tx)` and returns the `{"train", "val", "test"}` mapping:
 
    ```python
-   if name == "my_dataset":
+   from fedmammobench.datasets.registry import register_dataset
+
+   @register_dataset("my_dataset")
+   def _build_my_dataset(cfg, train_tx, eval_tx):
        if not cfg.data.manifest_path or not cfg.data.image_root:
            raise ValueError("data.name=my_dataset requires manifest_path and image_root.")
        return MyDataset.from_manifest(
@@ -174,18 +180,16 @@ module; a dummy forward pass with shape `(B, in_channels, H, W)` yields `(B, num
        )
    ```
 
-3. **Export** in `datasets/__init__.py` and **add the name to the `Literal`** in
-   [data_config.py](../src/fedmammo/configs/data_config.py):
-
-   ```python
-   name: Literal["cbis_ddsm", "vindr_mammo", "synthetic", "mammo_bench", "my_dataset", "none"]
-   ```
+3. **Side-effect import** in [datasets/__init__.py](../src/fedmammobench/datasets/__init__.py)
+   so the decorator runs at package import (the registry is only populated by importing
+   the module). `data.name` is a plain `str` validated against the registry at build
+   time — there is **no `Literal` to update**.
 
 4. **Document the manifest format** in [DATA_PREPARATION.md](DATA_PREPARATION.md):
    required columns (`image_path`, `label`, `patient_id`, `split`) and any dataset-specific
    policy fields.
 
-**Test:** load a tiny fixture CSV and assert
+**Test:** `assert "my_dataset" in list_datasets()`, then load a tiny fixture CSV and assert
 `set(train_patient_ids) & set(val_patient_ids) == set()` (no leakage), the same check
 used for C1.
 
@@ -201,11 +205,11 @@ after several rounds.
 
 | Section | Module | Owns |
 |---------|--------|------|
-| `data`, `partitioning` | [data_config.py](../src/fedmammo/configs/data_config.py) | split fractions, NaN patient-id check (C5) |
-| `model` | [model_config.py](../src/fedmammo/configs/model_config.py) | arch↔weights↔channels compatibility |
-| `training` | [training_config.py](../src/fedmammo/configs/training_config.py) | optimizer/loss/AMP rules (FedProx+AMP warning, C2) |
-| `federated` | [federated_config.py](../src/fedmammo/configs/federated_config.py) | client counts, gRPC limits, model-config hash (E1) |
-| cross-section | [experiment.py](../src/fedmammo/configs/experiment.py) | preset↔channels, `unfreeze_at_epoch` reachability |
+| `data`, `partitioning` | [data_config.py](../src/fedmammobench/configs/data_config.py) | split fractions, NaN patient-id check (C5) |
+| `model` | [model_config.py](../src/fedmammobench/configs/model_config.py) | arch↔weights↔channels compatibility |
+| `training` | [training_config.py](../src/fedmammobench/configs/training_config.py) | optimizer/loss/AMP rules (FedProx+AMP warning, C2) |
+| `federated` | [federated_config.py](../src/fedmammobench/configs/federated_config.py) | client counts, gRPC limits, model-config hash (E1), `server_training` |
+| cross-section | [experiment.py](../src/fedmammobench/configs/experiment.py) | preset↔channels, `unfreeze_at_epoch` reachability |
 
 **To add a field:**
 
@@ -241,15 +245,26 @@ Before opening a PR / generating publication results:
 
 ---
 
-## Appendix — proposed registry unification for datasets
+## Appendix — Hybrid server-side training
 
-Strategies and models auto-register via `@register_*`; datasets are a manual `if/elif`
-in `build_dataset()`. Unifying datasets onto a `@register_dataset("name")` registry
-would:
+The central node can train on its own data in addition to aggregating clients.
+This is configured (not subclassed) via `federated.server_training`:
 
-- remove the need to edit `factory.py` for every new dataset (step 3.2 above), and
-- make the three module families consistent and symmetric.
+- **Config:** `ServerTrainingConfig` in
+  [federated_config.py](../src/fedmammobench/configs/federated_config.py)
+  (`enabled`, `manifest_path`, `image_root`, `dataset_name`, `local_epochs`,
+  `server_weight`).
+- **Logic:** [server_training.py](../src/fedmammobench/federated/server_training.py).
+  `ServerTrainer` builds the server's dataset/model/optimizer; `attach_server_training`
+  wraps any strategy's `aggregate_fit` so the server training step runs each round
+  after aggregation. Wiring lives in `_maybe_attach_server_training` in
+  [server.py](../src/fedmammobench/federated/server.py) (active in both simulation
+  and gRPC paths).
+- **Semantics:** `new_global = (1 - server_weight) * aggregated + server_weight *
+  server_trained`, where `server_trained` is the result of `local_epochs` of SGD
+  starting from the aggregated weights. `server_weight = 1.0` takes the
+  server-trained weights outright.
 
-The `Literal` in `DataConfig.name` would still need updating (it is the validation
-allow-list), unless validation is changed to check membership against the registry at
-runtime. This is a non-breaking refactor and a good follow-up task.
+To change the blending rule or add server-side scheduling, edit
+`attach_server_training` / `ServerTrainer.train`. Tests live in
+[test_server_training.py](../tests/test_server_training.py).

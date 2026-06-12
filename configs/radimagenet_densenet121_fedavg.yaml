@@ -6,7 +6,7 @@
 #
 # Checkpoint placement (choose one):
 #   (a) Set model.checkpoint_path to the absolute path of RadImageNet-densenet121.pth
-#   (b) Set $FEDMAMMO_RADIMAGENET_DIR to the directory containing RadImageNet-densenet121.pth
+#   (b) Set $FEDMAMMOBENCH_RADIMAGENET_DIR to the directory containing RadImageNet-densenet121.pth
 
 name: radimagenet_densenet121_fedavg
 mode: federated
@@ -15,7 +15,9 @@ output_dir: runs
 device: auto
 
 data:
-  name: synthetic
+  name: cbis_ddsm          # set manifest_path + image_root below to your data
+  manifest_path: /absolute/path/to/manifest.csv
+  image_root: /absolute/path/to/images
   image_size: 224
   grayscale: true
   num_classes: 2

@@ -26,7 +26,7 @@ Strategies
       N→M:  generalisation of the above.
 
 ``"legacy_mean"``
-    Original fedmammo behaviour (pre-FASE 3). Averages channels and repeats
+    Original fedmammobench behaviour (pre-FASE 3). Averages channels and repeats
     *without* the ``src_in/target_in`` scale factor. Kept for reproducibility
     of older runs.  Produces activations that are ``target_in`` times larger
     than ``sum_preserving`` when target_in > src_in.
@@ -39,7 +39,7 @@ from typing import Literal
 import torch
 from torch import nn
 
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 

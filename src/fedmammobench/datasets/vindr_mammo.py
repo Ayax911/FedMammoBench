@@ -33,8 +33,9 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from fedmammo.datasets.base import BENIGN, MALIGNANT, MammographyDataset, Sample
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.datasets.base import BENIGN, MALIGNANT, MammographyDataset, Sample
+from fedmammobench.datasets.registry import register_dataset
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
@@ -189,7 +190,7 @@ class VinDrMammoDataset(MammographyDataset):
                 splits["train"] = train_idx[n_val:].tolist()
         else:
             # No split column — patient-disjoint stratified split.
-            from fedmammo.datasets.cbis_ddsm import _stratified_patient_split
+            from fedmammobench.datasets.cbis_ddsm import _stratified_patient_split
 
             splits = _stratified_patient_split(samples, val_fraction, 0.1, seed)
 
@@ -218,6 +219,25 @@ def _pick_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
         if cand.lower() in lower:
             return lower[cand.lower()]
     return None
+
+
+@register_dataset("vindr_mammo")
+def _build_vindr_mammo(cfg, train_tx, eval_tx):  # noqa: ANN001, ANN201
+    """Registered builder for the VinDr-Mammo dataset."""
+    if not cfg.data.annotations_path or not cfg.data.image_root:
+        raise ValueError(
+            "data.name=vindr_mammo requires both `annotations_path` and `image_root`."
+        )
+    return VinDrMammoDataset.from_annotations(
+        annotations_path=cfg.data.annotations_path,
+        image_root=cfg.data.image_root,
+        val_fraction=cfg.data.val_fraction,
+        birads_3_policy=cfg.data.birads_3_policy,
+        seed=cfg.seed,
+        grayscale=cfg.data.grayscale,
+        transform_train=train_tx,
+        transform_eval=eval_tx,
+    )
 
 
 __all__ = ["VinDrMammoDataset"]

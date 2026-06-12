@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from fedmammo.evaluation.metrics import BinaryClassificationMetrics, compute_metrics
+from fedmammobench.evaluation.metrics import BinaryClassificationMetrics, compute_metrics
 
 
 class Evaluator:

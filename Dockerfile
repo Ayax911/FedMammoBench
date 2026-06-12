@@ -1,6 +1,6 @@
-# Multi-stage Dockerfile for fedmammo.
+# Multi-stage Dockerfile for fedmammobench.
 # Default build is CPU-only. For CUDA, override BASE_IMAGE at build time, e.g.:
-#   docker build --build-arg BASE_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 -t fedmammo:gpu .
+#   docker build --build-arg BASE_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 -t fedmammobench:gpu .
 
 ARG BASE_IMAGE=python:3.11-slim-bookworm
 

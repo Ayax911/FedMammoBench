@@ -1,6 +1,6 @@
 # RADIMAGENET_READINESS_REPORT.md — ¿Está el sistema preparado para integrar RadImageNet?
 
-> **Pregunta**: tras los fixes C1/C2/C3, ¿cuánto avanzó `fedmammo` hacia la integración de transfer learning con RadImageNet? ¿Qué bloqueadores siguen y cuál es el camino mínimo?
+> **Pregunta**: tras los fixes C1/C2/C3, ¿cuánto avanzó `fedmammobench` hacia la integración de transfer learning con RadImageNet? ¿Qué bloqueadores siguen y cuál es el camino mínimo?
 > **Respuesta corta**: **cero progreso técnico**. Los fixes C1/C2/C3 trabajaron exclusivamente en partitioning, training loop y NaN handling. Ningún archivo de `models/`, `configs/schema.ModelConfig`, ni `datasets/transforms.py` fue modificado. Todos los bloqueadores del audit inicial siguen en pie.
 
 ---
@@ -9,7 +9,7 @@
 
 ### Bloqueador 1 — `ModelConfig` no expone fuente de pesos
 
-**Ubicación**: `src/fedmammo/configs/schema.py:115-133`.
+**Ubicación**: `src/fedmammobench/configs/schema.py:115-133`.
 
 ```python
 @dataclass
@@ -29,7 +29,7 @@ class ModelConfig:
 
 ### Bloqueador 2 — Builders hardcoded torchvision `Weights.DEFAULT`
 
-**Ubicación**: `src/fedmammo/models/resnet.py:28`, `src/fedmammo/models/efficientnet.py:24`.
+**Ubicación**: `src/fedmammobench/models/resnet.py:28`, `src/fedmammobench/models/efficientnet.py:24`.
 
 ```python
 # resnet.py:28
@@ -46,7 +46,7 @@ backbone = torchvision.models.resnet18(
 
 ### Bloqueador 3 — `Literal` del backbone limita opciones
 
-**Ubicación**: `src/fedmammo/configs/schema.py:129`.
+**Ubicación**: `src/fedmammobench/configs/schema.py:129`.
 
 ```python
 name: Literal["resnet18", "efficientnet_b0"] = "resnet18"
@@ -64,7 +64,7 @@ De los 4 backbones de RadImageNet, **ninguno** está soportado por el repo. ResN
 
 ### Bloqueador 4 — Channel adapter funciona, pero solo se invoca desde builders torchvision
 
-**Ubicación**: `src/fedmammo/models/_adapt.py:9-42`, llamado desde `resnet.py:32` y `efficientnet.py:35`.
+**Ubicación**: `src/fedmammobench/models/_adapt.py:9-42`, llamado desde `resnet.py:32` y `efficientnet.py:35`.
 
 El `adapt_first_conv()` está bien implementado (promedia los pesos RGB para producir un kernel de N canales). Pero solo se invoca dentro de los builders torchvision-centric. Cualquier checkpoint externo no pasaría por este adapter automáticamente.
 
@@ -72,7 +72,7 @@ El `adapt_first_conv()` está bien implementado (promedia los pesos RGB para pro
 
 ### Bloqueador 5 — Normalize por canal no soportado en transforms
 
-**Ubicación**: `src/fedmammo/configs/schema.py:163-164` y `src/fedmammo/datasets/transforms.py:37-42`.
+**Ubicación**: `src/fedmammobench/configs/schema.py:163-164` y `src/fedmammobench/datasets/transforms.py:37-42`.
 
 ```python
 # schema.py
@@ -96,7 +96,7 @@ Aun para grayscale 1-canal, `(0.5, 0.25)` son valores genéricos arbitrarios —
 
 ### Bloqueador 6 — Sin loader para checkpoints externos no-torchvision
 
-**Ubicación**: `src/fedmammo/utils/checkpoint.py`.
+**Ubicación**: `src/fedmammobench/utils/checkpoint.py`.
 
 - `load_checkpoint()` (línea 50-71) llama `torch.load(path, map_location=...)` y aplica `model.load_state_dict(payload["state_dict"])`.
 - Asume formato `{state_dict: ..., optimizer: ..., epoch: ..., extra: ...}`.
@@ -153,7 +153,7 @@ Reutilizar `_from_dict` de `configs/loader.py` (ya maneja dataclass nesting recu
 
 ### Paso 2 — Crear abstracción `WeightLoader` (~1 h)
 
-Nuevo módulo `src/fedmammo/models/weight_loaders.py`:
+Nuevo módulo `src/fedmammobench/models/weight_loaders.py`:
 
 ```python
 class WeightLoader(Protocol):
@@ -180,7 +180,7 @@ class CustomCheckpointLoader:
     def load(self, model, cfg):
         if cfg.checkpoint_path is None:
             raise ValueError("weight_source='custom' requires checkpoint_path")
-        # reuse fedmammo.utils.checkpoint.load_checkpoint
+        # reuse fedmammobench.utils.checkpoint.load_checkpoint
 
 _LOADERS = {
     "imagenet": ImageNetLoader(),
@@ -235,7 +235,7 @@ def apply_freeze_policy(model: nn.Module, cfg: ModelConfig) -> None:
                 param.requires_grad = False
 ```
 
-Invocar desde el cliente (`FedMammoClient.fit()`) considerando `cfg.training.unfreeze_at_epoch` y la ronda actual.
+Invocar desde el cliente (`FedMammoBenchClient.fit()`) considerando `cfg.training.unfreeze_at_epoch` y la ronda actual.
 
 **Interacción con FedProx (N9)**: si el backbone está frozen, `self.model.parameters()` SIGUE incluyendo todos los params (frozen o no), así que `global_params` clona TODOS. Si queremos optimizar memoria, filtrar por `requires_grad`:
 

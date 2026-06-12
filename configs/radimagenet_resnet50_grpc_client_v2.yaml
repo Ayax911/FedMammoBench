@@ -33,13 +33,14 @@ output_dir: runs
 device: auto
 
 data:
-  # Use synthetic for smoke testing — no real images needed.
-  # For real data, change to:
+  # Each client node provides its own data:
   #   name: mammo_bench      (or cbis_ddsm)
   #   manifest_path: /path/to/nodeN_manifest.csv   (overridden by --manifest)
   #   image_root: /path/to/images                  (overridden by --data-dir)
   #   balance_classes: true
   name: mammo_bench
+  manifest_path: /path/to/nodeN_manifest.csv
+  image_root: /path/to/images
   image_size: 224
   grayscale: true
   num_classes: 2
@@ -47,13 +48,12 @@ data:
   num_workers: 0            # 0 avoids gRPC/fork conflicts
   val_fraction: 0.15        # 15% of local data → local validation
   test_fraction: 0.0
-  synthetic_num_samples: 64
   balance_classes: true
 
 model:
   name: resnet50
   weight_source: radimagenet
-  checkpoint_path: null     # leave null → uses $FEDMAMMO_RADIMAGENET_DIR
+  checkpoint_path: null     # leave null → uses $FEDMAMMOBENCH_RADIMAGENET_DIR
   in_channels: 1
   num_classes: 2
   dropout: 0.2

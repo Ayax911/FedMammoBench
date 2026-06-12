@@ -1,10 +1,10 @@
-"""Flower client for fedmammo.
+"""Flower client for fedmammobench.
 
 The client owns its local train and val DataLoaders and its model. On each
 ``fit`` call it:
 
 1. Loads server-pushed parameters into the local model.
-2. Runs ``local_epochs`` of training via :class:`fedmammo.training.Trainer`.
+2. Runs ``local_epochs`` of training via :class:`fedmammobench.training.Trainer`.
 3. Returns the updated parameters, number of training samples, and a metrics
    dict (training loss; per-class counts).
 
@@ -17,6 +17,7 @@ engine calls per virtual client, given a numeric client id.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable
 
 import numpy as np
@@ -25,24 +26,24 @@ import flwr as fl
 from flwr.common import Context, NDArrays, Scalar
 from torch.utils.data import DataLoader
 
-from fedmammo.configs.schema import ExperimentConfig
-from fedmammo.datasets import MammographyDataset, build_dataloader, partition_indices
-from fedmammo.evaluation import Evaluator
-from fedmammo.federated.param_utils import (
+from fedmammobench.configs.schema import ExperimentConfig
+from fedmammobench.datasets import MammographyDataset, build_dataloader, partition_indices
+from fedmammobench.evaluation import Evaluator
+from fedmammobench.federated.param_utils import (
     load_ndarrays_to_state_dict,
     state_dict_to_ndarrays,
 )
-from fedmammo.models import build_model
-from fedmammo.models.weight_loaders import apply_freeze_policy
-from fedmammo.training import Trainer, build_loss, build_optimizer
-from fedmammo.utils.device import resolve_device
-from fedmammo.utils.logging_utils import get_logger
-from fedmammo.utils.seeding import set_global_seed
+from fedmammobench.models import build_model
+from fedmammobench.models.weight_loaders import apply_freeze_policy
+from fedmammobench.training import Trainer, build_loss, build_optimizer
+from fedmammobench.utils.device import resolve_device
+from fedmammobench.utils.logging_utils import get_logger
+from fedmammobench.utils.seeding import set_global_seed
 
 _logger = get_logger(__name__)
 
 
-class FedMammoClient(fl.client.NumPyClient):
+class FedMammoBenchClient(fl.client.NumPyClient):
     """A single federated client (one virtual hospital).
 
     Args:
@@ -141,6 +142,7 @@ class FedMammoClient(fl.client.NumPyClient):
             log_tag=f"client_{self.client_id}",
         )
         last: dict[str, Any] = {}
+        fit_start = time.perf_counter()
         for ep in range(local_epochs):
             last = trainer.train_one_epoch(
                 self.train_loader,
@@ -148,6 +150,7 @@ class FedMammoClient(fl.client.NumPyClient):
                 proximal_mu=proximal_mu,
                 global_params=global_params,
             )
+        fit_seconds = time.perf_counter() - fit_start
         n_samples = int(last.get("samples", len(self.train_loader.dataset)))  # type: ignore[arg-type]
         # train_loss includes the proximal penalty for FedProx; task_loss is
         # cross-entropy only and is the correct metric for strategy comparisons.
@@ -158,7 +161,17 @@ class FedMammoClient(fl.client.NumPyClient):
             "task_loss": task_loss,
             "client_id": self.client_id,
             "num_samples": n_samples,
+            # Wall-clock seconds this node spent in local training this round.
+            "fit_seconds": float(fit_seconds),
+            "local_epochs": local_epochs,
         }
+        _logger.info(
+            "client %d: fit done in %.2fs (%d epochs, %d samples)",
+            self.client_id,
+            fit_seconds,
+            local_epochs,
+            n_samples,
+        )
         return state_dict_to_ndarrays(self.model), n_samples, metrics
 
     def evaluate(
@@ -169,7 +182,9 @@ class FedMammoClient(fl.client.NumPyClient):
             # Reporting num_examples=0 ensures Flower's weighted aggregator
             # ignores this client's row instead of polluting the global mean.
             return 0.0, 0, {"warning": "no_local_val"}
+        eval_start = time.perf_counter()
         result = self.evaluator.evaluate(self.val_loader, criterion=self.criterion)
+        eval_seconds = time.perf_counter() - eval_start
         loss = float(result.get("loss", 0.0))
         n_samples = int(len(self.val_loader.dataset))  # type: ignore[arg-type]
         numeric_keys = (
@@ -195,6 +210,8 @@ class FedMammoClient(fl.client.NumPyClient):
                 continue
             metrics[k] = v
         metrics["client_id"] = self.client_id
+        # Wall-clock seconds this node spent evaluating the global model.
+        metrics["eval_seconds"] = float(eval_seconds)
         return loss, n_samples, metrics
 
 
@@ -220,7 +237,7 @@ def _materialize_client_partitions(
 
     # Build patient-id array; fall back to sample-level partitioning when any
     # patient_id is None or NaN (pandas reads missing values as float NaN).
-    from fedmammo.configs.data_config import check_patient_ids_for_nan
+    from fedmammobench.configs.data_config import check_patient_ids_for_nan
 
     raw_pids = train_ds.patient_ids
     if check_patient_ids_for_nan(raw_pids):
@@ -307,7 +324,7 @@ def client_fn_factory(
         # Seed each client distinctly so dropout/data augmentation order
         # diverges across clients but reruns are reproducible.
         set_global_seed(cfg.seed + cid + 1, deterministic=True)
-        np_client = FedMammoClient(
+        np_client = FedMammoBenchClient(
             client_id=cid,
             cfg=cfg,
             train_dataset=train_ds,
@@ -319,4 +336,4 @@ def client_fn_factory(
     return client_fn
 
 
-__all__ = ["FedMammoClient", "client_fn_factory"]
+__all__ = ["FedMammoBenchClient", "client_fn_factory"]

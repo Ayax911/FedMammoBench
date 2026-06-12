@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from fedmammo.configs.data_config import DataConfig, PartitioningConfig
-from fedmammo.configs.federated_config import FederatedConfig
-from fedmammo.configs.model_config import ModelConfig
-from fedmammo.configs.training_config import TrainingConfig
+from fedmammobench.configs.data_config import DataConfig, PartitioningConfig
+from fedmammobench.configs.federated_config import FederatedConfig
+from fedmammobench.configs.model_config import ModelConfig
+from fedmammobench.configs.training_config import TrainingConfig
 
 
 @dataclass

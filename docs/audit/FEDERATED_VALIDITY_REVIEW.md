@@ -1,7 +1,7 @@
 # FEDERATED_VALIDITY_REVIEW.md — ¿Qué experimentos federados son defendibles científicamente hoy?
 
 > **Audiencia**: revisor de paper, comité de tesis, comité interno de validación clínica.
-> **Pregunta central**: dado el estado actual de `fedmammo` (post-fixes C1/C2/C3), ¿cuáles de los experimentos configurables hoy producen resultados defendibles en una publicación científica seria?
+> **Pregunta central**: dado el estado actual de `fedmammobench` (post-fixes C1/C2/C3), ¿cuáles de los experimentos configurables hoy producen resultados defendibles en una publicación científica seria?
 > **Metodología**: razonamiento desde los hallazgos verificados en `POST_FIX_AUDIT.md`, aplicado por archivo de configuración existente en `configs/`.
 
 ---
@@ -63,8 +63,8 @@ Este YAML:
 **Cómo verificar antes de publicar**: ejecutar este check manual:
 
 ```python
-from fedmammo.configs.loader import load_config
-from fedmammo.datasets import build_dataset
+from fedmammobench.configs.loader import load_config
+from fedmammobench.datasets import build_dataset
 
 cfg = load_config("configs/fedavg_cbis_ddsm.yaml")
 datasets = build_dataset(cfg)

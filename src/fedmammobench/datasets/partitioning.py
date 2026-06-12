@@ -22,7 +22,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 

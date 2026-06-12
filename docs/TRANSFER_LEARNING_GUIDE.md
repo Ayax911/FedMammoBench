@@ -1,7 +1,7 @@
 # Transfer Learning Guide
 
 This guide covers using pretrained weights (ImageNet or RadImageNet) for
-mammography classification in fedmammo.
+mammography classification in fedmammobench.
 
 ---
 
@@ -38,11 +38,11 @@ model:
 **Option B — directory via env var (recommended for shared clusters)**
 
 ```bash
-export FEDMAMMO_RADIMAGENET_DIR=/data/checkpoints/radimagenet
+export FEDMAMMOBENCH_RADIMAGENET_DIR=/data/checkpoints/radimagenet
 ```
 
-Place all `.pth` files in that directory.  fedmammo will look for
-`$FEDMAMMO_RADIMAGENET_DIR/RadImageNet-{arch}.pth`.
+Place all `.pth` files in that directory.  fedmammobench will look for
+`$FEDMAMMOBENCH_RADIMAGENET_DIR/RadImageNet-{arch}.pth`.
 
 ---
 

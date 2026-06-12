@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from fedmammo.configs.schema import LossConfig
+from fedmammobench.configs.schema import LossConfig
 
 
 class FocalLoss(nn.Module):

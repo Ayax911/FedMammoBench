@@ -2,7 +2,7 @@
 
 Usage::
 
-    python scripts/run_centralized.py --config configs/centralized_synthetic.yaml
+    python scripts/run_centralized.py --config configs/radimagenet_resnet50_centralized.yaml
 
 Loads the config, builds a single train/val/test pipeline, trains for
 ``training.epochs`` epochs, and saves the final checkpoint + metrics CSV +
@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 def _add_src_to_path() -> None:
-    """Make ``src/fedmammo`` importable when running without ``pip install``."""
+    """Make ``src/fedmammobench`` importable when running without ``pip install``."""
     here = Path(__file__).resolve()
     src = here.parent.parent / "src"
     if src.is_dir() and str(src) not in sys.path:
@@ -26,12 +26,12 @@ def _add_src_to_path() -> None:
 
 _add_src_to_path()
 
-from fedmammo.configs import load_config, save_config  # noqa: E402
-from fedmammo.datasets import build_dataloader, build_dataset  # noqa: E402
-from fedmammo.evaluation import Evaluator  # noqa: E402
-from fedmammo.models import build_model  # noqa: E402
-from fedmammo.training import Trainer, build_loss, build_optimizer, build_scheduler  # noqa: E402
-from fedmammo.utils import (  # noqa: E402
+from fedmammobench.configs import load_config, save_config  # noqa: E402
+from fedmammobench.datasets import build_dataloader, build_dataset  # noqa: E402
+from fedmammobench.evaluation import Evaluator  # noqa: E402
+from fedmammobench.models import build_model  # noqa: E402
+from fedmammobench.training import Trainer, build_loss, build_optimizer, build_scheduler  # noqa: E402
+from fedmammobench.utils import (  # noqa: E402
     CSVLogger,
     TensorBoardWriter,
     get_logger,

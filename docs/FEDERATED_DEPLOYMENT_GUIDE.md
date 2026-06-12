@@ -52,7 +52,7 @@ The server supports **two evaluation modes**, controlled by the server-side
 | Mode | `data.name` | Where validation runs | Server needs images? | Output CSV |
 |---|---|---|---|---|
 | **Pure federated** (default, recommended) | `none` | Every client evaluates the aggregated model on its own local val split; server weighted-averages the metrics | **No** | `server_federated_metrics.csv` |
-| **Federated + centralized holdout** (opt-in) | `mammo_bench` / `cbis_ddsm` / `vindr_mammo` / `synthetic` | Same federated path *plus* a centralized eval on a holdout the server operator owns (e.g. a public benchmark) | **Yes** | both `server_metrics.csv` and `server_federated_metrics.csv` |
+| **Federated + centralized holdout** (opt-in) | `mammo_bench` / `cbis_ddsm` / `vindr_mammo` | Same federated path *plus* a centralized eval on a holdout the server operator owns (e.g. a public benchmark) | **Yes** | both `server_metrics.csv` and `server_federated_metrics.csv` |
 
 The federated path is always active when `min_evaluate_clients ≥ 1` and the
 clients have `val_fraction > 0`. The centralized path activates only when the
@@ -99,7 +99,7 @@ pip install -e ".[dev]"
 Verify core imports:
 
 ```bash
-python -c "import torch, flwr, fedmammo; print('OK')"
+python -c "import torch, flwr, fedmammobench; print('OK')"
 ```
 
 ### 2.2 RadImageNet Checkpoint
@@ -112,7 +112,7 @@ Place the file in a directory accessible by all machines and set:
 
 ```bash
 # Option A — environment variable (recommended for shared clusters)
-export FEDMAMMO_RADIMAGENET_DIR=/absolute/path/to/ckpt/dir
+export FEDMAMMOBENCH_RADIMAGENET_DIR=/absolute/path/to/ckpt/dir
 
 # Option B — inline in the YAML (per-machine config)
 # model:
@@ -144,8 +144,8 @@ are needed. The server listens on `0.0.0.0:8080`; clients connect to
 
 ### 2.5 Data
 
-For a **smoke test** with synthetic data, no real images are needed — both
-configs default to `data.name: synthetic`.
+The server config defaults to `data.name: none` (no server-side images;
+evaluation is fully federated). Each client provides its own data.
 
 For **real data**, on each client node:
 
@@ -164,7 +164,7 @@ Start processes **in this order**: server first, then clients.
 ### Terminal 1 — Server
 
 ```bash
-export FEDMAMMO_RADIMAGENET_DIR=/path/to/radimagenet
+export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/radimagenet
 python scripts/run_server.py \
     --config configs/radimagenet_resnet50_grpc_server.yaml \
     --output-dir runs/radimagenet_exp1
@@ -175,14 +175,14 @@ The server blocks and prints:
 ```
 INFO  run_server: Server config loaded. address=0.0.0.0:8080  rounds=5  strategy=fedavg  min_available_clients=2
 INFO  run_server: Artifacts will be written to: runs/radimagenet_exp1
-INFO  fedmammo.models.weight_loaders.radimagenet: [radimagenet/resnet50] Loaded checkpoint ...
-INFO  fedmammo.federated.server: Starting gRPC server on 0.0.0.0:8080 for 5 rounds (strategy=fedavg, min_available_clients=2). Waiting for clients to connect ...
+INFO  fedmammobench.models.weight_loaders.radimagenet: [radimagenet/resnet50] Loaded checkpoint ...
+INFO  fedmammobench.federated.server: Starting gRPC server on 0.0.0.0:8080 for 5 rounds (strategy=fedavg, min_available_clients=2). Waiting for clients to connect ...
 ```
 
 ### Terminal 2 — Client 0
 
 ```bash
-export FEDMAMMO_RADIMAGENET_DIR=/path/to/radimagenet
+export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/radimagenet
 python scripts/run_client.py \
     --config configs/radimagenet_resnet50_grpc_client.yaml \
     --server 127.0.0.1:8080 \
@@ -193,7 +193,7 @@ python scripts/run_client.py \
 ### Terminal 3 — Client 1
 
 ```bash
-export FEDMAMMO_RADIMAGENET_DIR=/path/to/radimagenet
+export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/radimagenet
 python scripts/run_client.py \
     --config configs/radimagenet_resnet50_grpc_client.yaml \
     --server 127.0.0.1:8080 \
@@ -213,19 +213,20 @@ Real data: add `--manifest /data/nodeN_manifest.csv --data-dir /data/images`.
 
 ```
 INFO  flwr: [ROUND 1] strategy.configure_fit: 2 clients selected
-INFO  fedmammo.federated.client: Client 0: apply_freeze_policy current_round=1 → backbone FROZEN
-INFO  fedmammo.federated.client: Client 1: apply_freeze_policy current_round=1 → backbone FROZEN
+INFO  fedmammobench.federated.client: Client 0: apply_freeze_policy current_round=1 → backbone FROZEN
+INFO  fedmammobench.federated.client: Client 1: apply_freeze_policy current_round=1 → backbone FROZEN
 INFO  flwr: [ROUND 1] strategy.aggregate_fit: received 2 results
-INFO  fedmammo.federated.server: [server] round 1 centralized: loss=0.71 auc=nan f1=nan ...
+INFO  fedmammobench.federated.server: [server] round 1 centralized: loss=0.71 auc=nan f1=nan ...
 ```
 
-`auc=nan` and `f1=nan` are **normal for synthetic data** (not enough samples
-to compute meaningful metrics). With real data these populate after round 1.
+`auc=nan` and `f1=nan` can appear on **very small or single-class batches**
+(not enough samples to compute meaningful metrics). With adequate real data
+these populate after round 1.
 
 ### Round 3 — progressive unfreeze
 
 ```
-INFO  fedmammo.federated.client: apply_freeze_policy current_round=3 → backbone UNFROZEN (unfreeze_at_epoch=3)
+INFO  fedmammobench.federated.client: apply_freeze_policy current_round=3 → backbone UNFROZEN (unfreeze_at_epoch=3)
 ```
 
 Both clients log this at the start of round 3. From this point the full
@@ -234,7 +235,7 @@ backbone trains and gradient flow is end-to-end.
 ### End of experiment
 
 ```
-INFO  fedmammo.federated.server: gRPC server stopped. Artifacts in runs/radimagenet_exp1
+INFO  fedmammobench.federated.server: gRPC server stopped. Artifacts in runs/radimagenet_exp1
 ```
 
 Artifacts written:
@@ -266,14 +267,14 @@ pytest tests/test_radimagenet.py -v
 
 # 2. Smoke — existing configs unbroken (BC validation)
 python -c "
-from fedmammo.configs import load_config
-for f in ['configs/fedavg_synthetic.yaml', 'configs/base.yaml']:
+from fedmammobench.configs import load_config
+for f in ['configs/fedavg_cbis_ddsm.yaml', 'configs/base.yaml']:
     load_config(f); print(f'OK: {f}')
 "
 
 # 3. Smoke — RadImageNet config parses correctly
 python -c "
-from fedmammo.configs import load_config
+from fedmammobench.configs import load_config
 cfg = load_config('configs/radimagenet_resnet50_grpc_server.yaml')
 print('weight_source:', cfg.model.weight_source)
 print('freeze_backbone:', cfg.model.freeze_backbone)
@@ -284,9 +285,9 @@ print('normalize_preset:', cfg.training.augmentation.normalize_preset)
 # 4. Smoke — checkpoint loads and model forward passes (requires torch + checkpoint)
 python -c "
 import os, torch
-os.environ['FEDMAMMO_RADIMAGENET_DIR'] = '/path/to/radimagenet'
-from fedmammo.configs import load_config
-from fedmammo.models import build_model
+os.environ['FEDMAMMOBENCH_RADIMAGENET_DIR'] = '/path/to/radimagenet'
+from fedmammobench.configs import load_config
+from fedmammobench.models import build_model
 cfg = load_config('configs/radimagenet_resnet50_grpc_server.yaml')
 model = build_model(cfg.model).eval()
 x = torch.zeros(1, 1, 224, 224)
@@ -296,9 +297,9 @@ print('Forward OK. Output shape:', y.shape)   # expect: torch.Size([1, 2])
 
 # 5. Smoke — freeze policy works
 python -c "
-from fedmammo.configs import load_config
-from fedmammo.models import build_model
-from fedmammo.models.weight_loaders import apply_freeze_policy
+from fedmammobench.configs import load_config
+from fedmammobench.models import build_model
+from fedmammobench.models.weight_loaders import apply_freeze_policy
 cfg = load_config('configs/radimagenet_resnet50_grpc_server.yaml')
 cfg.model.weight_source = 'none'   # skip checkpoint for this test
 import torch; model = build_model(cfg.model)
@@ -318,11 +319,11 @@ print('Round 3 — trainable:', r['trainable_params'], '/', r['total_params'])
 ```
 FileNotFoundError: RadImageNet-resnet50.pth not found.
   Checked: (1) cfg.model.checkpoint_path=None
-           (2) $FEDMAMMO_RADIMAGENET_DIR not set or file missing.
+           (2) $FEDMAMMOBENCH_RADIMAGENET_DIR not set or file missing.
   ...
 ```
 
-Fix: set `FEDMAMMO_RADIMAGENET_DIR` to the directory containing
+Fix: set `FEDMAMMOBENCH_RADIMAGENET_DIR` to the directory containing
 `RadImageNet-resnet50.pth`, or set `model.checkpoint_path` in the YAML to the
 absolute `.pth` path.
 
@@ -376,13 +377,12 @@ Ensure both YAMLs have identical `model.name`, `model.num_classes`, and
 ### NaN training loss
 
 Possible causes:
-- **Too few synthetic samples**: `synthetic_num_samples: 32` with
-  `batch_size: 16` gives only 2 batches. Increase to 256+ or use real data.
+- **Too few samples per client**: a tiny manifest with `batch_size: 16` may give
+  only a couple of batches. Use more data or lower `batch_size`.
 - **LR too high after unfreeze**: lower `optimizer.lr` to `1.0e-5` for the
   full fine-tune phase if loss spikes at round 3.
-- **Single-class batch**: with only 32 samples balanced between 2 classes,
-  random splits may produce all-one-class batches. Increase
-  `synthetic_num_samples` or set `balance_classes: true`.
+- **Single-class batch**: small client splits may produce all-one-class batches.
+  Set `balance_classes: true` or provide more data per client.
 
 ---
 
@@ -403,7 +403,7 @@ INFO  ... apply_freeze_policy current_round=3 → backbone UNFROZEN
 
 If `current_round` is always 0, the server config is using an old
 `on_fit_config_fn` that does not include the key. Ensure
-`src/fedmammo/federated/server.py:_make_on_fit_config_fn` returns both
+`src/fedmammobench/federated/server.py:_make_on_fit_config_fn` returns both
 `"server_round"` and `"current_round"`.
 
 ---
@@ -444,4 +444,4 @@ For strict BN stat freezing, modify `Trainer.train_one_epoch` to call
 
 For DenseNet121 or InceptionV3 (RadImageNet variants), update
 `model.name` and ensure `RadImageNet-{arch}.pth` exists in
-`$FEDMAMMO_RADIMAGENET_DIR`.
+`$FEDMAMMOBENCH_RADIMAGENET_DIR`.

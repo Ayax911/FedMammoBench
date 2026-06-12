@@ -25,7 +25,7 @@ SRC_PATH = Path(__file__).resolve().parent.parent / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-# fedmammo pulls torch transitively (datasets/base.py, federated/server.py).
+# fedmammobench pulls torch transitively (datasets/base.py, federated/server.py).
 # Skip the whole module if torch isn't installed in the current env — the
 # tests still cover everything end-to-end where torch is available.
 pytest.importorskip("torch")
@@ -34,8 +34,8 @@ pytest.importorskip("flwr")
 
 def test_build_dataset_none_returns_empty() -> None:
     """``data.name='none'`` is a sentinel that disables dataset construction."""
-    from fedmammo.configs.schema import DataConfig, ExperimentConfig
-    from fedmammo.datasets import build_dataset
+    from fedmammobench.configs.schema import DataConfig, ExperimentConfig
+    from fedmammobench.datasets import build_dataset
 
     cfg = ExperimentConfig(name="server_no_holdout", data=DataConfig(name="none"))
     out = build_dataset(cfg)
@@ -44,8 +44,8 @@ def test_build_dataset_none_returns_empty() -> None:
 
 def test_attach_federated_logging_writes_csv(tmp_path: Path) -> None:
     """Wrapper logs a row with phase='federated' and preserves return value."""
-    from fedmammo.federated.server import _attach_federated_logging
-    from fedmammo.utils.csv_logger import CSVLogger
+    from fedmammobench.federated.server import _attach_federated_logging
+    from fedmammobench.utils.csv_logger import CSVLogger
 
     csv_path = tmp_path / "server_federated_metrics.csv"
     csv_logger = CSVLogger(csv_path)
@@ -89,8 +89,8 @@ def test_attach_federated_logging_writes_csv(tmp_path: Path) -> None:
 
 def test_attach_federated_logging_handles_none_loss(tmp_path: Path) -> None:
     """When the strategy reports loss=None (no clients evaluated), do not crash."""
-    from fedmammo.federated.server import _attach_federated_logging
-    from fedmammo.utils.csv_logger import CSVLogger
+    from fedmammobench.federated.server import _attach_federated_logging
+    from fedmammobench.utils.csv_logger import CSVLogger
 
     csv_logger = CSVLogger(tmp_path / "server_federated_metrics.csv")
 

@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from torch.optim import Optimizer
 
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 

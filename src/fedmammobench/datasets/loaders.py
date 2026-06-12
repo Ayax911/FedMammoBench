@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from fedmammo.datasets.base import MammographyDataset
+from fedmammobench.datasets.base import MammographyDataset
 
 
 def build_dataloader(

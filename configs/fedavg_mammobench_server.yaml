@@ -17,11 +17,11 @@ name: fedavg_mammobench
 mode: federated
 
 data:
-  # Cuando el servidor no tiene imágenes reales, usa synthetic para que
-  # el servidor arranque sin necesitar datos locales. La evaluación
-  # centralizada queda deshabilitada (test set vacío).
+  # Cuando el servidor no tiene imágenes reales, usa name: none para que
+  # arranque sin datos locales. La evaluación centralizada queda
+  # deshabilitada (evaluación 100% federada).
   # Cambiar a name: mammo_bench cuando el servidor tenga su test set.
-  name: synthetic
+  name: none
   image_size: 224
   batch_size: 32
   grayscale: true
@@ -29,7 +29,6 @@ data:
   num_workers: 0
   val_fraction: 0.0
   test_fraction: 0.0
-  synthetic_num_samples: 32
 
 model:
   name: resnet18

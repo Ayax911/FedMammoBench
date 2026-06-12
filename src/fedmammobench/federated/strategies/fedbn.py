@@ -28,14 +28,14 @@ from typing import Any
 
 from flwr.server.strategy import Strategy
 
-from fedmammo.federated.strategies.registry import register_strategy
+from fedmammobench.federated.strategies.registry import register_strategy
 
 
 @register_strategy("fedbn")
 def build_fedbn(**_kwargs: Any) -> Strategy:
     raise NotImplementedError(
         "FedBN is registered but not implemented in this build. "
-        "Implement the client-side BN exclusion in FedMammoClient.get_parameters / "
+        "Implement the client-side BN exclusion in FedMammoBenchClient.get_parameters / "
         "set_parameters and instantiate FedAvg here."
     )
 

@@ -44,7 +44,7 @@ Use this checklist before submitting results for publication.
 ### Reproducibility
 
 - [ ] Save `config.snapshot.yaml` for every run (done automatically).
-- [ ] Record the exact version (`fedmammo.__version__`) in the paper.
+- [ ] Record the exact version (`fedmammobench.__version__`) in the paper.
 - [ ] Include hardware description (CPU/GPU model, RAM) in supplementary material.
 - [ ] Include `pip freeze` output in supplementary material.
 

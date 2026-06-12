@@ -22,7 +22,7 @@ from typing import Callable
 
 from torch import nn
 
-from fedmammo.configs.schema import ModelConfig
+from fedmammobench.configs.schema import ModelConfig
 
 _BuildFn = Callable[[ModelConfig], nn.Module]
 _REGISTRY: dict[str, _BuildFn] = {}
@@ -46,11 +46,11 @@ def build_model(cfg: ModelConfig) -> nn.Module:
 
     Steps:
     1. Build the architecture (random weights, correct shapes).
-    2. Load pretrained weights via :func:`~fedmammo.models.weight_loaders.load_weights`.
-    3. Apply freeze policy via :func:`~fedmammo.models.weight_loaders.apply_freeze_policy`.
+    2. Load pretrained weights via :func:`~fedmammobench.models.weight_loaders.load_weights`.
+    3. Apply freeze policy via :func:`~fedmammobench.models.weight_loaders.apply_freeze_policy`.
     """
     # Late import avoids circular deps at module load time.
-    from fedmammo.models.weight_loaders import apply_freeze_policy, load_weights
+    from fedmammobench.models.weight_loaders import apply_freeze_policy, load_weights
 
     key = cfg.name.lower()
     if key not in _REGISTRY:

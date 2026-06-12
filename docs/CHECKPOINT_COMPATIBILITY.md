@@ -62,7 +62,7 @@ If you need to reproduce runs created before this refactor, set:
 
 ```python
 # In custom code only; not exposed via YAML
-from fedmammo.models._adapt import adapt_weight_tensor
+from fedmammobench.models._adapt import adapt_weight_tensor
 adapted = adapt_weight_tensor(w, target_in_channels=1, strategy="legacy_mean")
 ```
 

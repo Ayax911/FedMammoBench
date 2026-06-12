@@ -16,10 +16,10 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
-from fedmammo.evaluation.evaluator import Evaluator
-from fedmammo.utils.csv_logger import CSVLogger
-from fedmammo.utils.logging_utils import get_logger
-from fedmammo.utils.tensorboard_utils import TensorBoardWriter
+from fedmammobench.evaluation.evaluator import Evaluator
+from fedmammobench.utils.csv_logger import CSVLogger
+from fedmammobench.utils.logging_utils import get_logger
+from fedmammobench.utils.tensorboard_utils import TensorBoardWriter
 
 _logger = get_logger(__name__)
 

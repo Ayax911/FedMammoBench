@@ -6,7 +6,7 @@
 #
 # Checkpoint placement (choose one):
 #   (a) Set model.checkpoint_path to the absolute path of RadImageNet-resnet50.pth
-#   (b) Set $FEDMAMMO_RADIMAGENET_DIR to the directory containing RadImageNet-resnet50.pth
+#   (b) Set $FEDMAMMOBENCH_RADIMAGENET_DIR to the directory containing RadImageNet-resnet50.pth
 #
 # Payload per round: ~100 MB (ResNet50 ≈ 25M params × 4 bytes × num_clients).
 # See docs/TRANSFER_LEARNING_GUIDE.md for bandwidth and batch-size guidance.
@@ -36,7 +36,7 @@ partitioning:
 model:
   name: resnet50
   weight_source: radimagenet
-  checkpoint_path: null    # override or set $FEDMAMMO_RADIMAGENET_DIR
+  checkpoint_path: null    # override or set $FEDMAMMOBENCH_RADIMAGENET_DIR
   in_channels: 1
   num_classes: 2
   dropout: 0.2

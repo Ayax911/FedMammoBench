@@ -1,6 +1,6 @@
 # POST_FIX_AUDIT.md — Revisión técnica de los fixes C1/C2/C3
 
-> **Alcance**: validación archivo por archivo de las correcciones aplicadas en la Fase 1 sobre `fedmammo`. No re-audita problemas fuera del scope de C1/C2/C3 (esos siguen en `TECHNICAL_DEBT_REPORT.md`).
+> **Alcance**: validación archivo por archivo de las correcciones aplicadas en la Fase 1 sobre `fedmammobench`. No re-audita problemas fuera del scope de C1/C2/C3 (esos siguen en `TECHNICAL_DEBT_REPORT.md`).
 > **Fecha**: 2026-05-23
 > **Metodología**: lectura directa del código actual + análisis cruzado con archivos relacionados (`evaluator.py`, `fedavg.py`, `cbis_ddsm.py`, `mammo_bench.py`, `metrics.py`). No se ejecutó el simulador Flower; se razona sobre invariantes.
 
@@ -141,7 +141,7 @@ Esto era ya cierto en la versión pre-fix sample-level, pero la heterogeneidad i
 
 ### Qué se hizo
 
-- `FedMammoClient.fit()` (`federated/client.py:111-151`): lee `proximal_mu = float(config.get("proximal_mu", 0.0))`. Si `>0`, captura `global_params = [p.detach().clone() for p in self.model.parameters()]` antes de cualquier update. Pasa ambos a `Trainer.train_one_epoch()`.
+- `FedMammoBenchClient.fit()` (`federated/client.py:111-151`): lee `proximal_mu = float(config.get("proximal_mu", 0.0))`. Si `>0`, captura `global_params = [p.detach().clone() for p in self.model.parameters()]` antes de cualquier update. Pasa ambos a `Trainer.train_one_epoch()`.
 - `Trainer.train_one_epoch()` (`training/trainer.py:76-158`): nuevo argumento `proximal_mu` y `global_params`. Si `use_prox`, calcula `prox = sum(((p - g) ** 2).sum() for p, g in zip(...))` y suma `(proximal_mu / 2.0) * prox` al loss task.
 - `FedProx` strategy (`federated/strategies/fedprox.py`): docstring actualizado, warning de "stub" eliminado. El `configure_fit()` sigue inyectando `proximal_mu` en `FitIns.config` como antes.
 
@@ -303,7 +303,7 @@ Esto coincide con el paper FedProx (que ignora BN explícitamente; FedBN se dise
 
 ### Qué se hizo
 
-`FedMammoClient.evaluate()` (`federated/client.py:153-185`): el dict comprehension previo que mapeaba NaN→0.0 se reemplazó por un loop explícito que **omite** los keys NaN (con log a nivel DEBUG) en lugar de emitirlos como 0.0.
+`FedMammoBenchClient.evaluate()` (`federated/client.py:153-185`): el dict comprehension previo que mapeaba NaN→0.0 se reemplazó por un loop explícito que **omite** los keys NaN (con log a nivel DEBUG) en lugar de emitirlos como 0.0.
 
 ### Qué funciona
 
@@ -408,7 +408,7 @@ Los 3 tests nuevos están en `tests/test_smoke.py`:
 
 El test solo verifica `mu=10 ≠ mu=0`. Un bug que siempre aplique FedProx con mu=0.0001 fijo (e.g., `proximal_mu = max(proximal_mu, 0.0001)`) pasaría: mu=0 y mu=10 producirían salidas distintas con/sin el bug.
 
-**Recomendación**: añadir test que compare mu=0.0 contra `FedMammoClient` baseline (sin proximal_mu en config) y verifique IDENTIDAD exacta (`np.allclose(a, b, atol=0.0, rtol=0.0)`).
+**Recomendación**: añadir test que compare mu=0.0 contra `FedMammoBenchClient` baseline (sin proximal_mu en config) y verifique IDENTIDAD exacta (`np.allclose(a, b, atol=0.0, rtol=0.0)`).
 
 #### 🟡 T7 — MENOR: tolerancia excesivamente permisiva
 
@@ -446,7 +446,7 @@ Ningún test verifica que `build_dataset(cfg)` para CBIS-DDSM o Mammo-Bench prod
 
 #### 🟠 T13 — IMPORTANTE: sin test end-to-end de FedProx strategy
 
-Ningún test ejerce `build_strategy("fedprox", proximal_mu=0.5)` ni el flujo `configure_fit → client.fit → aggregate`. El test actual instancia `FedMammoClient` directamente pasando `{"proximal_mu": 10.0}` en config — saltea el `FedProx.configure_fit`.
+Ningún test ejerce `build_strategy("fedprox", proximal_mu=0.5)` ni el flujo `configure_fit → client.fit → aggregate`. El test actual instancia `FedMammoBenchClient` directamente pasando `{"proximal_mu": 10.0}` en config — saltea el `FedProx.configure_fit`.
 
 **Recomendación**: test que construya FedProx strategy, llame `configure_fit`, extraiga el config inyectado, y pase ese config al cliente real.
 

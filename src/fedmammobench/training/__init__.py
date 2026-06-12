@@ -1,8 +1,8 @@
-"""Training utilities for fedmammo."""
+"""Training utilities for fedmammobench."""
 
-from fedmammo.training.losses import FocalLoss, build_loss, compute_class_weights
-from fedmammo.training.optim import build_optimizer, build_scheduler
-from fedmammo.training.trainer import Trainer
+from fedmammobench.training.losses import FocalLoss, build_loss, compute_class_weights
+from fedmammobench.training.optim import build_optimizer, build_scheduler
+from fedmammobench.training.trainer import Trainer
 
 __all__ = [
     "Trainer",

@@ -11,7 +11,7 @@ Normalization
 Mean and standard deviation are resolved in this priority order:
 
 1. ``augmentation.normalize_preset`` — a named preset from
-   :data:`fedmammo.configs.schema.NORMALIZE_PRESETS` (e.g.
+   :data:`fedmammobench.configs.schema.NORMALIZE_PRESETS` (e.g.
    ``"radimagenet_gray"``).  Length must match ``in_channels``.
 2. ``augmentation.normalize_mean`` / ``normalize_std`` as ``list[float]``
    (one value per channel).  Length validated against ``in_channels``.
@@ -27,7 +27,7 @@ from typing import Any
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from fedmammo.configs.schema import NORMALIZE_PRESETS, AugmentationConfig
+from fedmammobench.configs.schema import NORMALIZE_PRESETS, AugmentationConfig
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ def build_transforms(
 
     Args:
         image_size: Square resize target (height == width).
-        augmentation: :class:`~fedmammo.configs.schema.AugmentationConfig`
+        augmentation: :class:`~fedmammobench.configs.schema.AugmentationConfig`
             instance with knobs for the training pipeline and normalization.
         in_channels: Number of image channels fed to the model (1 for
             grayscale, 3 for RGB).  Drives mean/std tuple length.

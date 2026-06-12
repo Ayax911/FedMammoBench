@@ -30,7 +30,7 @@ from typing import Any
 
 from flwr.server.strategy import Strategy
 
-from fedmammo.federated.strategies.registry import register_strategy
+from fedmammobench.federated.strategies.registry import register_strategy
 
 
 class ScaffoldNotImplemented(Strategy):
@@ -48,7 +48,7 @@ def build_scaffold(**_kwargs: Any) -> Strategy:
     raise NotImplementedError(
         "SCAFFOLD is registered but not implemented in this build. "
         "Switch federated.strategy.name to 'fedavg' (or implement the algorithm "
-        "in src/fedmammo/federated/strategies/scaffold.py)."
+        "in src/fedmammobench/federated/strategies/scaffold.py)."
     )
 
 

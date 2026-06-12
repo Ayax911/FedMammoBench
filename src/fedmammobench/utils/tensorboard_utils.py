@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 

@@ -25,7 +25,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short --cov=fedmammo --cov-report=term-missing
+        run: pytest tests/ -v --tb=short --cov=fedmammobench --cov-report=term-missing
 
       - name: Check config modules import cleanly
-        run: python -c "from fedmammo.configs import ExperimentConfig, load_config; print('configs OK')"
+        run: python -c "from fedmammobench.configs import ExperimentConfig, load_config; print('configs OK')"

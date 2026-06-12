@@ -1,4 +1,4 @@
-"""YAML <-> dataclass loader for fedmammo experiment configs.
+"""YAML <-> dataclass loader for fedmammobench experiment configs.
 
 The loader supports a ``defaults`` key for compositional configs: any path
 listed there is loaded first, then the current file is merged on top with
@@ -6,9 +6,9 @@ deep-merge semantics.
 
 Example::
 
-    # configs/fedavg_synthetic.yaml
+    # configs/fedavg_cbis_ddsm.yaml
     defaults: base.yaml
-    name: fedavg_synthetic
+    name: fedavg_cbis_ddsm
     federated:
       num_clients: 4
       strategy:
@@ -24,7 +24,7 @@ from typing import Any, TypeVar
 
 import yaml
 
-from fedmammo.configs.schema import ExperimentConfig
+from fedmammobench.configs.schema import ExperimentConfig
 
 T = TypeVar("T")
 
@@ -79,7 +79,7 @@ def _from_dict(cls: type[T], data: dict[str, Any], _path: str = "") -> T:
         # When ``from __future__ import annotations`` is in effect, ``f.type``
         # is a string. Resolve via the module's globals.
         if isinstance(ftype, str):
-            import fedmammo.configs.schema as schema_mod
+            import fedmammobench.configs.schema as schema_mod
 
             try:
                 ftype = eval(ftype, vars(schema_mod))  # noqa: S307

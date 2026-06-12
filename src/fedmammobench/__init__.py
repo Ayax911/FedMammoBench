@@ -1,14 +1,14 @@
-"""fedmammo: federated learning for binary mammography classification.
+"""fedmammobench: federated learning for binary mammography classification.
 
 Top-level package. Modules:
 
-- ``fedmammo.configs``    : dataclass schema + YAML loader
-- ``fedmammo.datasets``   : dataset implementations and federated partitioning
-- ``fedmammo.models``     : ResNet18, EfficientNet-B0, model factory
-- ``fedmammo.training``   : reusable Trainer and loss functions
-- ``fedmammo.evaluation`` : Evaluator and clinical-style metrics
-- ``fedmammo.federated``  : Flower client / server / strategies
-- ``fedmammo.utils``      : seeding, logging, checkpoints, TensorBoard, CSV
+- ``fedmammobench.configs``    : dataclass schema + YAML loader
+- ``fedmammobench.datasets``   : dataset implementations and federated partitioning
+- ``fedmammobench.models``     : ResNet18, EfficientNet-B0, model factory
+- ``fedmammobench.training``   : reusable Trainer and loss functions
+- ``fedmammobench.evaluation`` : Evaluator and clinical-style metrics
+- ``fedmammobench.federated``  : Flower client / server / strategies
+- ``fedmammobench.utils``      : seeding, logging, checkpoints, TensorBoard, CSV
 """
 
 from __future__ import annotations

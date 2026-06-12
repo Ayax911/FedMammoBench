@@ -21,6 +21,60 @@ class StrategyConfig:
 
 
 @dataclass
+class ServerTrainingConfig:
+    """Optional server-side training (hybrid federated learning).
+
+    When ``enabled``, the central node owns a local dataset and, after each
+    round's client aggregation, runs ``local_epochs`` of training on that data
+    starting from the aggregated global weights. The result becomes the new
+    global model (optionally interpolated via ``server_weight``). This turns the
+    server from a pure aggregator into an additional training participant.
+
+    The server dataset is built with the same loader as the clients
+    (``dataset_name`` defaults to ``data.name``) but from its own
+    ``manifest_path`` / ``image_root``; the entire manifest is used for training
+    (no val/test split is carved on the server).
+
+    Attributes:
+        enabled: Master switch. When False (default) the server only aggregates.
+        dataset_name: Registered dataset to use; defaults to ``data.name``.
+        manifest_path: CSV manifest for the server's own data (required).
+        image_root: Image root for the server's own data (required).
+        local_epochs: Training epochs the server runs per round on its data.
+        server_weight: Interpolation in ``(0, 1]`` between the aggregated
+            weights and the server-trained weights:
+            ``new = (1 - w) * aggregated + w * server_trained``. ``1.0`` (default)
+            takes the server-trained weights outright (the server still starts
+            from the aggregated weights, so it is a continuation, not a reset).
+    """
+
+    enabled: bool = False
+    dataset_name: str | None = None
+    manifest_path: str | None = None
+    image_root: str | None = None
+    local_epochs: int = 1
+    server_weight: float = 1.0
+
+    def validate(self) -> None:
+        """Raise ValueError for invalid server-training settings."""
+        if not self.enabled:
+            return
+        if self.local_epochs < 1:
+            raise ValueError(
+                f"server_training.local_epochs must be >= 1, got {self.local_epochs}"
+            )
+        if not (0.0 < self.server_weight <= 1.0):
+            raise ValueError(
+                f"server_training.server_weight must be in (0, 1], got {self.server_weight}"
+            )
+        if not self.manifest_path or not self.image_root:
+            raise ValueError(
+                "server_training.enabled=true requires both `manifest_path` and "
+                "`image_root` pointing to the server's local dataset."
+            )
+
+
+@dataclass
 class FederatedConfig:
     """Flower simulation / gRPC parameters.
 
@@ -47,6 +101,8 @@ class FederatedConfig:
             if not all min_fit_clients have responded. 0 disables the timeout
             (blocks indefinitely — default Flower behavior).
         strategy: Strategy selection (see :class:`StrategyConfig`).
+        server_training: Optional hybrid server-side training
+            (see :class:`ServerTrainingConfig`). Disabled by default.
     """
 
     num_clients: int = 4
@@ -65,6 +121,7 @@ class FederatedConfig:
     grpc_max_message_length: int = 512 * 1024 * 1024  # 512 MB
     round_timeout_seconds: int = 0
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    server_training: ServerTrainingConfig = field(default_factory=ServerTrainingConfig)
 
     def validate(self) -> None:
         """Raise ValueError for invalid federated settings."""
@@ -94,6 +151,7 @@ class FederatedConfig:
             raise ValueError(
                 f"round_timeout_seconds must be >= 0, got {self.round_timeout_seconds}"
             )
+        self.server_training.validate()
 
     def model_config_hash(self, model_config_fields: dict[str, Any]) -> str:
         """Return a short SHA-256 hex digest of the model config fields.
@@ -104,7 +162,7 @@ class FederatedConfig:
 
         Args:
             model_config_fields: Dict returned by
-                :meth:`~fedmammo.configs.model_config.ModelConfig.config_hash_fields`.
+                :meth:`~fedmammobench.configs.model_config.ModelConfig.config_hash_fields`.
         """
         canonical = json.dumps(model_config_fields, sort_keys=True)
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
@@ -112,5 +170,6 @@ class FederatedConfig:
 
 __all__ = [
     "FederatedConfig",
+    "ServerTrainingConfig",
     "StrategyConfig",
 ]

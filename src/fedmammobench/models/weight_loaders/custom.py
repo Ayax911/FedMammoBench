@@ -6,18 +6,18 @@ from pathlib import Path
 
 from torch import nn
 
-from fedmammo.configs.schema import ModelConfig
-from fedmammo.models.weight_loaders.base import LoadReport
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.configs.schema import ModelConfig
+from fedmammobench.models.weight_loaders.base import LoadReport
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
 
 class CustomCheckpointLoader:
-    """Load an arbitrary local checkpoint in fedmammo format.
+    """Load an arbitrary local checkpoint in fedmammobench format.
 
     The checkpoint must be a ``.pth`` file produced by
-    :func:`fedmammo.utils.checkpoint.save_checkpoint`, i.e. a dict with at
+    :func:`fedmammobench.utils.checkpoint.save_checkpoint`, i.e. a dict with at
     least a ``"state_dict"`` key.  The state_dict is loaded into the model
     backbone with ``strict=cfg.strict_load``.
 
@@ -31,8 +31,8 @@ class CustomCheckpointLoader:
                 "Set model.checkpoint_path in your YAML config."
             )
 
-        # Reuse the existing fedmammo checkpoint helper.
-        from fedmammo.utils.checkpoint import load_checkpoint
+        # Reuse the existing fedmammobench checkpoint helper.
+        from fedmammobench.utils.checkpoint import load_checkpoint
 
         src = Path(cfg.checkpoint_path).expanduser().resolve()
         backbone = getattr(model, "backbone", model)

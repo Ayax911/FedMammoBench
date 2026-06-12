@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
@@ -183,7 +183,7 @@ class MammographyDataset(Dataset):
         ds = pydicom.dcmread(path)
         try:
             arr = apply_voi_lut(ds.pixel_array, ds)
-        except Exception:  # noqa: BLE001 — VOI LUT often missing on synthetic / converted DICOMs
+        except Exception:  # noqa: BLE001 — VOI LUT often missing on converted DICOMs
             arr = ds.pixel_array
         arr = arr.astype(np.float32)
         if getattr(ds, "PhotometricInterpretation", "") == "MONOCHROME1":

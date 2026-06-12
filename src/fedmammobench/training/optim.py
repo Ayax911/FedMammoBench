@@ -9,7 +9,7 @@ from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
-from fedmammo.configs.schema import OptimizerConfig, SchedulerConfig
+from fedmammobench.configs.schema import OptimizerConfig, SchedulerConfig
 
 
 def build_optimizer(model: nn.Module, cfg: OptimizerConfig) -> Optimizer:

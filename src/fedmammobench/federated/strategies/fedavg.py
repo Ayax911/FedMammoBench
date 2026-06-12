@@ -13,8 +13,8 @@ from typing import Any
 from flwr.common import Metrics, Scalar
 from flwr.server.strategy import FedAvg
 
-from fedmammo.federated.strategies.registry import register_strategy
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.federated.strategies.registry import register_strategy
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
@@ -47,7 +47,7 @@ def _default_fit_config(server_round: int) -> dict[str, Scalar]:
     """Default per-round config injected into every client's FitIns.
 
     Clients read ``current_round`` to apply progressive unfreezing via
-    :func:`~fedmammo.models.weight_loaders.apply_freeze_policy`.
+    :func:`~fedmammobench.models.weight_loaders.apply_freeze_policy`.
     """
     return {"current_round": server_round}
 

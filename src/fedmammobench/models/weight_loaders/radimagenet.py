@@ -1,7 +1,7 @@
 """RadImageNet weight loader.
 
 Loads checkpoints from the RadImageNet project (BMEII-AI/RadImageNet) into a
-fedmammo model backbone.  Checkpoints must be obtained manually from the
+fedmammobench model backbone.  Checkpoints must be obtained manually from the
 official repository and placed in one of two locations (see :meth:`_resolve_path`).
 
 Supported architectures: ``resnet50``, ``densenet121``, ``inception_v3``.
@@ -13,7 +13,7 @@ Checkpoint file naming convention expected on disk::
 Where to place them (in priority order):
 
 1. ``cfg.model.checkpoint_path`` — absolute path to the ``.pth`` file.
-2. The directory pointed to by the ``$FEDMAMMO_RADIMAGENET_DIR`` environment
+2. The directory pointed to by the ``$FEDMAMMOBENCH_RADIMAGENET_DIR`` environment
    variable, named ``RadImageNet-{arch}.pth``.
 
 Neither location is hard-coded; the loader raises :class:`FileNotFoundError`
@@ -29,19 +29,19 @@ from typing import Any
 import torch
 from torch import nn
 
-from fedmammo.configs.schema import ModelConfig
-from fedmammo.models._adapt import adapt_weight_tensor
-from fedmammo.models.weight_loaders._keymaps import (
+from fedmammobench.configs.schema import ModelConfig
+from fedmammobench.models._adapt import adapt_weight_tensor
+from fedmammobench.models.weight_loaders._keymaps import (
     FIRST_CONV_KEY,
     SUPPORTED_ARCHS,
     remap_radimagenet_keys,
 )
-from fedmammo.models.weight_loaders.base import LoadReport
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.models.weight_loaders.base import LoadReport
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
-_ENV_VAR = "FEDMAMMO_RADIMAGENET_DIR"
+_ENV_VAR = "FEDMAMMOBENCH_RADIMAGENET_DIR"
 
 
 class RadImageNetLoader:
@@ -50,7 +50,7 @@ class RadImageNetLoader:
     The loader:
 
     1. Resolves the checkpoint path from ``cfg.checkpoint_path`` or
-       ``$FEDMAMMO_RADIMAGENET_DIR``.
+       ``$FEDMAMMOBENCH_RADIMAGENET_DIR``.
     2. Unwraps nested dicts (``{state_dict: ...}`` or
        ``{model_state_dict: ...}`` wrappers).
     3. Strips DataParallel ``module.`` prefixes and drops head keys.

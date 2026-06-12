@@ -5,9 +5,9 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from fedmammo.configs.schema import ModelConfig
-from fedmammo.models._adapt import adapt_first_conv
-from fedmammo.models.factory import register_model
+from fedmammobench.configs.schema import ModelConfig
+from fedmammobench.models._adapt import adapt_first_conv
+from fedmammobench.models.factory import register_model
 
 
 class DenseNet121Classifier(nn.Module):

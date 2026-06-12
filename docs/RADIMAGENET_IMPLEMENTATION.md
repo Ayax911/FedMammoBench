@@ -1,7 +1,7 @@
 # RadImageNet Implementation Architecture
 
 This document describes the weight-loading architecture introduced to support
-RadImageNet pretrained transfer learning in fedmammo.
+RadImageNet pretrained transfer learning in fedmammobench.
 
 ---
 
@@ -69,7 +69,7 @@ class WeightLoader(Protocol):
 2. Register it:
 
 ```python
-from fedmammo.models.weight_loaders import register_loader
+from fedmammobench.models.weight_loaders import register_loader
 from my_package import MyLoader
 
 register_loader("my_source", MyLoader())

@@ -1,11 +1,11 @@
 """Model definitions and factory."""
 
-from fedmammo.models.factory import build_model, list_models, register_model
-from fedmammo.models.resnet import ResNet18Classifier, ResNet50Classifier
-from fedmammo.models.efficientnet import EfficientNetB0Classifier
-from fedmammo.models.densenet import DenseNet121Classifier
-from fedmammo.models.inception import InceptionV3Classifier
-from fedmammo.models.weight_loaders import (
+from fedmammobench.models.factory import build_model, list_models, register_model
+from fedmammobench.models.resnet import ResNet18Classifier, ResNet50Classifier
+from fedmammobench.models.efficientnet import EfficientNetB0Classifier
+from fedmammobench.models.densenet import DenseNet121Classifier
+from fedmammobench.models.inception import InceptionV3Classifier
+from fedmammobench.models.weight_loaders import (
     LoadReport,
     WeightLoader,
     apply_freeze_policy,

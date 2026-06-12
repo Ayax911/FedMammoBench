@@ -26,9 +26,10 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from fedmammo.configs.schema import DataColumnMapping
-from fedmammo.datasets.base import BENIGN, MALIGNANT, MammographyDataset, Sample
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.configs.schema import DataColumnMapping
+from fedmammobench.datasets.base import BENIGN, MALIGNANT, MammographyDataset, Sample
+from fedmammobench.datasets.registry import register_dataset
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
@@ -225,6 +226,25 @@ class CBISDDSMDataset(MammographyDataset):
                 counts,
             )
         return out
+
+
+@register_dataset("cbis_ddsm")
+def _build_cbis_ddsm(cfg, train_tx, eval_tx):  # noqa: ANN001, ANN201
+    """Registered builder for the CBIS-DDSM dataset."""
+    if not cfg.data.manifest_path or not cfg.data.image_root:
+        raise ValueError("data.name=cbis_ddsm requires both `manifest_path` and `image_root`.")
+    return CBISDDSMDataset.from_manifest(
+        manifest_path=cfg.data.manifest_path,
+        image_root=cfg.data.image_root,
+        columns=cfg.data.columns,
+        image_format=cfg.data.image_format,
+        val_fraction=cfg.data.val_fraction,
+        test_fraction=cfg.data.test_fraction,
+        seed=cfg.seed,
+        grayscale=cfg.data.grayscale,
+        transform_train=train_tx,
+        transform_eval=eval_tx,
+    )
 
 
 __all__ = ["CBISDDSMDataset"]

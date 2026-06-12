@@ -1,6 +1,6 @@
 # Methodology Reference
 
-This document describes the experimental setup of FedMammo in the terms needed
+This document describes the experimental setup of FedMammoBench in the terms needed
 for a scientific article methods section.  All parameters correspond directly to
 YAML configuration fields so that experiments are fully reproducible.
 
@@ -26,7 +26,7 @@ upgrading (see `CHANGELOG.md`).
 
 ## 2. Dataset Splits
 
-FedMammo enforces **patient-disjoint** splits: all images from the same patient
+FedMammoBench enforces **patient-disjoint** splits: all images from the same patient
 are assigned to the same split.  This prevents data leakage that would
 artificially inflate validation and test metrics.
 

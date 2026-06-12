@@ -1,11 +1,11 @@
 """Flower-based federated learning runtime."""
 
-from fedmammo.federated.client import FedMammoClient, client_fn_factory
-from fedmammo.federated.server import run_simulation
-from fedmammo.federated.strategies import build_strategy, list_strategies, register_strategy
+from fedmammobench.federated.client import FedMammoBenchClient, client_fn_factory
+from fedmammobench.federated.server import run_simulation
+from fedmammobench.federated.strategies import build_strategy, list_strategies, register_strategy
 
 __all__ = [
-    "FedMammoClient",
+    "FedMammoBenchClient",
     "client_fn_factory",
     "run_simulation",
     "build_strategy",

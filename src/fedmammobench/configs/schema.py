@@ -2,28 +2,32 @@
 
 All dataclasses now live in dedicated modules:
 
-- :mod:`fedmammo.configs.data_config`       — DataConfig, DataColumnMapping, PartitioningConfig
-- :mod:`fedmammo.configs.model_config`      — ModelConfig, NORMALIZE_PRESETS
-- :mod:`fedmammo.configs.training_config`   — TrainingConfig, OptimizerConfig, SchedulerConfig,
+- :mod:`fedmammobench.configs.data_config`       — DataConfig, DataColumnMapping, PartitioningConfig
+- :mod:`fedmammobench.configs.model_config`      — ModelConfig, NORMALIZE_PRESETS
+- :mod:`fedmammobench.configs.training_config`   — TrainingConfig, OptimizerConfig, SchedulerConfig,
                                                AugmentationConfig, LossConfig
-- :mod:`fedmammo.configs.federated_config`  — FederatedConfig, StrategyConfig
-- :mod:`fedmammo.configs.experiment`        — ExperimentConfig, EvaluationConfig
+- :mod:`fedmammobench.configs.federated_config`  — FederatedConfig, StrategyConfig
+- :mod:`fedmammobench.configs.experiment`        — ExperimentConfig, EvaluationConfig
 
 This module re-exports every public name so that existing imports such as
-``from fedmammo.configs.schema import ExperimentConfig`` continue to work
+``from fedmammobench.configs.schema import ExperimentConfig`` continue to work
 without modification.
 """
 
-from fedmammo.configs.data_config import (
+from fedmammobench.configs.data_config import (
     DataColumnMapping,
     DataConfig,
     PartitioningConfig,
     check_patient_ids_for_nan,
 )
-from fedmammo.configs.experiment import EvaluationConfig, ExperimentConfig
-from fedmammo.configs.federated_config import FederatedConfig, StrategyConfig
-from fedmammo.configs.model_config import NORMALIZE_PRESETS, ModelConfig
-from fedmammo.configs.training_config import (
+from fedmammobench.configs.experiment import EvaluationConfig, ExperimentConfig
+from fedmammobench.configs.federated_config import (
+    FederatedConfig,
+    ServerTrainingConfig,
+    StrategyConfig,
+)
+from fedmammobench.configs.model_config import NORMALIZE_PRESETS, ModelConfig
+from fedmammobench.configs.training_config import (
     AugmentationConfig,
     LossConfig,
     OptimizerConfig,
@@ -44,6 +48,7 @@ __all__ = [
     "OptimizerConfig",
     "PartitioningConfig",
     "SchedulerConfig",
+    "ServerTrainingConfig",
     "StrategyConfig",
     "TrainingConfig",
     "check_patient_ids_for_nan",

@@ -2,7 +2,7 @@
 
 Usage (from the model factory)::
 
-    from fedmammo.models.weight_loaders import load_weights, apply_freeze_policy
+    from fedmammobench.models.weight_loaders import load_weights, apply_freeze_policy
 
     model = _build_architecture(cfg)
     load_weights(model, cfg)
@@ -10,7 +10,7 @@ Usage (from the model factory)::
 
 To register a third-party loader at runtime::
 
-    from fedmammo.models.weight_loaders import register_loader
+    from fedmammobench.models.weight_loaders import register_loader
     register_loader("medicalnet", MyMedicalNetLoader())
 """
 
@@ -18,13 +18,13 @@ from __future__ import annotations
 
 from torch import nn
 
-from fedmammo.configs.schema import ModelConfig
-from fedmammo.models.weight_loaders.base import LoadReport, WeightLoader
-from fedmammo.models.weight_loaders.custom import CustomCheckpointLoader
-from fedmammo.models.weight_loaders.imagenet import ImageNetLoader
-from fedmammo.models.weight_loaders.none import NoneLoader
-from fedmammo.models.weight_loaders.radimagenet import RadImageNetLoader
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.configs.schema import ModelConfig
+from fedmammobench.models.weight_loaders.base import LoadReport, WeightLoader
+from fedmammobench.models.weight_loaders.custom import CustomCheckpointLoader
+from fedmammobench.models.weight_loaders.imagenet import ImageNetLoader
+from fedmammobench.models.weight_loaders.none import NoneLoader
+from fedmammobench.models.weight_loaders.radimagenet import RadImageNetLoader
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
@@ -178,7 +178,7 @@ def apply_freeze_policy(
 def _split_backbone_head(
     model: nn.Module,
 ) -> tuple[nn.Module, nn.Module | None]:
-    """Return ``(backbone, head)`` for the standard fedmammo wrapper convention.
+    """Return ``(backbone, head)`` for the standard fedmammobench wrapper convention.
 
     All classifier wrappers expose ``self.backbone`` (the full torchvision
     model) and the head is the last module at ``backbone.fc`` or

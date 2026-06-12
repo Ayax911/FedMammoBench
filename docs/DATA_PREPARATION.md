@@ -109,16 +109,19 @@ data:
 
 ---
 
-## Synthetic (smoke test only)
+## No local dataset (server-only / federated-only)
 
-Used for fast CPU validation (smoke tests, CI). Does not require any real data.
+A gRPC server that holds no images uses the sentinel `none`, which builds no
+dataset and makes evaluation 100% federated:
 
 ```yaml
 data:
-  name: synthetic
-  synthetic_num_samples: 256
-  image_size: 96
+  name: none
 ```
+
+> The CI smoke tests do not need a configured dataset — they generate a tiny
+> on-disk PNG fixture in a temp directory and load it through the CBIS-DDSM
+> loader (see `tests/test_smoke.py`).
 
 ---
 

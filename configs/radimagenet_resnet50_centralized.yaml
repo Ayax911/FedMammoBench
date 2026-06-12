@@ -6,7 +6,7 @@
 #
 # Checkpoint placement (choose one):
 #   (a) Set model.checkpoint_path to the absolute path of RadImageNet-resnet50.pth
-#   (b) Set $FEDMAMMO_RADIMAGENET_DIR to the directory containing RadImageNet-resnet50.pth
+#   (b) Set $FEDMAMMOBENCH_RADIMAGENET_DIR to the directory containing RadImageNet-resnet50.pth
 #
 # See docs/TRANSFER_LEARNING_GUIDE.md for step-by-step instructions.
 
@@ -17,7 +17,9 @@ output_dir: runs
 device: auto
 
 data:
-  name: synthetic          # replace with cbis_ddsm for real data
+  name: cbis_ddsm          # set manifest_path + image_root below to your data
+  manifest_path: /absolute/path/to/manifest.csv
+  image_root: /absolute/path/to/images
   image_size: 224
   grayscale: true
   num_classes: 2
@@ -30,7 +32,7 @@ data:
 model:
   name: resnet50
   weight_source: radimagenet
-  checkpoint_path: null    # override or set $FEDMAMMO_RADIMAGENET_DIR
+  checkpoint_path: null    # override or set $FEDMAMMOBENCH_RADIMAGENET_DIR
   in_channels: 1           # grayscale; loader adapts first conv 3→1 (sum-preserving)
   num_classes: 2
   dropout: 0.2

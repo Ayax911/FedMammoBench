@@ -20,30 +20,31 @@ with ``phase="centralized"``. Set ``data.name: none`` (or ``test_fraction:
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 import flwr as fl
-import torch
 from flwr.common import EvaluateRes, NDArrays, Scalar
 from flwr.server import ServerConfig
 from flwr.server.client_proxy import ClientProxy
 
-from fedmammo.configs.schema import ExperimentConfig
-from fedmammo.datasets import MammographyDataset, build_dataloader, build_dataset
-from fedmammo.evaluation import Evaluator
-from fedmammo.federated.client import client_fn_factory
-from fedmammo.federated.param_utils import (
+from fedmammobench.configs.schema import ExperimentConfig
+from fedmammobench.datasets import MammographyDataset, build_dataloader, build_dataset
+from fedmammobench.evaluation import Evaluator
+from fedmammobench.federated.client import client_fn_factory
+from fedmammobench.federated.node_logging import NodeMetricsRecorder
+from fedmammobench.federated.param_utils import (
     load_ndarrays_to_state_dict,
     state_dict_to_ndarrays,
 )
-from fedmammo.federated.strategies import build_strategy
-from fedmammo.models import build_model
-from fedmammo.training import build_loss
-from fedmammo.utils.csv_logger import CSVLogger
-from fedmammo.utils.device import resolve_device
-from fedmammo.utils.logging_utils import get_logger
-from fedmammo.utils.tensorboard_utils import TensorBoardWriter
+from fedmammobench.federated.strategies import build_strategy
+from fedmammobench.models import build_model
+from fedmammobench.training import build_loss
+from fedmammobench.utils.csv_logger import CSVLogger
+from fedmammobench.utils.device import resolve_device
+from fedmammobench.utils.logging_utils import get_logger
+from fedmammobench.utils.tensorboard_utils import TensorBoardWriter
 
 _logger = get_logger(__name__)
 
@@ -175,6 +176,33 @@ def _attach_federated_logging(
     strategy.aggregate_evaluate = wrapped  # type: ignore[method-assign]
 
 
+def _maybe_attach_server_training(
+    cfg: ExperimentConfig,
+    strategy: Any,
+    tb_writer: TensorBoardWriter | None,
+) -> None:
+    """Attach hybrid server-side training to ``strategy`` when enabled.
+
+    No-op unless ``cfg.federated.server_training.enabled``. Imported lazily so
+    the (torch-heavy) trainer is only constructed when actually requested.
+    """
+    st = cfg.federated.server_training
+    if not st.enabled:
+        return
+    from fedmammobench.federated.server_training import (
+        ServerTrainer,
+        attach_server_training,
+    )
+
+    trainer = ServerTrainer(cfg)
+    attach_server_training(
+        strategy,
+        trainer,
+        server_weight=st.server_weight,
+        tb_writer=tb_writer,
+    )
+
+
 def _initial_parameters(cfg: ExperimentConfig):  # noqa: ANN201
     """Build an untrained model and serialize it as Flower initial parameters."""
     device = resolve_device(cfg.device)
@@ -213,8 +241,8 @@ def run_simulation(
         raise ValueError(
             "run_simulation requires a 'train' dataset for clients. "
             "data.name='none' is only valid for the gRPC server, where clients "
-            "bring their own data. Use a real dataset name (synthetic, "
-            "mammo_bench, ...) for simulation runs."
+            "bring their own data. Use a real dataset name (cbis_ddsm, "
+            "mammo_bench, vindr_mammo, ...) for simulation runs."
         )
 
     # Strategy ----------------------------------------------------------
@@ -238,6 +266,11 @@ def run_simulation(
     strategy_kwargs.update(cfg.federated.strategy.params)
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
     _attach_federated_logging(strategy, tb_writer, fed_csv_logger)
+    _maybe_attach_server_training(cfg, strategy, tb_writer)
+    # Per-node logging + timing + global-model capture. Attached last so the
+    # captured global parameters reflect any server-side training step.
+    recorder = NodeMetricsRecorder(out_root, tb_writer)
+    recorder.wrap(strategy)
 
     client_fn = client_fn_factory(cfg, datasets)
 
@@ -253,6 +286,8 @@ def run_simulation(
         cfg.federated.rounds,
         cfg.federated.strategy.name,
     )
+    recorder.start()
+    t0 = time.perf_counter()
     history = fl.simulation.start_simulation(
         client_fn=client_fn,
         num_clients=cfg.federated.num_clients,
@@ -261,6 +296,10 @@ def run_simulation(
         client_resources=cfg.federated.client_resources,
         ray_init_args=cfg.federated.ray_init_args or None,
     )
+    total_seconds = time.perf_counter() - t0
+    recorder.save_global_model(cfg)
+    recorder.write_timing_summary(cfg, total_seconds)
+    recorder.close()
     tb_writer.close()
     _logger.info("Simulation complete. Artifacts in %s", out_root)
     return history
@@ -363,6 +402,9 @@ def run_grpc_server(
     strategy_kwargs.update(cfg.federated.strategy.params)
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
     _attach_federated_logging(strategy, tb_writer, fed_csv_logger)
+    _maybe_attach_server_training(cfg, strategy, tb_writer)
+    recorder = NodeMetricsRecorder(out_root, tb_writer)
+    recorder.wrap(strategy)
 
     round_timeout = cfg.federated.round_timeout_seconds or None
     server_config = ServerConfig(
@@ -381,6 +423,8 @@ def run_grpc_server(
         cfg.federated.grpc_max_message_length // (1024 * 1024),
         f"{round_timeout}s" if round_timeout else "none",
     )
+    recorder.start()
+    t0 = time.perf_counter()
     try:
         fl.server.start_server(
             server_address=cfg.federated.server_address,
@@ -389,6 +433,10 @@ def run_grpc_server(
             grpc_max_message_length=cfg.federated.grpc_max_message_length,
         )
     finally:
+        total_seconds = time.perf_counter() - t0
+        recorder.save_global_model(cfg)
+        recorder.write_timing_summary(cfg, total_seconds)
+        recorder.close()
         tb_writer.close()
         _logger.info("gRPC server stopped. Artifacts in %s", out_root)
 

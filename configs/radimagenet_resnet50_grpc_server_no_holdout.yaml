@@ -34,7 +34,7 @@ data:
 model:
   name: resnet50
   weight_source: radimagenet
-  checkpoint_path: null     # uses $FEDMAMMO_RADIMAGENET_DIR
+  checkpoint_path: null     # uses $FEDMAMMOBENCH_RADIMAGENET_DIR
   in_channels: 1
   num_classes: 2
   dropout: 0.2

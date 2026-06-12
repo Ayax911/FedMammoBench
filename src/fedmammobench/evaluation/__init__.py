@@ -1,6 +1,6 @@
-"""Evaluation utilities for fedmammo."""
+"""Evaluation utilities for fedmammobench."""
 
-from fedmammo.evaluation.evaluator import Evaluator
-from fedmammo.evaluation.metrics import BinaryClassificationMetrics, compute_metrics
+from fedmammobench.evaluation.evaluator import Evaluator
+from fedmammobench.evaluation.metrics import BinaryClassificationMetrics, compute_metrics
 
 __all__ = ["Evaluator", "BinaryClassificationMetrics", "compute_metrics"]

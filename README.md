@@ -1,8 +1,8 @@
-# FedMammo — Federated Learning for Mammography Classification
+# FedMammoBench — Federated Learning for Mammography Classification
 
 Federated learning framework for binary mammography classification (benign / malignant) using [Flower](https://flower.ai/) + PyTorch + Ray.
 
-**Version**: 0.2.0 | **Python**: 3.11 | **License**: MIT
+**Version**: 0.3.0 | **Python**: 3.11 | **License**: MIT
 
 ---
 
@@ -14,11 +14,12 @@ git clone <repo>
 cd Federal-Learning
 pip install -e .
 
-# 2. Smoke test — synthetic data, CPU only (~1 minute)
-fedmammo-federated --config configs/fedavg_synthetic.yaml
+# 2. Prepare a dataset manifest (see docs/DATA_PREPARATION.md), then run a
+#    federated simulation. Point data.manifest_path / data.image_root at your data.
+fedmammobench-federated --config configs/fedavg_cbis_ddsm.yaml
 ```
 
-Artifacts (metrics, TensorBoard logs, config snapshot) are written to `runs/fedavg_synthetic/`.
+Artifacts (metrics, TensorBoard logs, config snapshot) are written to `runs/<config-name>/`.
 
 ---
 
@@ -26,12 +27,13 @@ Artifacts (metrics, TensorBoard logs, config snapshot) are written to `runs/feda
 
 | Command | Config | Description | Estimated time |
 |---------|--------|-------------|----------------|
-| `fedmammo-centralized` | `centralized_synthetic.yaml` | Centralized baseline, synthetic | < 1 min |
-| `fedmammo-federated` | `fedavg_synthetic.yaml` | FL simulation (Ray), synthetic | < 1 min |
-| `fedmammo-federated` | `radimagenet_resnet50_fedavg.yaml` | FL simulation with RadImageNet | 10–30 min |
+| `fedmammobench-centralized` | `radimagenet_resnet50_centralized.yaml` | Centralized baseline | depends on data |
+| `fedmammobench-federated` | `fedavg_cbis_ddsm.yaml` | FL simulation (Ray) | depends on data |
+| `fedmammobench-federated` | `radimagenet_resnet50_fedavg.yaml` | FL simulation with RadImageNet | 10–30 min |
+| `fedmammobench-federated` | `fedavg_server_training.yaml` | Hybrid FL (server also trains) | depends on data |
 | `python scripts/run_server.py` | `radimagenet_resnet50_grpc_server_v2.yaml` | Real gRPC server | blocks |
 | `python scripts/run_client.py` | `radimagenet_resnet50_grpc_client_v2.yaml` | Real gRPC client | blocks |
-| `fedmammo-evaluate` | any | Post-hoc evaluation on a checkpoint | < 1 min |
+| `fedmammobench-evaluate` | any | Post-hoc evaluation on a checkpoint | < 1 min |
 
 ---
 
@@ -54,7 +56,7 @@ federated:
 
 **Run it:**
 ```bash
-fedmammo-federated --config configs/my_experiment.yaml
+fedmammobench-federated --config configs/my_experiment.yaml
 ```
 
 ### Key configuration sections
@@ -72,7 +74,7 @@ fedmammo-federated --config configs/my_experiment.yaml
 Call `ExperimentConfig.validate()` after loading to catch errors early:
 
 ```python
-from fedmammo.configs import load_config
+from fedmammobench.configs import load_config
 cfg = load_config("configs/radimagenet_resnet50_fedavg.yaml")
 cfg.validate()  # raises ValueError or emits warnings on bad combinations
 ```
@@ -90,18 +92,39 @@ cfg.validate()  # raises ValueError or emits warnings on bad combinations
 
 ---
 
+## Hybrid Server-Side Training
+
+By default the central node only aggregates client updates. Enable
+`federated.server_training` to also train on a dataset the server owns: after
+each round's aggregation, the server continues training from the aggregated
+weights for `local_epochs` and the result becomes the new global model.
+
+```yaml
+federated:
+  server_training:
+    enabled: true
+    manifest_path: /path/to/server_manifest.csv   # the server's own data
+    image_root: /path/to/server_images
+    local_epochs: 1
+    server_weight: 1.0   # new = (1-w)*aggregated + w*server_trained
+```
+
+This composes with any strategy above. See `configs/fedavg_server_training.yaml`.
+
+---
+
 ## Transfer Learning
 
 | `weight_source` | Requires | Best for |
 |-----------------|----------|---------|
 | `imagenet` | — | RGB natural images; baseline |
-| `radimagenet` | `$FEDMAMMO_RADIMAGENET_DIR` env var | Grayscale medical images |
+| `radimagenet` | `$FEDMAMMOBENCH_RADIMAGENET_DIR` env var | Grayscale medical images |
 | `custom` | `checkpoint_path` | Fine-tuning from your own checkpoint |
 | `none` | — | Ablation: random init |
 
 ```bash
-export FEDMAMMO_RADIMAGENET_DIR=/path/to/radimagenet/checkpoints
-fedmammo-federated --config configs/radimagenet_resnet50_fedavg.yaml
+export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/radimagenet/checkpoints
+fedmammobench-federated --config configs/radimagenet_resnet50_fedavg.yaml
 ```
 
 See [docs/TRANSFER_LEARNING_GUIDE.md](docs/TRANSFER_LEARNING_GUIDE.md) for setup instructions.
@@ -132,17 +155,63 @@ See [docs/FEDERATED_DEPLOYMENT_GUIDE.md](docs/FEDERATED_DEPLOYMENT_GUIDE.md) for
 
 ```bash
 # Centralized baseline
-fedmammo-centralized --config configs/radimagenet_resnet50_centralized.yaml
+fedmammobench-centralized --config configs/radimagenet_resnet50_centralized.yaml
 
 # Federated FedAvg (primary)
-fedmammo-federated --config configs/radimagenet_resnet50_fedavg.yaml
+fedmammobench-federated --config configs/radimagenet_resnet50_fedavg.yaml
 
 # Federated DenseNet121
-fedmammo-federated --config configs/radimagenet_densenet121_fedavg.yaml
+fedmammobench-federated --config configs/radimagenet_densenet121_fedavg.yaml
 ```
 
 All runs use `seed: 42` (set in `base.yaml`).  Effective configs are snapshotted
 to `runs/<name>/config.snapshot.yaml`.
+
+---
+
+## Outputs, Per-Node Metrics & Timing
+
+Every federated run writes the following under `runs/<name>/`:
+
+```
+runs/<name>/
+├── config.snapshot.yaml          # effective config used
+├── server_federated_metrics.csv  # GLOBAL model, federated-averaged across nodes
+├── server_metrics.csv            # GLOBAL model on the server holdout (if any)
+├── server_timing.csv             # per-round wall time, sum/max/mean node fit time
+├── timing_summary.csv            # total process time, rounds, avg s/round
+├── global_model.pt               # final aggregated GLOBAL model checkpoint
+├── tb/                           # server-level TensorBoard
+└── clients/
+    ├── client_0/
+    │   ├── fit_metrics.csv        # per-round train_loss, task_loss, fit_seconds
+    │   ├── eval_metrics.csv       # per-round accuracy, f1, roc_auc, eval_seconds
+    │   └── tb/                    # per-node TensorBoard
+    └── client_1/ ...
+```
+
+- **Per-node metrics** (`clients/client_<id>/`) are each node's *local* view:
+  training loss and the metrics from evaluating the global model on that node's
+  own validation split, with the node's wall-clock `fit_seconds` / `eval_seconds`.
+- **Timing**: `server_timing.csv` records, per round, the server wall time plus
+  the **sum** (total compute across nodes), **max** (straggler / critical path),
+  and **mean** of node training times. `timing_summary.csv` records the overall
+  process time. The first round's wall time includes Ray/engine startup.
+
+### Verifying the global model
+
+Per-node metrics measure *local* performance — they are **not** the global
+model's generalization. The global model is judged by:
+
+1. `server_federated_metrics.csv` — the weighted average of every node's
+   evaluation of the global model (the primary federated verdict).
+2. `server_metrics.csv` — the global model on a server-owned holdout, when one is
+   configured (`data.name` ≠ `none` with a test split).
+3. The saved `global_model.pt`, which you can verify post-hoc on any held-out
+   test set:
+   ```bash
+   fedmammobench-evaluate --config configs/<your>.yaml --checkpoint runs/<name>/global_model.pt
+   ```
 
 ---
 
@@ -189,7 +258,7 @@ See [docs/EXTENDING.md](docs/EXTENDING.md) for the step-by-step pipeline per mod
 ## Project Structure
 
 ```
-src/fedmammo/
+src/fedmammobench/
 ├── configs/           Per-section config modules (each with validate())
 ├── datasets/          Dataset loaders and patient-aware partitioning
 ├── federated/         Flower client, server, and strategy implementations

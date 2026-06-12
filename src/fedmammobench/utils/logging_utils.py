@@ -1,4 +1,4 @@
-"""Stdlib-logging configuration for fedmammo.
+"""Stdlib-logging configuration for fedmammobench.
 
 Two entry points:
 

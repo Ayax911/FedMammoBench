@@ -8,10 +8,10 @@ from typing import Any
 import torch
 from torch import nn
 
-from fedmammo.configs.schema import ModelConfig
-from fedmammo.models._adapt import adapt_weight_tensor
-from fedmammo.models.weight_loaders.base import LoadReport
-from fedmammo.utils.logging_utils import get_logger
+from fedmammobench.configs.schema import ModelConfig
+from fedmammobench.models._adapt import adapt_weight_tensor
+from fedmammobench.models.weight_loaders.base import LoadReport
+from fedmammobench.utils.logging_utils import get_logger
 
 _logger = get_logger(__name__)
 
@@ -95,7 +95,7 @@ def _adapt_first_conv(
 ) -> dict[str, Any]:
     """Adapt the first-conv weight in ``state`` to ``target_in_channels``.
 
-    Uses the ``"sum_preserving"`` strategy from :mod:`fedmammo.models._adapt`.
+    Uses the ``"sum_preserving"`` strategy from :mod:`fedmammobench.models._adapt`.
     Returns ``state`` unchanged when ``target_in_channels == 3`` (torchvision
     weights already have 3 channels).
     """
