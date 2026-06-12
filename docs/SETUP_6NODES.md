@@ -38,15 +38,15 @@ Este documento describe cómo configurar y ejecutar un experimento federado con 
 
 El dataset Mammo-Bench se divide en **6 nodos cliente + 1 servidor**:
 
-| Entidad | Dataset | País | Aprox. Filas | Rol |
+| Entidad | Dataset | País/Fuente | Aprox. Filas | Rol |
 |---------|---------|------|-------------|-----|
-| **Nodo 0** | cmmd | China | 5,202 | Cliente FL |
-| **Nodo 1** | dmid | Desconocido | 757 | Cliente FL |
-| **Nodo 2** | ibia | Desconocido | 3,577 | Cliente FL |
+| **Nodo 0** | rsna | RSNA Screening | 36,460 | Cliente FL |
+| **Nodo 1** | cmmd | China | 5,202 | Cliente FL |
+| **Nodo 2** | inbreast | Portugal | 410 | Cliente FL |
 | **Nodo 3** | cdd-cesm | Egipto | 800 | Cliente FL |
 | **Nodo 4** | kau-bcmd | Arabia Saudita | 2,337 | Cliente FL |
-| **Nodo 5** | ddsm | USA (CBIS-DDSM) | 10,400 | Cliente FL |
-| **Servidor** | inbreast | Portugal | 410 | Pre-entrenamiento (opcional) |
+| **Nodo 5** | dmid | Desconocido | 757 | Cliente FL |
+| **Servidor** | ddsm | USA (CBIS-DDSM) | 10,400 | Pre-entrenamiento |
 
 ---
 

@@ -4,13 +4,13 @@
 # Cada nodo cliente representa una fuente geográfica/institucional diferente.
 #
 # DISTRIBUCIÓN DE DATOS (6 NODOS + SERVIDOR):
-#   Nodo 0 — cmmd       — China                  (~5 202 filas)
-#   Nodo 1 — dmid       — Origen desconocido 1   (~  757 filas)
-#   Nodo 2 — ibia       — Origen desconocido 2   (~3 577 filas)
+#   Nodo 0 — rsna       — RSNA Screening         (~36 460 filas)
+#   Nodo 1 — cmmd       — China                  (~5 202 filas)
+#   Nodo 2 — inbreast   — Portugal               (~  410 filas)
 #   Nodo 3 — cdd-cesm   — Egipto                 (~  800 filas)
 #   Nodo 4 — kau-bcmd   — Arabia Saudita         (~2 337 filas)
-#   Nodo 5 — ddsm       — USA / CBIS-DDSM        (~10 400 filas)
-#   Servidor — inbreast — Portugal (~410 filas, pre-entrenamiento opcional)
+#   Nodo 5 — dmid       — Origen desconocido     (~  757 filas)
+#   Servidor — ddsm     — USA / CBIS-DDSM (~10 400 filas, pre-entrenamiento)
 #
 # FASES DE ENTRENAMIENTO (igual a exp01_fedavg_resnet50_5nodes_server.yaml):
 #   - Fase A (rondas 0–4)  : backbone congelado, solo cabeza (5 épocas locales)

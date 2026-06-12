@@ -12,13 +12,13 @@ Each node represents a different geographic/institutional source.
   Server  (inbreast)         — Portugal,          ~  410 rows
 
 6-NODE LAYOUT (each source separate):
-  Node 0  (cmmd)             — China,           ~5 202 rows
-  Node 1  (dmid)             — Unknown 1,        ~  757 rows
-  Node 2  (ibia)             — Unknown 2,       ~3 577 rows
-  Node 3  (cdd-cesm)         — Egypt,           ~  800 rows
-  Node 4  (kau-bcmd)         — Saudi Arabia,   ~2 337 rows
-  Node 5  (ddsm)             — USA, CBIS-DDSM, ~10 400 rows
-  Server  (inbreast)         — Portugal,          ~  410 rows (pre-training)
+  Node 0  (rsna)             — RSNA Screening,     ~36 460 rows
+  Node 1  (cmmd)             — China,              ~5 202 rows
+  Node 2  (inbreast)         — Portugal,            ~  410 rows
+  Node 3  (cdd-cesm)         — Egypt,              ~  800 rows
+  Node 4  (kau-bcmd)         — Saudi Arabia,       ~2 337 rows
+  Node 5  (dmid)             — Unknown,             ~  757 rows
+  Server  (ddsm)             — USA/CBIS-DDSM,      ~10 400 rows (pre-training)
 
 Flags
 -----
@@ -65,13 +65,13 @@ PARTITION_MAP_5NODES: dict[str, list[str]] = {
 }
 
 PARTITION_MAP_6NODES: dict[str, list[str]] = {
-    "node0": ["rsna-screening"],                                              # China
-    "node1": ["cmmd"],                                             # Desconocido origen 1
-    "node2": ["inbreast"],                                             # Desconocido origen 2
+    "node0": ["rsna"],                                              # RSNA Screening Mammography Challenge
+    "node1": ["cmmd"],                                             # China
+    "node2": ["inbreast"],                                         # Portugal
     "node3": ["cdd-cesm"],                                         # Egipto
     "node4": ["kau-bcmd"],                                         # Arabia Saudita
-    "node5": ["dmid"],                                             # USA / CBIS-DDSM
-    "server_train": ["mini-ddsm"],                                  # Portugal — pre-entrenamiento servidor
+    "node5": ["dmid"],                                             # Desconocido
+    "server_train": ["ddsm"],                                      # USA / CBIS-DDSM — pre-entrenamiento servidor
 }
 
 SUSPICIOUS_LABEL = "Suspicious Malignant"

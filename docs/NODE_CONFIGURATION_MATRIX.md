@@ -18,14 +18,14 @@ Esta es la referencia rápida de **exactamente qué debe tener cada nodo cliente
 
 ## TABLA DETALLADA POR NODO
 
-### **Nodo 0 (cmmd — China)**
+### **Nodo 0 (rsna — RSNA Screening)**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ ENTIDAD: Nodo 0 (cmmd)                                      │
+│ ENTIDAD: Nodo 0 (rsna)                                      │
 ├─────────────────────────────────────────────────────────────┤
-│ DATASET:         cmmd (China)                               │
-│ APROX. FILAS:    ~5,202                                     │
+│ DATASET:         rsna (RSNA Screening Mammography)          │
+│ APROX. FILAS:    ~36,460                                    │
 │ UBICACIÓN FÍSICA: Máquina remota 1 (opcional)               │
 ├─────────────────────────────────────────────────────────────┤
 │ 1. PESOS RadImageNet                                        │
@@ -43,14 +43,14 @@ Esta es la referencia rápida de **exactamente qué debe tener cada nodo cliente
 │                    --csv data/mammobench/mammo-bench.csv \  │
 │                    --out manifests/ --nodes 6               │
 │    Contenido:    2 columnas: image_path, classification     │
-│    Ejemplo:      cmmd/patient001/image.tif,Malignant       │
+│    Ejemplo:      rsna/patient001/image.tif,Malignant       │
 │    Copiar a:     Máquina Node0 en mismo directorio           │
 ├─────────────────────────────────────────────────────────────┤
 │ 3. IMÁGENES                                                 │
 │    Directorio:   data/mammobench/images/                    │
-│    ¿Cambio?      SÍ — SOLO imágenes del dataset cmmd        │
-│    Estructura:   data/mammobench/images/cmmd/patient*/...   │
-│    Aproximado:   ~5,202 imágenes (.tif o .jpg)             │
+│    ¿Cambio?      SÍ — SOLO imágenes del dataset rsna        │
+│    Estructura:   data/mammobench/images/rsna/patient*/...   │
+│    Aproximado:   ~36,460 imágenes (.tif o .jpg)            │
 │    Origen:       Copiar del almacenamiento de mammo-bench   │
 │    Sincronizar:  rsync, scp, NFS, o similar                 │
 ├─────────────────────────────────────────────────────────────┤
@@ -76,26 +76,26 @@ Esta es la referencia rápida de **exactamente qué debe tener cada nodo cliente
 
 ---
 
-### **Nodo 1 (dmid — Desconocido 1)**
+### **Nodo 1 (cmmd — China)**
 
 | Componente | Archivo/Directorio | ¿Cambio? | Detalles |
 |-----------|-------------------|----------|----------|
 | **Pesos** | `weights/RadImageNet-resnet50.pth` | **NO** | Mismo archivo |
-| **Manifest** | `manifests/node1_manifest.csv` | **SÍ** | De dataset `dmid` |
-| **Imágenes** | `data/mammobench/images/dmid/...` | **SÍ** | ~757 imágenes de dmid |
+| **Manifest** | `manifests/node1_manifest.csv` | **SÍ** | De dataset `cmmd` |
+| **Imágenes** | `data/mammobench/images/cmmd/...` | **SÍ** | ~5,202 imágenes de cmmd |
 | **Config YAML** | `configs/exp01_fedavg_resnet50_client.yaml` | **NO** | Idéntico |
 | **Variable env** | `FEDMAMMOBENCH_RADIMAGENET_DIR=$PWD/weights` | **NO** | Mismo comando |
 | **Comando** | `bash scripts/start_client.sh 1 192.168.14.184` | — | Reemplazar IP y node_id |
 
 ---
 
-### **Nodo 2 (ibia — Desconocido 2)**
+### **Nodo 2 (inbreast — Portugal)**
 
 | Componente | Archivo/Directorio | ¿Cambio? | Detalles |
 |-----------|-------------------|----------|----------|
 | **Pesos** | `weights/RadImageNet-resnet50.pth` | **NO** | Mismo archivo |
-| **Manifest** | `manifests/node2_manifest.csv` | **SÍ** | De dataset `ibia` |
-| **Imágenes** | `data/mammobench/images/ibia/...` | **SÍ** | ~3,577 imágenes de ibia |
+| **Manifest** | `manifests/node2_manifest.csv` | **SÍ** | De dataset `inbreast` |
+| **Imágenes** | `data/mammobench/images/inbreast/...` | **SÍ** | ~410 imágenes de inbreast |
 | **Config YAML** | `configs/exp01_fedavg_resnet50_client.yaml` | **NO** | Idéntico |
 | **Variable env** | `FEDMAMMOBENCH_RADIMAGENET_DIR=$PWD/weights` | **NO** | Mismo comando |
 | **Comando** | `bash scripts/start_client.sh 2 192.168.14.184` | — | Reemplazar IP y node_id |
@@ -128,13 +128,13 @@ Esta es la referencia rápida de **exactamente qué debe tener cada nodo cliente
 
 ---
 
-### **Nodo 5 (ddsm — USA / CBIS-DDSM)**
+### **Nodo 5 (dmid — Desconocido)**
 
 | Componente | Archivo/Directorio | ¿Cambio? | Detalles |
 |-----------|-------------------|----------|----------|
 | **Pesos** | `weights/RadImageNet-resnet50.pth` | **NO** | Mismo archivo |
-| **Manifest** | `manifests/node5_manifest.csv` | **SÍ** | De dataset `ddsm` |
-| **Imágenes** | `data/mammobench/images/ddsm/...` | **SÍ** | ~10,400 imágenes de ddsm |
+| **Manifest** | `manifests/node5_manifest.csv` | **SÍ** | De dataset `dmid` |
+| **Imágenes** | `data/mammobench/images/dmid/...` | **SÍ** | ~757 imágenes de dmid |
 | **Config YAML** | `configs/exp01_fedavg_resnet50_client.yaml` | **NO** | Idéntico |
 | **Variable env** | `FEDMAMMOBENCH_RADIMAGENET_DIR=$PWD/weights` | **NO** | Mismo comando |
 | **Comando** | `bash scripts/start_client.sh 5 192.168.14.184` | — | Reemplazar IP y node_id |
@@ -183,7 +183,7 @@ bash scripts/start_client.sh X 192.168.14.184
 ┌─────────────────────────────────────────────────────────────┐
 │            SERVIDOR CENTRAL (Este PC)                        │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │ mammo-bench.csv (completo: ~23,700 filas)             │  │
+│  │ mammo-bench.csv (completo: ~67,000 filas)             │  │
 │  │ RadImageNet-resnet50.pth (500 MB)                     │  │
 │  │ Almacenamiento de imágenes (todos los datasets)       │  │
 │  └───────────────────────────────────────────────────────┘  │
@@ -195,12 +195,12 @@ bash scripts/start_client.sh X 192.168.14.184
     ↓               ↓               ↓                  ↓
 ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
 │  Node0     │ │  Node1     │ │  Node2     │ │  Node3     │
-│  cmmd      │ │  dmid      │ │  ibia      │ │  cdd-cesm  │
+│  rsna      │ │  cmmd      │ │  inbreast  │ │  cdd-cesm  │
 │            │ │            │ │            │ │            │
 │ ✓ node0.   │ │ ✓ node1.   │ │ ✓ node2.   │ │ ✓ node3.   │
 │   csv      │ │   csv      │ │   csv      │ │   csv      │
 │ ✓ pesos    │ │ ✓ pesos    │ │ ✓ pesos    │ │ ✓ pesos    │
-│ ✓ cmmd/    │ │ ✓ dmid/    │ │ ✓ ibia/    │ │ ✓ cdd-cesm/│
+│ ✓ rsna/    │ │ ✓ cmmd/    │ │ ✓ inbreast/│ │ ✓ cdd-cesm/│
 │   imgs     │ │   imgs     │ │   imgs     │ │   imgs     │
 │ ✓ config   │ │ ✓ config   │ │ ✓ config   │ │ ✓ config   │
 └────────────┘ └────────────┘ └────────────┘ └────────────┘
@@ -210,16 +210,30 @@ bash scripts/start_client.sh X 192.168.14.184
     ↓               ↓               ↓           ↓
 ┌────────────┐ ┌────────────┐ ┌────────────┐
 │  Node4     │ │  Node5     │ │  Servidor  │
-│  kau-bcmd  │ │  ddsm      │ │  inbreast  │
-│            │ │            │ │  (opcional)│
+│  kau-bcmd  │ │  dmid      │ │  ddsm      │
+│            │ │            │ │ (pre-train)│
 │ ✓ node4.   │ │ ✓ node5.   │ │            │
 │   csv      │ │   csv      │ │            │
 │ ✓ pesos    │ │ ✓ pesos    │ │            │
-│ ✓ kau-bcmd/│ │ ✓ ddsm/    │ │            │
+│ ✓ kau-bcmd/│ │ ✓ dmid/    │ │            │
 │   imgs     │ │   imgs     │ │            │
 │ ✓ config   │ │ ✓ config   │ │            │
 └────────────┘ └────────────┘ └────────────┘
 ```
+
+---
+
+## DISTRIBUCIÓN FINAL DE DATASETS
+
+| Nodo | Dataset | País/Fuente | Aprox. Filas |
+|------|---------|------|-------------|
+| **Node0** | rsna | RSNA Screening | 36,460 |
+| **Node1** | cmmd | China | 5,202 |
+| **Node2** | inbreast | Portugal | 410 |
+| **Node3** | cdd-cesm | Egipto | 800 |
+| **Node4** | kau-bcmd | Arabia Saudita | 2,337 |
+| **Node5** | dmid | Desconocido | 757 |
+| **Servidor** | ddsm | USA (CBIS-DDSM) | 10,400 |
 
 ---
 
@@ -232,7 +246,7 @@ bash scripts/start_client.sh X 192.168.14.184
 
 ### ✗ DIFERENTE por nodo:
 1. **Manifest CSV** — node0.csv, node1.csv, ..., node5.csv
-2. **Imágenes** — Copiar solo dataset del nodo correspondiente
+2. **Imágenes** — Copiar solo dataset del nodo correspondiente (rsna, cmmd, inbreast, cdd-cesm, kau-bcmd, o dmid)
 3. **node_id** en comando `start_client.sh` — 0, 1, 2, 3, 4, o 5
 
 ---
