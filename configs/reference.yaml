@@ -1,0 +1,385 @@
+# =============================================================================
+# FedMammoBench — CONFIG DE REFERENCIA COMPLETA
+# =============================================================================
+# Este archivo documenta TODOS los parámetros disponibles con sus defaults,
+# opciones válidas y notas de uso. No está pensado para ejecutarse directamente.
+#
+# Para crear un experimento real:
+#   1. Copia uno de los configs en configs/ que sea más parecido a tu caso.
+#   2. Añade `defaults: base.yaml` al inicio.
+#   3. Sobreescribe sólo los campos que necesitas cambiar.
+#
+# Validación:
+#   from fedmammobench.configs import load_config
+#   cfg = load_config("configs/mi_experimento.yaml")
+#   cfg.validate()   # levanta ValueError en combinaciones inválidas
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Sección raíz — ExperimentConfig
+# -----------------------------------------------------------------------------
+
+name: mi_experimento          # Nombre del run. Determina runs/<name>/ como salida.
+
+mode: federated               # "federated" | "centralized"
+                              # Selecciona qué entrypoint lo consume.
+
+seed: 42                      # Semilla global para reproducibilidad.
+
+output_dir: runs              # Directorio raíz de salida. Cada run → output_dir/<name>/
+
+device: auto                  # "auto" → usa CUDA si está disponible, sino CPU.
+                              # "cpu" | "cuda" para forzar.
+
+
+# -----------------------------------------------------------------------------
+# data — DataConfig
+# Selección del dataset y parámetros de carga.
+# -----------------------------------------------------------------------------
+
+data:
+  # Nombre del dataset registrado vía @register_dataset.
+  # Nombres built-in: "cbis_ddsm" | "vindr_mammo" | "mammo_bench"
+  # "none" → servidor sin datos locales (evaluación 100% federada).
+  name: cbis_ddsm
+
+  # Ruta al CSV de manifiesto (cbis_ddsm, mammo_bench).
+  # Columnas mínimas requeridas: image_path, label, patient_id, split.
+  manifest_path: data/cbis_ddsm/manifest.csv
+
+  # Sólo VinDr-Mammo: ruta al CSV de anotaciones a nivel de breast.
+  annotations_path: null
+
+  # Directorio raíz donde están las imágenes (se antepone a image_path del CSV).
+  image_root: data/cbis_ddsm/images
+
+  # Formato de imagen. "png" | "jpg" | "dicom"
+  image_format: jpg
+
+  # Tamaño cuadrado al que se redimensionan las imágenes (alto == ancho).
+  image_size: 224
+
+  # true → carga como 1 canal (escala de grises); false → replica a 3 canales.
+  grayscale: true
+
+  # Número de clases. Mantener en 2 para clasificación binaria benigno/maligno.
+  num_classes: 2
+
+  # Mini-batch size para entrenamiento y evaluación.
+  batch_size: 32
+
+  # Workers de PyTorch DataLoader por cliente. 0 evita conflictos con gRPC/fork.
+  num_workers: 2
+
+  # Fracción del train set reservada para validación cuando el CSV no tiene
+  # columna 'split' con valor 'val'. La separación es a nivel de paciente.
+  val_fraction: 0.1
+
+  # Fracción del manifiesto reservada para test bajo la misma condición.
+  test_fraction: 0.1
+
+  # VinDr-Mammo: cómo mapear BI-RADS 3 (ambiguo).
+  # "drop" → excluir esas filas | "benign" | "malignant"
+  birads_3_policy: drop
+
+  # Mammo-Bench: cómo tratar filas con classification == "Normal".
+  # "benign" → mapear a benigno | "drop" → excluir
+  normal_policy: benign
+
+  # Mapeo de nombres de columna del CSV (sobreescribir si tu CSV usa otros nombres).
+  columns:
+    image_path: image_path    # Columna con la ruta relativa a la imagen.
+    label: pathology          # Columna con la etiqueta (benigno/maligno).
+    patient_id: patient_id    # Columna con el ID de paciente (evita leakage).
+    split: split              # Columna con "train" | "val" | "test".
+
+  # true → construye WeightedRandomSampler en entrenamiento para balancear clases.
+  balance_classes: true
+
+
+# -----------------------------------------------------------------------------
+# partitioning — PartitioningConfig
+# Cómo se distribuyen los datos de entrenamiento entre clientes federados.
+# La partición ocurre siempre a nivel de paciente para evitar leakage.
+# -----------------------------------------------------------------------------
+
+partitioning:
+  # Esquema de partición:
+  #   "iid"           → reparto uniforme aleatorio entre clientes.
+  #   "dirichlet"     → heterogeneidad de etiquetas controlada por alpha.
+  #   "quantity_skew" → clientes con distinta cantidad de datos (log-normal).
+  scheme: iid
+
+  # Parámetro de concentración Dirichlet. Sólo se usa con scheme: dirichlet.
+  # Valores bajos (0.1) → muy heterogéneo; valores altos (10) → casi IID.
+  alpha: 0.5
+
+  # Mínimo de muestras que debe tener cada cliente.
+  # Si un cliente recibe menos, se redistribuyen desde el más grande.
+  min_per_client: 16
+
+  # Reintentos máximos para redibujar una partición Dirichlet que no cumpla
+  # min_per_client.
+  max_retries: 20
+
+  # Desviación estándar del escalado log-normal para quantity_skew.
+  # 0 → cantidades iguales (equivalente a IID).
+  quantity_skew_sigma: 0.5
+
+
+# -----------------------------------------------------------------------------
+# model — ModelConfig
+# Arquitectura y carga de pesos.
+# -----------------------------------------------------------------------------
+
+model:
+  # Arquitectura.
+  # Opciones: "resnet18" | "resnet50" | "efficientnet_b0" | "densenet121" | "inception_v3"
+  name: resnet18
+
+  # Flag legado de compatibilidad. Se ignora si weight_source != "auto".
+  # true → equivale a weight_source: imagenet
+  # false → equivale a weight_source: none
+  pretrained: true
+
+  # Fuente de pesos preentrenados:
+  #   "auto"        → infiere de pretrained (compatibilidad hacia atrás).
+  #   "imagenet"    → pesos estándar torchvision ImageNet.
+  #   "radimagenet" → checkpoint RadImageNet (requiere $FEDMAMMOBENCH_RADIMAGENET_DIR
+  #                   o checkpoint_path). Soportado en: resnet18/50, densenet121, inception_v3.
+  #   "custom"      → checkpoint local arbitrario (requiere checkpoint_path).
+  #   "none"        → inicialización aleatoria (ablación).
+  weight_source: auto
+
+  # Ruta absoluta al checkpoint .pth.
+  # Requerido si weight_source: custom.
+  # Para radimagenet: sobreescribe la variable de entorno FEDMAMMOBENCH_RADIMAGENET_DIR.
+  checkpoint_path: null
+
+  # Número de clases de salida en el checkpoint fuente (para validación de shape).
+  # El head del checkpoint siempre se descarta y se reemplaza con uno de num_classes.
+  pretrained_num_classes: null
+
+  # false (default) → carga con strict=False (warnings en claves faltantes/extra).
+  # true → falla si el state_dict no coincide exactamente.
+  strict_load: false
+
+  # Dropout en el head de clasificación. Rango: [0, 1).
+  dropout: 0.2
+
+  # Debe coincidir con data.num_classes.
+  num_classes: 2
+
+  # 1 → escala de grises; 3 → RGB. El factory adapta la primera capa conv.
+  # Debe ser consistente con data.grayscale y training.augmentation.normalize_preset.
+  in_channels: 1
+
+  # true → congela todos los parámetros del backbone (requires_grad=False).
+  # Útil para warm-up de la cabeza en las primeras rondas.
+  freeze_backbone: false
+
+  # true → congela el head de clasificación.
+  freeze_head: false
+
+  # Si se establece, descongela el backbone cuando la ronda/epoch alcanza este valor.
+  # null → sin descongelamiento progresivo.
+  # Advertencia si unfreeze_at_epoch >= federated.rounds (nunca se ejecutaría).
+  unfreeze_at_epoch: null
+
+
+# -----------------------------------------------------------------------------
+# training — TrainingConfig
+# Hiperparámetros de entrenamiento local (por cliente o centralizado).
+# -----------------------------------------------------------------------------
+
+training:
+  # Épocas para entrenamiento centralizado (fedmammobench-centralized).
+  # En modo federado, la "época" equivale a una ronda completa.
+  epochs: 20
+
+  # Épocas locales por ronda por cliente (modo federado).
+  local_epochs: 1
+
+  # Clipping de norma de gradientes. 0 → deshabilitado.
+  grad_clip_norm: 0.0
+
+  # true → usa torch.cuda.amp autocast en CUDA.
+  # Nota: FedProx con mixed_precision=true está protegido contra underflow
+  # del término proximal, pero el resto del backward usa FP16.
+  mixed_precision: false
+
+  optimizer:
+    # "sgd" | "adam" | "adamw"
+    name: adamw
+
+    # Learning rate. Para federado se recomienda más bajo que centralizado
+    # (ej. 5e-5 vs 1e-4) para proteger contra drift no-IID.
+    lr: 1.0e-4
+
+    weight_decay: 1.0e-4
+
+    # Sólo usado por SGD.
+    momentum: 0.9
+
+  scheduler:
+    # "none" | "cosine" | "step" | "plateau"
+    name: none
+
+    # StepLR: decae lr por gamma cada step_size épocas.
+    step_size: 10
+    gamma: 0.1
+
+    # CosineAnnealingLR: T_max (número de épocas del ciclo).
+    t_max: 50
+
+  augmentation:
+    horizontal_flip: true
+    vertical_flip: false
+
+    # Límite de rotación aleatoria en grados.
+    rotate_limit: 15
+
+    # Ajuste aleatorio de brillo y contraste (Albumentations).
+    brightness_contrast: true
+
+    # Transformación elástica (útil para mamografía). Lento: desactivar en pruebas.
+    elastic: false
+
+    # Preset de normalización. Sobreescribe normalize_mean/std si se establece.
+    # Opciones:
+    #   "imagenet_rgb"     → mean=(0.485,0.456,0.406), std=(0.229,0.224,0.225)  [3 canales]
+    #   "imagenet_gray"    → mean=(0.449,), std=(0.226,)                         [1 canal]
+    #   "radimagenet_rgb"  → mean=(0.5,0.5,0.5), std=(0.5,0.5,0.5)              [3 canales]
+    #   "radimagenet_gray" → mean=(0.5,), std=(0.5,)                             [1 canal]
+    #   "mammo_default"    → mean=(0.5,), std=(0.25,)                            [1 canal]
+    # null → usa normalize_mean/normalize_std directamente.
+    # IMPORTANTE: el preset debe ser consistente con model.in_channels.
+    normalize_preset: null
+
+    # Usado sólo si normalize_preset es null.
+    # Puede ser escalar (replicado por canal) o lista por canal.
+    normalize_mean: 0.5
+    normalize_std: 0.25
+
+  loss:
+    # "ce"    → cross-entropy con pesos de clase opcionales.
+    # "focal" → focal loss (útil para desbalance severo).
+    name: ce
+
+    # true → calcula pesos de clase a partir de conteos del train set.
+    auto_class_weights: true
+
+    # Gamma para focal loss. Sólo usado si name: focal.
+    focal_gamma: 2.0
+
+
+# -----------------------------------------------------------------------------
+# evaluation — EvaluationConfig
+# Parámetros de evaluación post-entrenamiento.
+# -----------------------------------------------------------------------------
+
+evaluation:
+  # Umbral de probabilidad para la clase positiva (maligno).
+  # Afecta sensibilidad, especificidad, F1 reportados.
+  threshold: 0.5
+
+  # true → guarda predicciones por muestra en un CSV en runs/<name>/.
+  save_predictions: false
+
+
+# -----------------------------------------------------------------------------
+# federated — FederatedConfig
+# Parámetros de Flower: simulación Ray o despliegue gRPC real.
+# -----------------------------------------------------------------------------
+
+federated:
+  # Número de clientes simulados (hospitales virtuales).
+  # En gRPC real es informativo; el conteo real lo determinan min_*_clients.
+  num_clients: 4
+
+  # Número de rondas de aprendizaje federado.
+  rounds: 10
+
+  # Fracción de clientes seleccionados para entrenamiento por ronda. (0, 1]
+  fraction_fit: 1.0
+
+  # Fracción seleccionada para evaluación federada por ronda. [0, 1]
+  fraction_evaluate: 1.0
+
+  # Mínimo absoluto de clientes para iniciar entrenamiento en una ronda.
+  min_fit_clients: 2
+
+  # Mínimo absoluto para evaluación.
+  min_evaluate_clients: 2
+
+  # El servidor espera hasta tener este número de clientes disponibles
+  # antes de comenzar la primera ronda.
+  min_available_clients: 2
+
+  # true → una ronda continúa aunque algún cliente falle.
+  # false → falla rápido (recomendado en producción con datos reales).
+  accept_failures: true
+
+  # Recursos Ray por cliente (sólo simulación).
+  client_resources:
+    num_cpus: 1.0
+    num_gpus: 0.0   # 0.0 → CPU only; 1.0 → GPU dedicada; 0.5 → dos clientes comparten GPU
+
+  # Argumentos adicionales para ray.init() (sólo simulación).
+  # Ej: { "num_cpus": 8, "num_gpus": 1 }
+  ray_init_args: {}
+
+  # Dirección del servidor gRPC. Sólo usado en modo gRPC real.
+  # Servidor: "0.0.0.0:8080" (escucha en todos los interfaces)
+  # Cliente: "192.168.1.10:8080" (IP del servidor)
+  server_address: "0.0.0.0:8080"
+
+  # Tamaño máximo de mensaje gRPC en bytes. Default 512 MB.
+  # ResNet50 FP32 ≈ 100 MB por cliente. Aumentar para modelos más grandes.
+  grpc_max_message_length: 536870912   # 512 * 1024 * 1024
+
+  # Timeout por ronda en segundos. 0 → sin timeout (bloquea indefinidamente).
+  # Útil para detectar clientes caídos en gRPC real.
+  round_timeout_seconds: 0
+
+  strategy:
+    # "fedavg"   → promedio ponderado estándar.
+    # "fedprox"  → regularización proximal para datos no-IID (requiere params.mu).
+    # "scaffold" → reducción de varianza via control variates.
+    # "fedbn"    → no agrega capas BatchNorm (útil para heterogeneidad extrema).
+    name: fedavg
+
+    # Parámetros específicos de la estrategia.
+    # FedProx: { mu: 0.01 }   → fuerza de regularización proximal (>0).
+    #   mu muy alto → clientes no se alejan del global (menos drift, menos aprendizaje local).
+    #   mu muy bajo → parecido a FedAvg.
+    # SCAFFOLD: {}             → sin parámetros adicionales requeridos.
+    # FedBN: {}                → sin parámetros adicionales requeridos.
+    params: {}
+
+  # Entrenamiento híbrido en el nodo central (servidor también entrena).
+  # Por defecto deshabilitado: el servidor sólo agrega.
+  server_training:
+    # true → el servidor entrena local_epochs sobre su propio dataset tras cada
+    # agregación. Los pesos resultantes reemplazan (o se interpolan con) los
+    # pesos agregados. Requiere manifest_path e image_root.
+    enabled: false
+
+    # Dataset a usar en el servidor. null → hereda data.name.
+    dataset_name: null
+
+    # Ruta al CSV de manifiesto del servidor (requerido si enabled: true).
+    manifest_path: null
+
+    # Directorio de imágenes del servidor (requerido si enabled: true).
+    image_root: null
+
+    # Épocas de entrenamiento local del servidor por ronda.
+    local_epochs: 1
+
+    # Interpolación entre pesos agregados y pesos del servidor:
+    #   new = (1 - server_weight) * aggregated + server_weight * server_trained
+    # 1.0 → toma los pesos del servidor tal cual (continuación desde el global).
+    # 0.5 → promedio entre el global agregado y el resultado del servidor.
+    server_weight: 1.0
