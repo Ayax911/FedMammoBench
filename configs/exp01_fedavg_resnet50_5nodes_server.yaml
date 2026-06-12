@@ -1,0 +1,92 @@
+# exp01_fedavg_resnet50 — SERVIDOR CENTRAL — 5 NODOS
+#
+# Idéntico a exp01_fedavg_resnet50_server.yaml excepto en la configuración
+# de nodos (num_clients=5). Usar junto con exp01_fedavg_resnet50_client.yaml.
+#
+# Partición de datos (5 nodos geográficos):
+#   Nodo 0 — cmmd       — China                  (~5 202 filas)
+#   Nodo 1 — dmid       — Origen desconocido      (~  757 filas)
+#   Nodo 2 — ibia       — Origen desconocido      (~3 577 filas)
+#   Nodo 3 — cdd-cesm + kau-bcmd — Egipto+Arabia (~3 137 filas)
+#   Nodo 4 — ddsm       — USA / CBIS-DDSM         (~10 400 filas)
+#   Servidor — inbreast — Portugal (~410 filas, evaluación centralizada)
+#
+# Generar manifests:
+#   python scripts/partition_mammobench.py \
+#       --csv data/mammobench/mammo-bench.csv \
+#       --out manifests/ \
+#       --nodes 5
+#
+# Arrancar servidor:
+#   bash scripts/start_server.sh configs/exp01_fedavg_resnet50_5nodes_server.yaml
+#
+# Arrancar cada nodo cliente (reemplazar SERVER_IP con la IP LAN del servidor):
+#   bash scripts/start_client.sh 0 <SERVER_IP>
+#   bash scripts/start_client.sh 1 <SERVER_IP>
+#   bash scripts/start_client.sh 2 <SERVER_IP>
+#   bash scripts/start_client.sh 3 <SERVER_IP>
+#   bash scripts/start_client.sh 4 <SERVER_IP>
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: exp01_fedavg_resnet50_5nodes
+mode: federated
+seed: 42
+output_dir: runs/exp01_fedavg_resnet50_5nodes
+device: auto
+
+data:
+  # Evaluación federada pura. Para evaluación centralizada en el servidor,
+  # cambiar name: mammo_bench y proveer manifest_path con server_test_manifest.csv
+  name: none
+  image_size: 224
+  grayscale: false      # false → in_channels=3 (grayscale replicado a RGB)
+  num_classes: 2        # clases del dataset (benign=0, malignant=1)
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.0
+  test_fraction: 0.0
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: null          # null → usa $FEDMAMMOBENCH_RADIMAGENET_DIR
+  in_channels: 3
+  num_classes: 1                 # logit único: BCEWithLogitsLoss
+  dropout: 0.0
+  freeze_backbone: true          # Fase A: solo cabeza (rondas 0–4)
+  unfreeze_at_epoch: 5           # Fase B: fine-tuning completo desde ronda 5
+
+training:
+  local_epochs: 1
+  grad_clip_norm: 1.0
+  mixed_precision: false
+  optimizer:
+    name: adamw
+    lr: 5.0e-5
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 30
+  augmentation:
+    normalize_preset: radimagenet_rgb   # mean=(0.5,0.5,0.5) std=(0.5,0.5,0.5)
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5                 # 5 nodos físicos
+  rounds: 30                     # 5 rondas Fase A + 25 rondas Fase B
+  fraction_fit: 1.0              # todos los clientes participan
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5       # bloquea hasta que los 5 nodos estén conectados
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedavg
+    params: {}

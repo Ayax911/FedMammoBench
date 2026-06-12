@@ -1,31 +1,37 @@
 """Partition the Mammo-Bench CSV into per-node manifests + server test set.
 
-Strategy: source_dataset as the natural partitioning axis.
+Strategy: source_dataset as the natural partitioning axis (Non-IID).
+Each node represents a different geographic/institutional source.
 
-  Node 0  (ddsm)             - USA, CBIS-DDSM, 10 400 rows
-  Node 1  (cmmd)             - China,           5 202 rows
-  Node 2  (ibia)             - Unknown origin,  3 577 rows
-  Node 3  (cdd-cesm, kau-bcmd) - Egypt + Saudi Arabia, 3 137 rows
-  Server  (inbreast, dmid)   - Portugal + unknown, 757 rows
-                               (institutions NOT seen by any client)
+  Node 0  (cmmd)             — China,           ~5 202 rows
+  Node 1  (dmid)             — Unknown,          ~  757 rows
+  Node 2  (ibia)             — Unknown origin,  ~3 577 rows
+  Node 3  (cdd-cesm,kau-bcmd)— Egypt + S.Arabia,~3 137 rows
+  Node 4  (ddsm)             — USA, CBIS-DDSM, ~10 400 rows
+  Server  (inbreast)         — Portugal,          ~  410 rows
+                               (institution NOT seen by any client)
 
-This produces a Non-IID setup (each node has a different label distribution)
-which is exactly the scenario federated learning is designed to handle.
+Flags
+-----
+  --nodes 2   → uses 2-node layout (node0=cmmd, node1=dmid, server_test=rest)
+  --nodes 5   → uses 5-node layout (default, described above)
 
 Usage
 -----
   python scripts/partition_mammobench.py \\
       --csv data/mammobench/mammo-bench.csv \\
-      --out data/mammobench/partitions
+      --out manifests/
+
+  python scripts/partition_mammobench.py \\
+      --csv data/mammobench/mammo-bench.csv \\
+      --out manifests/ \\
+      --nodes 2
 
 Output files
 ------------
-  partitions/node0_manifest.csv
-  partitions/node1_manifest.csv
-  partitions/node2_manifest.csv
-  partitions/node3_manifest.csv
-  partitions/server_test_manifest.csv
-  partitions/partition_summary.txt
+  manifests/node0_manifest.csv  …  node<N>_manifest.csv
+  manifests/server_test_manifest.csv
+  manifests/partition_summary.txt
 """
 
 from __future__ import annotations
@@ -38,12 +44,21 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------------------
-# Partition map
+# Partition maps
 # ---------------------------------------------------------------------------
-PARTITION_MAP: dict[str, list[str]] = {
-    "node0": ["cmmd"],                                        # China
-    "node1": ["dmid"],                                        # Desconocido
-    "server_test": ["ibia", "kau-bcmd", "cdd-cesm", "inbreast", "ddsm"],  # test centralizado
+PARTITION_MAP_2NODES: dict[str, list[str]] = {
+    "node0": ["cmmd"],                                              # China
+    "node1": ["dmid"],                                             # Desconocido
+    "server_test": ["ibia", "kau-bcmd", "cdd-cesm", "inbreast", "ddsm"],
+}
+
+PARTITION_MAP_5NODES: dict[str, list[str]] = {
+    "node0": ["cmmd"],                                              # China
+    "node1": ["dmid"],                                             # Desconocido
+    "node2": ["ibia"],                                             # Origen desconocido
+    "node3": ["cdd-cesm", "kau-bcmd"],                            # Egipto + Arabia Saudita
+    "node4": ["ddsm"],                                             # USA / CBIS-DDSM
+    "server_test": ["inbreast"],                                   # Portugal — eval servidor
 }
 
 SUSPICIOUS_LABEL = "Suspicious Malignant"
@@ -63,11 +78,18 @@ def _stats(df: pd.DataFrame) -> str:
     )
 
 
-def partition(csv_path: Path, out_dir: Path) -> None:
+def partition(csv_path: Path, out_dir: Path, *, num_nodes: int = 5) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    if num_nodes == 2:
+        partition_map = PARTITION_MAP_2NODES
+    elif num_nodes == 5:
+        partition_map = PARTITION_MAP_5NODES
+    else:
+        raise ValueError(f"--nodes must be 2 or 5, got {num_nodes}")
+
     df = pd.read_csv(csv_path)
-    print(f"Loaded {len(df)} rows from {csv_path}")
+    print(f"Loaded {len(df)} rows from {csv_path}  (layout: {num_nodes} nodes)")
 
     # Drop ambiguous label rows (235 cases in the dataset).
     n_before = len(df)
@@ -78,7 +100,7 @@ def partition(csv_path: Path, out_dir: Path) -> None:
 
     sources_in_csv = set(df["source_dataset"].unique())
     all_mapped_sources: set[str] = set()
-    for sources in PARTITION_MAP.values():
+    for sources in partition_map.values():
         all_mapped_sources.update(sources)
 
     unmapped = sources_in_csv - all_mapped_sources
@@ -88,12 +110,13 @@ def partition(csv_path: Path, out_dir: Path) -> None:
     summary_lines: list[str] = [
         "Mammo-Bench partition summary",
         "=" * 60,
-        f"Input CSV : {csv_path}",
+        f"Input CSV  : {csv_path}",
+        f"Num nodes  : {num_nodes}",
         f"Total rows (after dropping Suspicious Malignant): {len(df)}",
         "",
     ]
 
-    for partition_name, sources in PARTITION_MAP.items():
+    for partition_name, sources in partition_map.items():
         subset = df[df["source_dataset"].isin(sources)].copy()
 
         # Determine output filename.
@@ -112,7 +135,7 @@ def partition(csv_path: Path, out_dir: Path) -> None:
 
     # Verify no row was assigned to more than one partition.
     assigned_idxs: list[int] = []
-    for sources in PARTITION_MAP.values():
+    for sources in partition_map.values():
         assigned_idxs.extend(df[df["source_dataset"].isin(sources)].index.tolist())
     if len(assigned_idxs) != len(set(assigned_idxs)):
         print("ERROR: some rows appear in more than one partition!")
@@ -134,10 +157,17 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """\
-            Example:
+            Examples:
+              # 5 nodos (por defecto — para exp con 5 hospitales):
               python scripts/partition_mammobench.py \\
                   --csv data/mammobench/mammo-bench.csv \\
-                  --out data/mammobench/partitions
+                  --out manifests/
+
+              # 2 nodos (experimento de referencia exp01):
+              python scripts/partition_mammobench.py \\
+                  --csv data/mammobench/mammo-bench.csv \\
+                  --out manifests/ \\
+                  --nodes 2
             """
         ),
     )
@@ -153,8 +183,15 @@ def main() -> None:
         type=Path,
         help="Output directory for partition CSVs",
     )
+    parser.add_argument(
+        "--nodes",
+        type=int,
+        default=5,
+        choices=[2, 5],
+        help="Number of client nodes (2 or 5, default 5).",
+    )
     args = parser.parse_args()
-    partition(args.csv, args.out)
+    partition(args.csv, args.out, num_nodes=args.nodes)
 
 
 if __name__ == "__main__":
