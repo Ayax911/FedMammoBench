@@ -1,36 +1,39 @@
-"""Partition the Mammo-Bench CSV into per-node manifests + server test set.
+"""Partition the Mammo-Bench CSV into per-node manifests + server dataset.
 
 Strategy: source_dataset as the natural partitioning axis (Non-IID).
 Each node represents a different geographic/institutional source.
 
+5-NODE LAYOUT (default):
   Node 0  (cmmd)             — China,           ~5 202 rows
   Node 1  (dmid)             — Unknown,          ~  757 rows
   Node 2  (ibia)             — Unknown origin,  ~3 577 rows
   Node 3  (cdd-cesm,kau-bcmd)— Egypt + S.Arabia,~3 137 rows
   Node 4  (ddsm)             — USA, CBIS-DDSM, ~10 400 rows
   Server  (inbreast)         — Portugal,          ~  410 rows
-                               (institution NOT seen by any client)
+
+6-NODE LAYOUT (each source separate):
+  Node 0  (cmmd)             — China,           ~5 202 rows
+  Node 1  (dmid)             — Unknown 1,        ~  757 rows
+  Node 2  (ibia)             — Unknown 2,       ~3 577 rows
+  Node 3  (cdd-cesm)         — Egypt,           ~  800 rows
+  Node 4  (kau-bcmd)         — Saudi Arabia,   ~2 337 rows
+  Node 5  (ddsm)             — USA, CBIS-DDSM, ~10 400 rows
+  Server  (inbreast)         — Portugal,          ~  410 rows (pre-training)
 
 Flags
 -----
-  --nodes 2   → uses 2-node layout (node0=cmmd, node1=dmid, server_test=rest)
-  --nodes 5   → uses 5-node layout (default, described above)
+  --nodes 2   → 2 clients + server_test
+  --nodes 5   → 5 clients + server_test (default)
+  --nodes 6   → 6 clients + server_train (for server pre-training)
 
 Usage
 -----
-  python scripts/partition_mammobench.py \\
-      --csv data/mammobench/mammo-bench.csv \\
-      --out manifests/
-
-  python scripts/partition_mammobench.py \\
-      --csv data/mammobench/mammo-bench.csv \\
-      --out manifests/ \\
-      --nodes 2
+  python scripts/partition_mammobench.py --csv data/mammobench/mammo-bench.csv --out manifests/ --nodes 6
 
 Output files
 ------------
   manifests/node0_manifest.csv  …  node<N>_manifest.csv
-  manifests/server_test_manifest.csv
+  manifests/server_train_manifest.csv (or server_test_manifest.csv for --nodes 2/5)
   manifests/partition_summary.txt
 """
 
@@ -61,6 +64,16 @@ PARTITION_MAP_5NODES: dict[str, list[str]] = {
     "server_test": ["inbreast"],                                   # Portugal — eval servidor
 }
 
+PARTITION_MAP_6NODES: dict[str, list[str]] = {
+    "node0": ["rsna-screening"],                                              # China
+    "node1": ["cmmd"],                                             # Desconocido origen 1
+    "node2": ["inbreast"],                                             # Desconocido origen 2
+    "node3": ["cdd-cesm"],                                         # Egipto
+    "node4": ["kau-bcmd"],                                         # Arabia Saudita
+    "node5": ["dmid"],                                             # USA / CBIS-DDSM
+    "server_train": ["mini-ddsm"],                                  # Portugal — pre-entrenamiento servidor
+}
+
 SUSPICIOUS_LABEL = "Suspicious Malignant"
 
 
@@ -85,8 +98,10 @@ def partition(csv_path: Path, out_dir: Path, *, num_nodes: int = 5) -> None:
         partition_map = PARTITION_MAP_2NODES
     elif num_nodes == 5:
         partition_map = PARTITION_MAP_5NODES
+    elif num_nodes == 6:
+        partition_map = PARTITION_MAP_6NODES
     else:
-        raise ValueError(f"--nodes must be 2 or 5, got {num_nodes}")
+        raise ValueError(f"--nodes must be 2, 5, or 6, got {num_nodes}")
 
     df = pd.read_csv(csv_path)
     print(f"Loaded {len(df)} rows from {csv_path}  (layout: {num_nodes} nodes)")
@@ -187,8 +202,8 @@ def main() -> None:
         "--nodes",
         type=int,
         default=5,
-        choices=[2, 5],
-        help="Number of client nodes (2 or 5, default 5).",
+        choices=[2, 5, 6],
+        help="Number of client nodes (2, 5, or 6, default 5).",
     )
     args = parser.parse_args()
     partition(args.csv, args.out, num_nodes=args.nodes)
