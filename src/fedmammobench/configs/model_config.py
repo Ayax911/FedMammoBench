@@ -127,8 +127,8 @@ class ModelConfig:
         if self.dropout < 0.0 or self.dropout >= 1.0:
             raise ValueError(f"dropout must be in [0, 1), got {self.dropout}")
 
-        if self.num_classes < 2:
-            raise ValueError(f"num_classes must be >= 2, got {self.num_classes}")
+        if self.num_classes < 1:
+            raise ValueError(f"num_classes must be >= 1, got {self.num_classes}")
 
         if self.in_channels not in (1, 3):
             raise ValueError(f"in_channels must be 1 or 3, got {self.in_channels}")

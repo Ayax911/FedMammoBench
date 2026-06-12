@@ -46,7 +46,7 @@ class LossConfig:
     :attr:`focal_gamma`.
     """
 
-    name: Literal["ce", "focal"] = "ce"
+    name: Literal["ce", "focal", "bce"] = "ce"
     auto_class_weights: bool = True
     focal_gamma: float = 2.0
 

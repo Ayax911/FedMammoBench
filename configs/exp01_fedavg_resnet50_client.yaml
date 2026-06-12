@@ -1,0 +1,94 @@
+# exp01_fedavg_resnet50 — NODOS CLIENTE
+#
+# Cada nodo físico usa este mismo YAML. Las rutas específicas del nodo
+# (manifest y directorio de imágenes) se pasan como argumentos CLI.
+#
+# model.freeze_backbone y model.unfreeze_at_epoch DEBEN coincidir
+# exactamente con el config del servidor para que el schedule de congelado
+# sea consistente entre rondas.
+#
+# El modelo replica la arquitectura del modelo centralizado:
+#   - ResNet-50, num_classes=1 (logit único), dropout=0.0
+#   - Pesos RadImageNet con remapping backbone.N → torchvision
+#   - Pérdida: BCEWithLogitsLoss con pos_weight calculado sobre datos locales
+#
+# ── EJECUCIÓN ──────────────────────────────────────────────────────────
+#   Nodo 0 (CBIS-DDSM / EE.UU.):
+#   python scripts/run_client.py \
+#       --config configs/exp01_fedavg_resnet50_client.yaml \
+#       --server <IP_SERVIDOR>:8080 \
+#       --client-id 0 \
+#       --manifest manifests/node0_manifest.csv \
+#       --data-dir data/mammobench/images
+#
+#   Nodo 1 (CMMD / China):
+#   python scripts/run_client.py \
+#       --config configs/exp01_fedavg_resnet50_client.yaml \
+#       --server <IP_SERVIDOR>:8080 \
+#       --client-id 1 \
+#       --manifest manifests/node1_manifest.csv \
+#       --data-dir data/mammobench/images
+#
+# Ver docs/FEDERATED_DEPLOYMENT_GUIDE.md para el checklist completo.
+# ──────────────────────────────────────────────────────────────────────
+
+name: exp01_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp01_fedavg_resnet50
+device: auto
+
+data:
+  name: mammo_bench
+  # Rutas sobreescritas por --manifest y --data-dir en CLI.
+  # Dejarlas como placeholder permite detectar si se olvidó el argumento.
+  manifest_path: manifests/node0_manifest.csv
+  image_root: data/mammobench/images
+  image_size: 224
+  grayscale: true
+  num_classes: 1      # logit único — coincide con el modelo centralizado
+  batch_size: 16
+  num_workers: 0      # 0 evita conflictos entre gRPC y DataLoader workers
+  val_fraction: 0.15  # 15% de datos locales → validación local por ronda
+  test_fraction: 0.0  # sin test set local; evaluación global en el servidor
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: null          # null → usa $FEDMAMMOBENCH_RADIMAGENET_DIR
+  in_channels: 1                 # entrada en escala de grises (mamografía)
+  num_classes: 1                 # logit único: BCEWithLogitsLoss
+  dropout: 0.0                   # sin dropout — idéntico al modelo centralizado
+  freeze_backbone: true          # DEBE coincidir con el servidor
+  unfreeze_at_epoch: 5           # DEBE coincidir con el servidor
+
+training:
+  local_epochs: 1                # 1 época local por ronda de FL
+  grad_clip_norm: 1.0
+  mixed_precision: false
+  optimizer:
+    name: adamw
+    lr: 5.0e-5
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 30                    # DEBE coincidir con federated.rounds del servidor
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 10
+    brightness_contrast: true
+    normalize_preset: radimagenet_gray   # media=0.5, std=0.5 — estándar RadImageNet
+  loss:
+    name: bce                    # BCEWithLogitsLoss
+    auto_class_weights: true     # pos_weight = n_neg / n_pos calculado sobre datos locales
+
+evaluation:
+  threshold: 0.5
+  save_predictions: false
+
+federated:
+  rounds: 30          # DEBE coincidir con el servidor
+  strategy:
+    name: fedavg
+    params: {}
