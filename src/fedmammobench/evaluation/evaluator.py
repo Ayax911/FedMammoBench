@@ -58,11 +58,13 @@ class Evaluator:
                 loss = criterion(logits, targets_dev.long())
                 loss_sum += float(loss.item()) * targets_dev.size(0)
                 n_samples += int(targets_dev.size(0))
-            probs = torch.softmax(logits, dim=-1)
-            # Positive class is index 1; if num_classes > 2 the metrics module
-            # will treat anything above threshold as positive, but for binary
-            # mammography the positive class is malignant == 1.
-            pos_probs = probs[:, 1] if probs.shape[1] > 1 else probs[:, 0]
+            # Single-logit binary output (num_classes=1, BCEWithLogitsLoss):
+            # softmax of a 1-d vector is always 1.0 — use sigmoid instead.
+            if logits.shape[-1] == 1:
+                pos_probs = torch.sigmoid(logits.squeeze(-1))
+            else:
+                probs = torch.softmax(logits, dim=-1)
+                pos_probs = probs[:, 1]
             all_probs.append(pos_probs.detach().cpu().numpy())
             all_targets.append(targets.detach().cpu().numpy())
             n_batches += 1
@@ -77,6 +79,7 @@ class Evaluator:
                     recall=0.0,
                     f1=0.0,
                     roc_auc=float("nan"),
+                    auc_pr=float("nan"),
                     sensitivity=0.0,
                     specificity=0.0,
                     support=0,

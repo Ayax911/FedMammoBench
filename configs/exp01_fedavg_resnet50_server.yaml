@@ -1,24 +1,36 @@
 # exp01_fedavg_resnet50 — SERVIDOR CENTRAL
 #
 # Experimento de referencia: FedAvg con ResNet-50 + RadImageNet.
-# El modelo federado replica exactamente el transfer learning del modelo
-# centralizado (infraestructura centralizada/src/model.py):
-#   - ResNet-50, num_classes=1 (logit único), dropout=0.0
-#   - Pesos RadImageNet con remapping backbone.N → torchvision
-#   - Pérdida: BCEWithLogitsLoss con pos_weight automático
+# Diseñado para ser directamente comparable con infraestructura centralizada/src/train.py:
 #
-# Fase A (rondas 0–4): backbone congelado → warm-up de cabeza.
-# Fase B (rondas 5–29): fine-tuning completo con lr bajo.
+#   Modelo (idéntico al centralizado):
+#     - ResNet-50, num_classes=1 (logit único, BCEWithLogitsLoss), dropout=0.0
+#     - Pesos RadImageNet con remapping backbone.N → torchvision
+#     - in_channels=3: imágenes grayscale replicadas a 3 canales (Grayscale→RGB)
+#     - Normalización RadImageNet RGB: mean=(0.5,0.5,0.5), std=(0.5,0.5,0.5)
+#
+#   Diferencias conocidas FL vs centralizado (no evitables):
+#     - LR único 5e-5 (FL) vs discriminativo head=1e-3/backbone=1e-4 (centralizado)
+#     - Sin early stopping por rondas (fijas)
+#     - Threshold fijo 0.5 (FL) vs Youden en val (centralizado)
+#     - Batch size 32 (FL) = centralizado
+#
+#   Fase A (rondas 0–4): backbone congelado → warm-up de cabeza.
+#   Fase B (rondas 5–29): fine-tuning completo con lr conservador.
 #
 # ── REQUISITOS PREVIOS ─────────────────────────────────────────────────
 # 1. Obtener RadImageNet-resnet50.pth de BMEII-AI/RadImageNet.
 # 2. Indicar la ubicación del checkpoint (una de las dos opciones):
 #      (a) export FEDMAMMOBENCH_RADIMAGENET_DIR=/ruta/al/directorio/
 #      (b) Fijar model.checkpoint_path a la ruta absoluta del .pth
-# 3. Iniciar el servidor PRIMERO (Terminal 1):
+# 3. Generar manifests por nodo:
+#      python scripts/partition_mammobench.py \
+#          --csv data/mammobench/mammo-bench.csv \
+#          --out manifests/
+# 4. Iniciar el servidor PRIMERO (Terminal 1):
 #      python scripts/run_server.py \
 #          --config configs/exp01_fedavg_resnet50_server.yaml
-# 4. Luego iniciar cada nodo cliente (Terminales 2 y 3):
+# 5. Luego iniciar cada nodo cliente (Terminales 2 y 3):
 #      python scripts/run_client.py \
 #          --config configs/exp01_fedavg_resnet50_client.yaml \
 #          --server <IP_SERVIDOR>:8080 \
@@ -39,10 +51,10 @@ data:
   # y proporcionar manifest_path e image_root del servidor.
   name: none
   image_size: 224
-  grayscale: true
-  num_classes: 1      # logit único — coincide con el modelo centralizado
-  batch_size: 16
-  num_workers: 0      # 0 evita conflictos gRPC/fork
+  grayscale: false      # false → in_channels=3 (grayscale replicado a RGB, igual que centralizado)
+  num_classes: 1        # logit único — coincide con el modelo centralizado
+  batch_size: 32        # igual que centralizado (base.yaml batch_size=32)
+  num_workers: 0        # 0 evita conflictos gRPC/fork
   val_fraction: 0.0
   test_fraction: 0.0
 
@@ -50,7 +62,7 @@ model:
   name: resnet50
   weight_source: radimagenet
   checkpoint_path: null          # null → usa $FEDMAMMOBENCH_RADIMAGENET_DIR
-  in_channels: 1                 # entrada en escala de grises (mamografía)
+  in_channels: 3                 # 3 canales: grayscale replicado a RGB (igual que centralizado)
   num_classes: 1                 # logit único: BCEWithLogitsLoss
   dropout: 0.0                   # sin dropout — idéntico al modelo centralizado
   freeze_backbone: true          # Fase A: solo cabeza entrenable (rondas 0–4)
@@ -68,17 +80,17 @@ training:
     name: cosine
     t_max: 30                    # decae sobre todas las rondas
   augmentation:
-    normalize_preset: radimagenet_gray   # media=0.5, std=0.5 — estándar RadImageNet
+    normalize_preset: radimagenet_rgb   # mean=(0.5,0.5,0.5) std=(0.5,0.5,0.5) — correcto para RadImageNet
   loss:
     name: bce                    # BCEWithLogitsLoss con pos_weight automático
-    auto_class_weights: true     # pos_weight = n_neg / n_pos
+    auto_class_weights: true     # pos_weight = n_neg / n_pos (por nodo)
 
 evaluation:
   threshold: 0.5
   save_predictions: true
 
 federated:
-  num_clients: 2                 # Nodo 0 (CBIS-DDSM) + Nodo 1 (CMMD)
+  num_clients: 2                 # Nodo 0 (CMMD/China) + Nodo 1 (DMID)
   rounds: 30                     # 5 rondas Fase A + 25 rondas Fase B
   fraction_fit: 1.0              # ambos clientes participan en cada ronda
   fraction_evaluate: 1.0

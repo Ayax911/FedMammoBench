@@ -3,17 +3,26 @@
 # Cada nodo físico usa este mismo YAML. Las rutas específicas del nodo
 # (manifest y directorio de imágenes) se pasan como argumentos CLI.
 #
-# model.freeze_backbone y model.unfreeze_at_epoch DEBEN coincidir
-# exactamente con el config del servidor para que el schedule de congelado
-# sea consistente entre rondas.
+# IMPORTANTE — coherencia servidor↔cliente:
+#   model.freeze_backbone, model.unfreeze_at_epoch y training.scheduler.t_max
+#   DEBEN coincidir exactamente con el config del servidor.
 #
-# El modelo replica la arquitectura del modelo centralizado:
-#   - ResNet-50, num_classes=1 (logit único), dropout=0.0
-#   - Pesos RadImageNet con remapping backbone.N → torchvision
-#   - Pérdida: BCEWithLogitsLoss con pos_weight calculado sobre datos locales
+# Comparable con infraestructura centralizada/src/train.py:
+#   - Mismo modelo: ResNet-50, num_classes=1, dropout=0.0, in_channels=3
+#   - Mismo transfer learning: RadImageNet con remapping backbone.N → torchvision
+#   - Misma normalización: RadImageNet RGB mean=(0.5,0.5,0.5) std=(0.5,0.5,0.5)
+#   - Misma pérdida: BCEWithLogitsLoss con pos_weight por nodo
+#   - Mismo batch_size: 32
+#   - Mismas augmentaciones: HorizontalFlip, Rotation±15°, BrightnessContrast
+#
+# Diferencias conocidas FL vs centralizado:
+#   - LR único 5e-5 (FL) vs discriminativo head=1e-3/backbone=1e-4 (centralizado)
+#   - Sin early stopping por rondas fijas (FL)
+#   - Threshold fijo 0.5 (FL) vs Youden en val (centralizado)
+#   - Datos no-IID por nodo (FL) vs pool completo (centralizado)
 #
 # ── EJECUCIÓN ──────────────────────────────────────────────────────────
-#   Nodo 0 (CBIS-DDSM / EE.UU.):
+#   Nodo 0 (CMMD / China):
 #   python scripts/run_client.py \
 #       --config configs/exp01_fedavg_resnet50_client.yaml \
 #       --server <IP_SERVIDOR>:8080 \
@@ -21,7 +30,7 @@
 #       --manifest manifests/node0_manifest.csv \
 #       --data-dir data/mammobench/images
 #
-#   Nodo 1 (CMMD / China):
+#   Nodo 1 (DMID):
 #   python scripts/run_client.py \
 #       --config configs/exp01_fedavg_resnet50_client.yaml \
 #       --server <IP_SERVIDOR>:8080 \
@@ -41,23 +50,22 @@ device: auto
 data:
   name: mammo_bench
   # Rutas sobreescritas por --manifest y --data-dir en CLI.
-  # Dejarlas como placeholder permite detectar si se olvidó el argumento.
   manifest_path: manifests/node0_manifest.csv
   image_root: data/mammobench/images
   image_size: 224
-  grayscale: true
-  num_classes: 1      # logit único — coincide con el modelo centralizado
-  batch_size: 16
-  num_workers: 0      # 0 evita conflictos entre gRPC y DataLoader workers
-  val_fraction: 0.15  # 15% de datos locales → validación local por ronda
-  test_fraction: 0.0  # sin test set local; evaluación global en el servidor
+  grayscale: false      # false → in_channels=3 (grayscale replicado a RGB, igual que centralizado)
+  num_classes: 1        # logit único — coincide con el modelo centralizado
+  batch_size: 32        # igual que centralizado (base.yaml batch_size=32)
+  num_workers: 0        # 0 evita conflictos entre gRPC y DataLoader workers
+  val_fraction: 0.15    # 15% de datos locales → validación local por ronda
+  test_fraction: 0.0    # sin test set local; evaluación global en el servidor
   balance_classes: true
 
 model:
   name: resnet50
   weight_source: radimagenet
   checkpoint_path: null          # null → usa $FEDMAMMOBENCH_RADIMAGENET_DIR
-  in_channels: 1                 # entrada en escala de grises (mamografía)
+  in_channels: 3                 # 3 canales: grayscale replicado a RGB (igual que centralizado)
   num_classes: 1                 # logit único: BCEWithLogitsLoss
   dropout: 0.0                   # sin dropout — idéntico al modelo centralizado
   freeze_backbone: true          # DEBE coincidir con el servidor
@@ -75,10 +83,10 @@ training:
     name: cosine
     t_max: 30                    # DEBE coincidir con federated.rounds del servidor
   augmentation:
-    horizontal_flip: true
-    rotate_limit: 10
-    brightness_contrast: true
-    normalize_preset: radimagenet_gray   # media=0.5, std=0.5 — estándar RadImageNet
+    horizontal_flip: true        # válido anatómicamente en mamografía
+    rotate_limit: 15             # ±15° — igual que centralizado (transforms.py)
+    brightness_contrast: true    # simula variación de adquisición
+    normalize_preset: radimagenet_rgb   # mean=(0.5,0.5,0.5) std=(0.5,0.5,0.5)
   loss:
     name: bce                    # BCEWithLogitsLoss
     auto_class_weights: true     # pos_weight = n_neg / n_pos calculado sobre datos locales
