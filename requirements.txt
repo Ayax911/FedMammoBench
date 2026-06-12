@@ -1,4 +1,4 @@
-# Runtime requirements for fedmammo.
+# Runtime requirements for fedmammobench.
 # For CUDA wheels, install torch + torchvision separately from
 # https://download.pytorch.org/whl/<cuXXX> BEFORE installing the rest.
 #

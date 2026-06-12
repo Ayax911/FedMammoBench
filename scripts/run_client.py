@@ -36,11 +36,11 @@ _add_src_to_path()
 
 import flwr as fl  # noqa: E402
 
-from fedmammo.configs import load_config, save_config  # noqa: E402
-from fedmammo.datasets import build_dataset  # noqa: E402
-from fedmammo.federated.client import FedMammoClient  # noqa: E402
-from fedmammo.utils import get_logger, set_global_seed, setup_logging  # noqa: E402
-from fedmammo.utils.device import resolve_device  # noqa: E402
+from fedmammobench.configs import load_config, save_config  # noqa: E402
+from fedmammobench.datasets import build_dataset  # noqa: E402
+from fedmammobench.federated.client import FedMammoBenchClient  # noqa: E402
+from fedmammobench.utils import get_logger, set_global_seed, setup_logging  # noqa: E402
+from fedmammobench.utils.device import resolve_device  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -153,7 +153,7 @@ def main() -> int:
     device = resolve_device(cfg.device)
 
     # Instantiate the Flower client directly — no simulation, no Ray.
-    np_client = FedMammoClient(
+    np_client = FedMammoBenchClient(
         client_id=args.client_id,
         cfg=cfg,
         train_dataset=train_dataset,

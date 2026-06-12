@@ -1,0 +1,89 @@
+# Flower gRPC SERVER — RadImageNet ResNet50, 2-client FedAvg experiment.
+#
+# The server coordinates training: it loads the RadImageNet checkpoint to
+# build the initial parameters, distributes them to both clients, and
+# aggregates the updates after each round. It optionally runs centralized
+# evaluation on its own held-out test split.
+#
+# ── BEFORE STARTING ───────────────────────────────────────────────────
+# 1. Obtain RadImageNet-resnet50.pth from the BMEII-AI/RadImageNet repo.
+# 2. Set the checkpoint location (choose one):
+#      (a) export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/dir/containing/checkpoint
+#      (b) set model.checkpoint_path below to the absolute .pth path
+# 3. Start the server FIRST (Terminal 1).
+# 4. Then start both clients (Terminals 2 and 3).
+#
+# See docs/FEDERATED_DEPLOYMENT_GUIDE.md for exact commands and expected logs.
+# ──────────────────────────────────────────────────────────────────────
+
+name: radimagenet_resnet50_grpc
+mode: federated
+seed: 42
+output_dir: runs
+device: auto
+
+data:
+  # The server loads data only for centralized evaluation after each round.
+  # name: none → no server-side dataset; evaluation is 100% federated.
+  # To enable real centralized eval, switch to:
+  #   name: mammo_bench
+  #   manifest_path: /absolute/path/to/server_test_manifest.csv
+  #   image_root: /absolute/path/to/images
+  #   val_fraction: 0.0
+  #   test_fraction: 1.0    # entire server manifest → test set
+  name: none               # server has no images; evaluation is 100% federated
+  image_size: 224
+  grayscale: true
+  num_classes: 2
+  batch_size: 16
+  num_workers: 0            # 0 avoids gRPC/fork conflicts
+  val_fraction: 0.0
+  test_fraction: 1.0
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: null     # leave null → uses $FEDMAMMOBENCH_RADIMAGENET_DIR
+  in_channels: 1
+  num_classes: 2
+  dropout: 0.2
+  freeze_backbone: true     # rounds 0-2: head-only warm-up
+  unfreeze_at_epoch: 3      # round 3+: full fine-tune
+  checkpoint_path: checkpoints/radimagenet/RadImageNet-resnet50.pth
+
+
+training:
+  local_epochs: 1
+  grad_clip_norm: 1.0
+  mixed_precision: false    # FP32 — no AMP
+  optimizer:
+    name: adamw
+    lr: 5.0e-5
+    weight_decay: 1.0e-4
+  scheduler:
+    name: none
+  augmentation:
+    normalize_preset: radimagenet_gray  # matches RadImageNet checkpoint stats
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: false
+
+federated:
+  num_clients: 2
+  rounds: 100                 # 3 frozen + 2 unfrozen; increase for real training
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 2
+  min_evaluate_clients: 2
+  min_available_clients: 2  # blocks until both clients have registered
+  accept_failures: false    # fail fast; set true for resilient production runs
+  server_address: "0.0.0.0:8080"
+  # gRPC message limit: Flower default is 512 MB; ResNet50 payload ≈ 100 MB.
+  # Increase grpc_max_message_length in run_server.py if using larger backbones.
+  strategy:
+    name: fedavg
+    params: {}

@@ -2,7 +2,7 @@
 
 Usage::
 
-    python scripts/run_federated.py --config configs/fedavg_synthetic.yaml
+    python scripts/run_federated.py --config configs/radimagenet_resnet50_fedavg.yaml
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ def _add_src_to_path() -> None:
 
 _add_src_to_path()
 
-from fedmammo.configs import load_config, save_config  # noqa: E402
-from fedmammo.federated.server import run_simulation  # noqa: E402
-from fedmammo.utils import get_logger, set_global_seed, setup_logging  # noqa: E402
+from fedmammobench.configs import load_config, save_config  # noqa: E402
+from fedmammobench.federated.server import run_simulation  # noqa: E402
+from fedmammobench.utils import get_logger, set_global_seed, setup_logging  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

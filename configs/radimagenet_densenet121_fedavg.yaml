@@ -1,0 +1,83 @@
+# RadImageNet DenseNet121 — FedAvg federated fine-tuning.
+#
+# DenseNet121 is more sensitive to LR than ResNet50; start lower (5e-5).
+# Dense skip connections make it slower to converge but more stable under
+# non-IID federated conditions.
+#
+# Checkpoint placement (choose one):
+#   (a) Set model.checkpoint_path to the absolute path of RadImageNet-densenet121.pth
+#   (b) Set $FEDMAMMOBENCH_RADIMAGENET_DIR to the directory containing RadImageNet-densenet121.pth
+
+name: radimagenet_densenet121_fedavg
+mode: federated
+seed: 42
+output_dir: runs
+device: auto
+
+data:
+  name: cbis_ddsm          # set manifest_path + image_root below to your data
+  manifest_path: /absolute/path/to/manifest.csv
+  image_root: /absolute/path/to/images
+  image_size: 224
+  grayscale: true
+  num_classes: 2
+  batch_size: 12           # DenseNet121 uses more memory than ResNet50
+  num_workers: 1
+  val_fraction: 0.1
+  test_fraction: 0.1
+  balance_classes: true
+
+partitioning:
+  scheme: iid
+  alpha: 0.5
+  min_per_client: 16
+
+model:
+  name: densenet121
+  weight_source: radimagenet
+  checkpoint_path: null
+  in_channels: 1
+  num_classes: 2
+  dropout: 0.2
+  freeze_backbone: true
+  unfreeze_at_epoch: 3
+
+training:
+  epochs: 10
+  local_epochs: 1
+  grad_clip_norm: 1.0
+  mixed_precision: false
+  optimizer:
+    name: adamw
+    lr: 5.0e-5
+    weight_decay: 1.0e-4
+  scheduler:
+    name: none
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 10
+    brightness_contrast: true
+    normalize_preset: radimagenet_gray
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: false
+
+federated:
+  num_clients: 4
+  rounds: 10
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 2
+  min_evaluate_clients: 2
+  min_available_clients: 2
+  accept_failures: true
+  client_resources:
+    num_cpus: 1.0
+    num_gpus: 0.0
+  strategy:
+    name: fedavg
+    params: {}

@@ -3,8 +3,8 @@
 Usage::
 
     python scripts/run_evaluation.py \\
-        --config configs/centralized_synthetic.yaml \\
-        --checkpoint runs/centralized_synthetic/final.pt
+        --config configs/radimagenet_resnet50_centralized.yaml \\
+        --checkpoint runs/radimagenet_resnet50_centralized/final.pt
 """
 
 from __future__ import annotations
@@ -28,12 +28,12 @@ import json  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from fedmammo.configs import load_config  # noqa: E402
-from fedmammo.datasets import build_dataloader, build_dataset  # noqa: E402
-from fedmammo.evaluation import Evaluator  # noqa: E402
-from fedmammo.models import build_model  # noqa: E402
-from fedmammo.training import build_loss  # noqa: E402
-from fedmammo.utils import (  # noqa: E402
+from fedmammobench.configs import load_config  # noqa: E402
+from fedmammobench.datasets import build_dataloader, build_dataset  # noqa: E402
+from fedmammobench.evaluation import Evaluator  # noqa: E402
+from fedmammobench.models import build_model  # noqa: E402
+from fedmammobench.training import build_loss  # noqa: E402
+from fedmammobench.utils import (  # noqa: E402
     get_logger,
     load_checkpoint,
     resolve_device,

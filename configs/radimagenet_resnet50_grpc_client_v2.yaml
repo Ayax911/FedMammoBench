@@ -1,0 +1,89 @@
+# Flower gRPC CLIENT — RadImageNet ResNet50, 2-client FedAvg experiment.
+#
+# Every physical node uses this same YAML. Node-specific overrides (manifest
+# path, image root) are passed as CLI arguments — no separate YAML per node.
+#
+# model.freeze_backbone and model.unfreeze_at_epoch MUST match the server
+# config exactly, or the freeze schedule will be inconsistent across rounds.
+#
+# ── USAGE ─────────────────────────────────────────────────────────────
+#   # Node 0 (localhost smoke test):
+#   python scripts/run_client.py \
+#       --config configs/radimagenet_resnet50_grpc_client.yaml \
+#       --server 127.0.0.1:8080 \
+#       --client-id 0
+#
+#   # Node 0 (real multi-machine, with real data):
+#   python scripts/run_client.py \
+#       --config configs/radimagenet_resnet50_grpc_client.yaml \
+#       --server <SERVER_IP>:8080 \
+#       --client-id 0 \
+#       --manifest /data/node0_manifest.csv \
+#       --data-dir /data/mammobench/images
+#
+#   # Node 1: same command with --client-id 1 and node1 paths.
+#
+# See docs/FEDERATED_DEPLOYMENT_GUIDE.md for the complete checklist.
+# ──────────────────────────────────────────────────────────────────────
+
+name: radimagenet_resnet50_grpc
+mode: federated
+seed: 42
+output_dir: runs
+device: auto
+
+data:
+  # Each client node provides its own data:
+  #   name: mammo_bench      (or cbis_ddsm)
+  #   manifest_path: /path/to/nodeN_manifest.csv   (overridden by --manifest)
+  #   image_root: /path/to/images                  (overridden by --data-dir)
+  #   balance_classes: true
+  name: mammo_bench
+  manifest_path: /path/to/nodeN_manifest.csv
+  image_root: /path/to/images
+  image_size: 224
+  grayscale: true
+  num_classes: 2
+  batch_size: 16
+  num_workers: 0            # 0 avoids gRPC/fork conflicts
+  val_fraction: 0.15        # 15% of local data → local validation
+  test_fraction: 0.0
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: null     # leave null → uses $FEDMAMMOBENCH_RADIMAGENET_DIR
+  in_channels: 1
+  num_classes: 2
+  dropout: 0.2
+  freeze_backbone: true     # MUST match server config
+  unfreeze_at_epoch: 3      # MUST match server config
+
+training:
+  local_epochs: 1
+  grad_clip_norm: 1.0
+  mixed_precision: false    # FP32 — no AMP
+  optimizer:
+    name: adamw
+    lr: 5.0e-5
+    weight_decay: 1.0e-4
+  scheduler:
+    name: none
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 10
+    brightness_contrast: true
+    normalize_preset: radimagenet_gray
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+
+federated:
+  rounds: 5                 # MUST match server config
+  strategy:
+    name: fedavg
+    params: {}

@@ -1,0 +1,84 @@
+# RadImageNet ResNet50 — FedAvg federated fine-tuning.
+#
+# Workflow:
+#   Rounds 0-2  : freeze_backbone=true → head-only warm-up across all clients.
+#   Rounds 3-10 : unfreeze_at_epoch=3  → full fine-tune with low LR.
+#
+# Checkpoint placement (choose one):
+#   (a) Set model.checkpoint_path to the absolute path of RadImageNet-resnet50.pth
+#   (b) Set $FEDMAMMOBENCH_RADIMAGENET_DIR to the directory containing RadImageNet-resnet50.pth
+#
+# Payload per round: ~100 MB (ResNet50 ≈ 25M params × 4 bytes × num_clients).
+# See docs/TRANSFER_LEARNING_GUIDE.md for bandwidth and batch-size guidance.
+
+name: radimagenet_resnet50_fedavg
+mode: federated
+seed: 42
+output_dir: runs
+device: auto
+
+data:
+  name: mammo_bench          # replace with cbis_ddsm or mammo_bench for real data
+  image_size: 224
+  grayscale: true
+  num_classes: 2
+  batch_size: 16
+  num_workers: 1
+  val_fraction: 0.1
+  test_fraction: 0.1
+  balance_classes: true
+
+partitioning:
+  scheme: iid
+  alpha: 0.5
+  min_per_client: 16
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: null    # override or set $FEDMAMMOBENCH_RADIMAGENET_DIR
+  in_channels: 1
+  num_classes: 2
+  dropout: 0.2
+  freeze_backbone: true
+  unfreeze_at_epoch: 3     # unfreeze after round 3
+
+training:
+  epochs: 10
+  local_epochs: 1
+  grad_clip_norm: 1.0
+  mixed_precision: false
+  optimizer:
+    name: adamw
+    lr: 5.0e-5             # lower than centralized; protects against non-IID drift
+    weight_decay: 1.0e-4
+  scheduler:
+    name: none
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 10
+    brightness_contrast: true
+    normalize_preset: radimagenet_gray
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: false
+
+federated:
+  num_clients: 4
+  rounds: 10
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 2
+  min_evaluate_clients: 2
+  min_available_clients: 2
+  accept_failures: true
+  client_resources:
+    num_cpus: 1.0
+    num_gpus: 0.0
+  strategy:
+    name: fedavg
+    params: {}

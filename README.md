@@ -1,202 +1,269 @@
-# fedmammo
+# FedMammoBench — Federated Learning for Mammography Classification
 
-Federated learning for binary breast-cancer classification (benign vs malignant) on mammography images, built on **Flower (FLwr)** and **PyTorch**.
+Federated learning framework for binary mammography classification (benign / malignant) using [Flower](https://flower.ai/) + PyTorch + Ray.
 
-The project is structured as a research prototype suitable for an undergraduate thesis: clean module boundaries, YAML-driven experiments, deterministic seeding, and metrics that map to the clinical literature (sensitivity, specificity, ROC-AUC). The first federated strategy implemented end-to-end is **FedAvg**; **FedProx, SCAFFOLD, and FedBN** are present as extensible stubs so they can be filled in without touching the rest of the codebase.
-
----
-
-## Status
-
-- FedAvg: implemented
-- FedProx, SCAFFOLD, FedBN: scaffolded with strategy interface and TODO markers
-- Datasets: synthetic loader works out of the box; CBIS-DDSM and VinDr-Mammo loaders are implemented against a *documented assumed directory layout* and will require minor manifest tweaks once you have the data on disk
-- Compute target: multi-process Flower simulation via Ray on a single machine
-- Centralized training script is included as a sanity baseline
+**Version**: 0.3.0 | **Python**: 3.11 | **License**: MIT
 
 ---
 
-## Project layout
-
-```
-fedmammo/
-├── configs/                       # YAML experiment configurations
-│   ├── base.yaml                  # defaults
-│   ├── centralized_synthetic.yaml
-│   └── fedavg_synthetic.yaml
-├── src/fedmammo/
-│   ├── configs/                   # dataclass schema + YAML loader
-│   ├── datasets/                  # base class, CBIS-DDSM, VinDr-Mammo, synthetic, transforms, partitioning
-│   ├── models/                    # ResNet18, EfficientNet-B0, factory
-│   ├── training/                  # Trainer, losses
-│   ├── evaluation/                # Evaluator, metrics
-│   ├── federated/                 # Flower client + server + strategies
-│   │   └── strategies/            # fedavg (impl), fedprox/scaffold/fedbn (stubs)
-│   └── utils/                     # seeding, logging, tensorboard, checkpoint, csv
-├── scripts/
-│   ├── run_centralized.py
-│   ├── run_federated.py
-│   └── run_evaluation.py
-├── tests/                         # smoke tests
-├── data/                          # placeholder — user-provided
-├── runs/                          # TensorBoard logs, CSVs, checkpoints (gitignored)
-├── pyproject.toml
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
-
----
-
-## Installation
-
-Python 3.11 is required.
+## Quick Start (5 minutes)
 
 ```bash
-# 1. create a virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+# 1. Install
+git clone <repo>
+cd Federal-Learning
+pip install -e .
 
-# 2. install PyTorch first if you need a specific CUDA build (optional)
-# pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision
-
-# 3. install fedmammo
-pip install -e ".[dev]"
+# 2. Prepare a dataset manifest (see docs/DATA_PREPARATION.md), then run a
+#    federated simulation. Point data.manifest_path / data.image_root at your data.
+fedmammobench-federated --config configs/fedavg_cbis_ddsm.yaml
 ```
 
-### Docker
-
-```bash
-# CPU-only
-docker build -t fedmammo:cpu .
-
-# CUDA (12.1, cuDNN 8)
-docker build --build-arg BASE_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 \
-             -t fedmammo:gpu .
-```
+Artifacts (metrics, TensorBoard logs, config snapshot) are written to `runs/<config-name>/`.
 
 ---
 
-## Quick smoke test (no real data needed)
+## Execution Modes
 
-The synthetic dataset generates noise tensors with realistic shapes so the whole graph (data &rarr; model &rarr; Trainer &rarr; FL loop) can be exercised before you have a real download.
-
-```bash
-# Centralized baseline
-python scripts/run_centralized.py --config configs/centralized_synthetic.yaml
-
-# Federated (FedAvg, 4 simulated clients, IID partition)
-python scripts/run_federated.py --config configs/fedavg_synthetic.yaml
-```
-
-TensorBoard logs and CSVs land under `runs/<experiment_name>/`.
+| Command | Config | Description | Estimated time |
+|---------|--------|-------------|----------------|
+| `fedmammobench-centralized` | `radimagenet_resnet50_centralized.yaml` | Centralized baseline | depends on data |
+| `fedmammobench-federated` | `fedavg_cbis_ddsm.yaml` | FL simulation (Ray) | depends on data |
+| `fedmammobench-federated` | `radimagenet_resnet50_fedavg.yaml` | FL simulation with RadImageNet | 10–30 min |
+| `fedmammobench-federated` | `fedavg_server_training.yaml` | Hybrid FL (server also trains) | depends on data |
+| `python scripts/run_server.py` | `radimagenet_resnet50_grpc_server_v2.yaml` | Real gRPC server | blocks |
+| `python scripts/run_client.py` | `radimagenet_resnet50_grpc_client_v2.yaml` | Real gRPC client | blocks |
+| `fedmammobench-evaluate` | any | Post-hoc evaluation on a checkpoint | < 1 min |
 
 ---
 
-## Using real data
+## Configuration
 
-### CBIS-DDSM
-
-The pipeline assumes you have downloaded the CBIS-DDSM release (TCIA) and converted DICOMs to PNG (or kept DICOM &mdash; both are supported by the loader). The default loader expects a CSV manifest with at least these columns:
-
-| column           | description                                  |
-|------------------|----------------------------------------------|
-| `image_path`     | path to the image file, relative or absolute |
-| `pathology`      | one of `BENIGN`, `BENIGN_WITHOUT_CALLBACK`, `MALIGNANT` |
-| `patient_id`     | used for patient-level (non-leaky) splits    |
-| `split`          | `train` / `val` / `test` (optional; otherwise we generate splits) |
-
-Two of the BENIGN labels are merged into a single negative class. You point the loader at the manifest via YAML:
+All configs inherit from `configs/base.yaml` via `defaults: base.yaml`.
+Override only what changes:
 
 ```yaml
-data:
-  name: cbis_ddsm
-  manifest_path: /path/to/cbis_ddsm_manifest.csv
-  image_root: /path/to/cbis_ddsm_pngs
-  image_format: png   # or "dicom"
+# configs/my_experiment.yaml
+defaults: base.yaml
+name: my_experiment
+model:
+  name: resnet50
+  weight_source: radimagenet
+federated:
+  rounds: 20
+  num_clients: 4
 ```
 
-If your manifest uses different column names, override them under `data.columns` in the YAML.
-
-### VinDr-Mammo
-
-VinDr-Mammo ships as DICOM with `breast-level_annotations.csv` and `finding_annotations.csv`. The loader uses **breast-level** annotations and maps the BI-RADS assessment to a binary label using:
-
-| BI-RADS | label     |
-|---------|-----------|
-| 1, 2    | benign    |
-| 4, 5    | malignant |
-| 3       | configurable — by default **dropped** (ambiguous) |
-
-```yaml
-data:
-  name: vindr_mammo
-  annotations_path: /path/to/breast-level_annotations.csv
-  image_root: /path/to/images           # contains study_id/series_id/image.dcm
-  birads_3_policy: drop                 # or "benign" or "malignant"
+**Run it:**
+```bash
+fedmammobench-federated --config configs/my_experiment.yaml
 ```
 
-> **Honesty note:** The exact directory layout of the public releases changes over time and across mirrors. Both loaders are written defensively (paths are resolved relative to a configurable root, missing files are logged and skipped), but you should expect to spend an hour adapting the manifest reader to the version you download. The relevant code is isolated in `src/fedmammo/datasets/cbis_ddsm.py` and `src/fedmammo/datasets/vindr_mammo.py`.
+### Key configuration sections
+
+| Section | Key fields | Module |
+|---------|-----------|--------|
+| `data` | `name`, `manifest_path`, `val_fraction` | `data_config.py` |
+| `partitioning` | `scheme` (iid/dirichlet/quantity_skew), `alpha` | `data_config.py` |
+| `model` | `name`, `weight_source`, `freeze_backbone`, `unfreeze_at_epoch` | `model_config.py` |
+| `training` | `epochs`, `local_epochs`, `optimizer.lr`, `mixed_precision` | `training_config.py` |
+| `federated` | `num_clients`, `rounds`, `strategy.name`, `strategy.params` | `federated_config.py` |
+
+### Config validation
+
+Call `ExperimentConfig.validate()` after loading to catch errors early:
+
+```python
+from fedmammobench.configs import load_config
+cfg = load_config("configs/radimagenet_resnet50_fedavg.yaml")
+cfg.validate()  # raises ValueError or emits warnings on bad combinations
+```
 
 ---
 
-## Federated configuration
+## Federated Strategies
 
-The simulation entrypoint uses `flwr.simulation.start_simulation` with Ray. Each "hospital" is one Flower client. Both **IID** and **non-IID** partitioning are available:
+| Strategy | YAML | Description |
+|----------|------|-------------|
+| FedAvg | `strategy.name: fedavg` | Standard weighted averaging |
+| FedProx | `strategy.name: fedprox` + `strategy.params: {mu: 0.01}` | Proximal regularization for non-IID |
+| SCAFFOLD | `strategy.name: scaffold` | Variance reduction via control variates |
+| FedBN | `strategy.name: fedbn` | Batch-norm layers not aggregated |
+
+---
+
+## Hybrid Server-Side Training
+
+By default the central node only aggregates client updates. Enable
+`federated.server_training` to also train on a dataset the server owns: after
+each round's aggregation, the server continues training from the aggregated
+weights for `local_epochs` and the result becomes the new global model.
 
 ```yaml
 federated:
-  num_clients: 4
-  rounds: 20
-  fraction_fit: 1.0
-  fraction_evaluate: 1.0
-  strategy:
-    name: fedavg            # fedavg | fedprox | scaffold | fedbn
-    server_lr: 1.0
-    # strategy-specific knobs go here (mu for fedprox, etc.)
-
-partitioning:
-  scheme: dirichlet         # iid | dirichlet | quantity_skew
-  alpha: 0.5                # only used by dirichlet; lower = more skewed
-  min_per_client: 16
+  server_training:
+    enabled: true
+    manifest_path: /path/to/server_manifest.csv   # the server's own data
+    image_root: /path/to/server_images
+    local_epochs: 1
+    server_weight: 1.0   # new = (1-w)*aggregated + w*server_trained
 ```
 
-The Strategy factory in `src/fedmammo/federated/strategies/__init__.py` is the single switch point. Adding a new strategy is a matter of:
-
-1. Subclass `flwr.server.strategy.Strategy` (or extend `FedAvg`).
-2. Register the class with `@register_strategy("my_name")`.
-3. Reference it by name in YAML.
+This composes with any strategy above. See `configs/fedavg_server_training.yaml`.
 
 ---
 
-## Metrics
+## Transfer Learning
 
-Per round and per epoch:
+| `weight_source` | Requires | Best for |
+|-----------------|----------|---------|
+| `imagenet` | — | RGB natural images; baseline |
+| `radimagenet` | `$FEDMAMMOBENCH_RADIMAGENET_DIR` env var | Grayscale medical images |
+| `custom` | `checkpoint_path` | Fine-tuning from your own checkpoint |
+| `none` | — | Ablation: random init |
 
-- Accuracy
-- Precision, Recall, F1 (binary, positive class = `malignant`)
-- ROC-AUC
-- Sensitivity (recall on malignant = true positive rate)
-- Specificity (true negative rate on benign)
+```bash
+export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/radimagenet/checkpoints
+fedmammobench-federated --config configs/radimagenet_resnet50_fedavg.yaml
+```
 
-Logged to TensorBoard (`runs/<exp>/tb`) and CSV (`runs/<exp>/metrics.csv`).
-
----
-
-## Reproducibility
-
-`fedmammo.utils.seeding.set_global_seed(seed)` seeds Python, NumPy, PyTorch (CPU + CUDA), and sets `torch.backends.cudnn.deterministic = True`, `benchmark = False`. Full bit-level reproducibility across hardware is not guaranteed — cuDNN can introduce small non-determinism on some convolution kernels — but runs on the same machine with the same seed should match closely.
+See [docs/TRANSFER_LEARNING_GUIDE.md](docs/TRANSFER_LEARNING_GUIDE.md) for setup instructions.
 
 ---
 
-## What is intentionally *not* here
+## Multi-Node Deployment (gRPC)
 
-- No automatic download of CBIS-DDSM / VinDr-Mammo. Both require TCIA / PhysioNet access agreements; the user is expected to download manually.
-- No SCAFFOLD / FedBN / FedProx training loop yet. The strategy classes and config plumbing exist; the algorithmic body is marked `TODO` with the relevant equations referenced.
-- No real distributed deployment (gRPC across machines). The codebase uses Flower's simulation backend; lifting it to real gRPC is straightforward but out of scope for the first pass.
+```bash
+# On the aggregation server:
+python scripts/run_server.py \
+    --config configs/radimagenet_resnet50_grpc_server_v2.yaml
+
+# On each client node (different machines):
+python scripts/run_client.py \
+    --config configs/radimagenet_resnet50_grpc_client_v2.yaml \
+    --server 192.168.1.10:8080 \
+    --client-id 0 \
+    --manifest /path/to/node0_manifest.csv \
+    --data-dir /path/to/images
+```
+
+See [docs/FEDERATED_DEPLOYMENT_GUIDE.md](docs/FEDERATED_DEPLOYMENT_GUIDE.md) for the full topology.
 
 ---
 
-## License
+## Reproducing Article Results
 
-MIT. See `pyproject.toml`.
+```bash
+# Centralized baseline
+fedmammobench-centralized --config configs/radimagenet_resnet50_centralized.yaml
+
+# Federated FedAvg (primary)
+fedmammobench-federated --config configs/radimagenet_resnet50_fedavg.yaml
+
+# Federated DenseNet121
+fedmammobench-federated --config configs/radimagenet_densenet121_fedavg.yaml
+```
+
+All runs use `seed: 42` (set in `base.yaml`).  Effective configs are snapshotted
+to `runs/<name>/config.snapshot.yaml`.
+
+---
+
+## Outputs, Per-Node Metrics & Timing
+
+Every federated run writes the following under `runs/<name>/`:
+
+```
+runs/<name>/
+├── config.snapshot.yaml          # effective config used
+├── server_federated_metrics.csv  # GLOBAL model, federated-averaged across nodes
+├── server_metrics.csv            # GLOBAL model on the server holdout (if any)
+├── server_timing.csv             # per-round wall time, sum/max/mean node fit time
+├── timing_summary.csv            # total process time, rounds, avg s/round
+├── global_model.pt               # final aggregated GLOBAL model checkpoint
+├── tb/                           # server-level TensorBoard
+└── clients/
+    ├── client_0/
+    │   ├── fit_metrics.csv        # per-round train_loss, task_loss, fit_seconds
+    │   ├── eval_metrics.csv       # per-round accuracy, f1, roc_auc, eval_seconds
+    │   └── tb/                    # per-node TensorBoard
+    └── client_1/ ...
+```
+
+- **Per-node metrics** (`clients/client_<id>/`) are each node's *local* view:
+  training loss and the metrics from evaluating the global model on that node's
+  own validation split, with the node's wall-clock `fit_seconds` / `eval_seconds`.
+- **Timing**: `server_timing.csv` records, per round, the server wall time plus
+  the **sum** (total compute across nodes), **max** (straggler / critical path),
+  and **mean** of node training times. `timing_summary.csv` records the overall
+  process time. The first round's wall time includes Ray/engine startup.
+
+### Verifying the global model
+
+Per-node metrics measure *local* performance — they are **not** the global
+model's generalization. The global model is judged by:
+
+1. `server_federated_metrics.csv` — the weighted average of every node's
+   evaluation of the global model (the primary federated verdict).
+2. `server_metrics.csv` — the global model on a server-owned holdout, when one is
+   configured (`data.name` ≠ `none` with a test split).
+3. The saved `global_model.pt`, which you can verify post-hoc on any held-out
+   test set:
+   ```bash
+   fedmammobench-evaluate --config configs/<your>.yaml --checkpoint runs/<name>/global_model.pt
+   ```
+
+---
+
+## Data Preparation
+
+See [docs/DATA_PREPARATION.md](docs/DATA_PREPARATION.md) for:
+- Downloading and formatting CBIS-DDSM, Mammo-Bench, VinDr-Mammo
+- CSV manifest column requirements
+- How to verify absence of patient leakage
+
+---
+
+## Scientific Methodology
+
+See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for:
+- Patient-disjoint split protocol
+- Federated evaluation metrics and their limitations
+- FedAvg vs FedProx comparison guidelines
+- Known approximations to disclose in papers
+
+---
+
+## Audit Checklist
+
+See [docs/EXPERIMENT_AUDIT.md](docs/EXPERIMENT_AUDIT.md) for the pre-publication
+checklist (data integrity, metric interpretation, strategy comparisons).
+
+---
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v --tb=short
+```
+
+CI runs automatically on push to `main` and `feature/**` branches via `.github/workflows/ci.yml`.
+
+**Extending the framework** — adding a strategy, model, dataset, or config field?
+See [docs/EXTENDING.md](docs/EXTENDING.md) for the step-by-step pipeline per module.
+
+---
+
+## Project Structure
+
+```
+src/fedmammobench/
+├── configs/           Per-section config modules (each with validate())
+├── datasets/          Dataset loaders and patient-aware partitioning
+├── federated/         Flower client, server, and strategy implementations
+├── models/            Architecture builders and weight loaders
+├── training/          Unified trainer (centralized + federated)
+├── evaluation/        Clinical binary classification metrics
+└── utils/             Logging, checkpointing, TensorBoard, seeding
+```
