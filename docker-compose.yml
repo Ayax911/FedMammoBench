@@ -1,0 +1,101 @@
+# Docker Compose para fedmammobench (aprendizaje federado, Flower gRPC).
+#
+# Una sola imagen, tres roles seleccionados por "profiles":
+#   - server : servidor central FL  (run_server.py)  -> publica :8080
+#   - node0  : nodo cliente 0        (run_client.py)
+#   - node1  : nodo cliente 1        (run_client.py)
+#
+# Modo UNA MÁQUINA (todo junto, los nodos llegan al server por DNS de servicio):
+#   docker compose --profile server --profile node0 --profile node1 up --build
+#   (equivalente)  docker compose --profile all up --build
+#
+# Modo MÁQUINAS SEPARADAS (cada host levanta solo su rol):
+#   host servidor:  docker compose --profile server up --build
+#   host nodo    :  SERVER_ADDRESS=<IP_LAN_servidor>:8080 \
+#                   docker compose --profile node0 up --build
+#
+# GPU:  añade el override ->  docker compose -f docker-compose.yml -f docker-compose.gpu.yml ...
+#
+# Todos los parámetros se ajustan vía .env (ver .env.example). NO hace falta
+# editar este archivo para cambiar de experimento.
+
+# ── Bloque común reutilizado por los tres servicios ─────────────────────
+x-fedmammobench-common: &fed-common
+  image: ${IMAGE_TAG:-fedmammobench:latest}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      BASE_IMAGE: ${BASE_IMAGE:-python:3.11-slim-bookworm}
+  environment:
+    # Resuelve los pesos RadImageNet dentro del contenedor.
+    FEDMAMMOBENCH_RADIMAGENET_DIR: /app/checkpoints/radimagenet
+    PYTHONUNBUFFERED: "1"
+  volumes:
+    - ./configs:/app/configs:ro        # editar YAML desde el host (sin rebuild)
+    - ./runs:/app/runs                 # RESULTADOS + LOGS (lectura/escritura)
+    - ./data:/app/data:ro              # imágenes / datasets
+    - ./manifests:/app/manifests:ro    # particiones por nodo
+    - ./checkpoints:/app/checkpoints:ro  # pesos RadImageNet (.pth)
+  networks:
+    - fednet
+  restart: "no"
+
+services:
+  # ── Servidor central de agregación FL ─────────────────────────────────
+  server:
+    <<: *fed-common
+    container_name: fedmammo-server
+    hostname: server
+    profiles: ["server", "all"]
+    command:
+      - python
+      - scripts/run_server.py
+      - --config
+      - ${SERVER_CONFIG:-configs/exp01_fedavg_resnet50_server.yaml}
+      - --address
+      - 0.0.0.0:8080
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+
+  # ── Nodo cliente 0 ────────────────────────────────────────────────────
+  node0:
+    <<: *fed-common
+    container_name: fedmammo-node0
+    profiles: ["node0", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "0"
+      - --manifest
+      - ${NODE0_MANIFEST:-manifests/node0_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/Preprocessed_Dataset/cdd-cesm}
+
+  # ── Nodo cliente 1 ────────────────────────────────────────────────────
+  node1:
+    <<: *fed-common
+    container_name: fedmammo-node1
+    profiles: ["node1", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "1"
+      - --manifest
+      - ${NODE1_MANIFEST:-manifests/node1_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/Preprocessed_Dataset/cdd-cesm}
+
+networks:
+  fednet:
+    driver: bridge
