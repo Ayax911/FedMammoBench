@@ -59,6 +59,8 @@ data:
   num_workers: 0        # 0 evita conflictos entre gRPC y DataLoader workers
   val_fraction: 0.15    # 15% de datos locales → validación local por ronda
   test_fraction: 0.0    # sin test set local; evaluación global en el servidor
+  image_format: jpg
+  normal_policy: benign  # Normal → 0 (mismo que Benign); consistente con servidor
   balance_classes: true
 
 model:

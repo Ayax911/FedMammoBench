@@ -187,6 +187,11 @@ model:
   # Advertencia si unfreeze_at_epoch >= federated.rounds (nunca se ejecutaría).
   unfreeze_at_epoch: null
 
+  # Submodulos del backbone a descongelar cuando se alcanza unfreeze_at_epoch.
+  # null → descongela todos los parámetros del backbone (comportamiento original).
+  # Ej: [layer4, fc] → solo desbloquea las últimas capas (mismo que centralizado).
+  unfreeze_layers: null
+
 
 # -----------------------------------------------------------------------------
 # training — TrainingConfig
@@ -216,6 +221,13 @@ training:
     # Learning rate. Para federado se recomienda más bajo que centralizado
     # (ej. 5e-5 vs 1e-4) para proteger contra drift no-IID.
     lr: 1.0e-4
+
+    # LRs discriminativas: cuando se establecen, crean param groups separados
+    # para la cabeza de clasificación y el backbone. Anulan `lr` en sus grupos.
+    # null → usa `lr` para todos los parámetros.
+    # Ej: lr_head=1.0e-3, lr_backbone=1.0e-4 (igual que entrenamiento centralizado).
+    lr_head: null
+    lr_backbone: null
 
     weight_decay: 1.0e-4
 
@@ -264,6 +276,7 @@ training:
 
   loss:
     # "ce"    → cross-entropy con pesos de clase opcionales.
+    # "bce"   → BCEWithLogitsLoss con logit único (num_classes=1). Para binario puro.
     # "focal" → focal loss (útil para desbalance severo).
     name: ce
 

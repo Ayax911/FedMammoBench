@@ -43,6 +43,7 @@ device: auto
 data:
   # Evaluación federada pura (sin holdout en servidor)
   name: none
+  manifest_path: manifests/rsna-screening.csv
   image_size: 224
   grayscale: false      # false → in_channels=3
   num_classes: 2        # clases del dataset (benign=0, malignant=1)
@@ -50,6 +51,14 @@ data:
   num_workers: 0
   val_fraction: 0.1
   test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign          # Normal → 0 (igual que Benign); usar "drop" para excluirlos
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/Preprocessed_Dataset/rsna-screening
+  columns:
+    image_path: preprocessed_image_path
+    label: classification
+    patient_id: source_subjectID
+    split: split
 
 model:
   name: resnet50
@@ -62,8 +71,9 @@ model:
   unfreeze_at_epoch: 5           # Fase B: fine-tuning desde ronda 5
   unfreeze_layers: [layer4, fc]  # igual que centralizada: solo layer4 + cabeza
 
+
 training:
-  local_epochs: 1
+  local_epochs: 5
   grad_clip_norm: 1.0
   mixed_precision: true
   optimizer:
