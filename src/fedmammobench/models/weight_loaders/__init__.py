@@ -128,14 +128,37 @@ def apply_freeze_policy(
         and current_round >= cfg.unfreeze_at_epoch
     )
     if unfreeze_now:
-        for p in model.parameters():
-            p.requires_grad = True
-        _logger.info(
-            "apply_freeze_policy: progressive unfreeze at round=%d "
-            "(unfreeze_at_epoch=%d) — all params now trainable.",
-            current_round,
-            cfg.unfreeze_at_epoch,
-        )
+        backbone = getattr(model, "backbone", model)
+        if cfg.unfreeze_layers:
+            # Partial unfreeze: only enable the specified named submodules,
+            # matching the centralizada phase_b policy (e.g. ["layer4", "fc"]).
+            for layer_name in cfg.unfreeze_layers:
+                layer = getattr(backbone, layer_name, None)
+                if layer is not None:
+                    for p in layer.parameters():
+                        p.requires_grad = True
+                else:
+                    _logger.warning(
+                        "apply_freeze_policy: unfreeze_layers entry %r not found on backbone; skipping.",
+                        layer_name,
+                    )
+            _logger.info(
+                "apply_freeze_policy: partial unfreeze at round=%d "
+                "(unfreeze_at_epoch=%d) — layers=%s now trainable.",
+                current_round,
+                cfg.unfreeze_at_epoch,
+                cfg.unfreeze_layers,
+            )
+        else:
+            # Full unfreeze (original behavior when unfreeze_layers is not set).
+            for p in model.parameters():
+                p.requires_grad = True
+            _logger.info(
+                "apply_freeze_policy: progressive unfreeze at round=%d "
+                "(unfreeze_at_epoch=%d) — all params now trainable.",
+                current_round,
+                cfg.unfreeze_at_epoch,
+            )
         return _param_report(model, frozen_modules=[])
 
     if not cfg.freeze_backbone and not cfg.freeze_head:

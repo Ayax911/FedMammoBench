@@ -1,103 +1,99 @@
-# exp01_fedavg_resnet50 — SERVIDOR CENTRAL
+# exp01_fedavg_resnet50 — SERVIDOR CENTRAL — 6 NODOS
 #
-# Experimento de referencia: FedAvg con ResNet-50 + RadImageNet.
-# Diseñado para ser directamente comparable con infraestructura centralizada/src/train.py:
+# Configuración para agregación federada con 6 nodos cliente.
+# Cada nodo cliente representa una fuente geográfica/institucional diferente.
 #
-#   Modelo (idéntico al centralizado):
-#     - ResNet-50, num_classes=1 (logit único, BCEWithLogitsLoss), dropout=0.0
-#     - Pesos RadImageNet con remapping backbone.N → torchvision
-#     - in_channels=3: imágenes grayscale replicadas a 3 canales (Grayscale→RGB)
-#     - Normalización RadImageNet RGB: mean=(0.5,0.5,0.5), std=(0.5,0.5,0.5)
+# DISTRIBUCIÓN DE DATOS (6 NODOS + SERVIDOR):
+#   Nodo 0 — rsna       — RSNA Screening         (~36 460 filas)
+#   Nodo 1 — cmmd       — China                  (~5 202 filas)
+#   Nodo 2 — inbreast   — Portugal               (~  410 filas)
+#   Nodo 3 — cdd-cesm   — Egipto                 (~  800 filas)
+#   Nodo 4 — kau-bcmd   — Arabia Saudita         (~2 337 filas)
+#   Nodo 5 — dmid       — Origen desconocido     (~  757 filas)
+#   Servidor — ddsm     — USA / CBIS-DDSM (~10 400 filas, pre-entrenamiento)
 #
-#   Diferencias conocidas FL vs centralizado (no evitables):
-#     - LR único 5e-5 (FL) vs discriminativo head=1e-3/backbone=1e-4 (centralizado)
-#     - Sin early stopping por rondas (fijas)
-#     - Threshold fijo 0.5 (FL) vs Youden en val (centralizado)
-#     - Batch size 32 (FL) = centralizado
+# FASES DE ENTRENAMIENTO (igual a exp01_fedavg_resnet50_5nodes_server.yaml):
+#   - Fase A (rondas 0–4)  : backbone congelado, solo cabeza (5 épocas locales)
+#   - Fase B (rondas 5–29) : fine-tuning completo (25 épocas locales)
 #
-#   Fase A (rondas 0–4): backbone congelado → warm-up de cabeza.
-#   Fase B (rondas 5–29): fine-tuning completo con lr conservador.
+# GENERAR MANIFESTS (partición de 6 nodos):
+#   python scripts/partition_mammobench.py \
+#       --csv data/mammobench/mammo-bench.csv \
+#       --out manifests/ \
+#       --nodes 6
 #
-# ── REQUISITOS PREVIOS ─────────────────────────────────────────────────
-# 1. Obtener RadImageNet-resnet50.pth de BMEII-AI/RadImageNet.
-# 2. Indicar la ubicación del checkpoint (una de las dos opciones):
-#      (a) export FEDMAMMOBENCH_RADIMAGENET_DIR=/ruta/al/directorio/
-#      (b) Fijar model.checkpoint_path a la ruta absoluta del .pth
-# 3. Generar manifests por nodo:
-#      python scripts/partition_mammobench.py \
-#          --csv data/mammobench/mammo-bench.csv \
-#          --out manifests/
-# 4. Iniciar el servidor PRIMERO (Terminal 1):
-#      python scripts/run_server.py \
-#          --config configs/exp01_fedavg_resnet50_server.yaml
-# 5. Luego iniciar cada nodo cliente (Terminales 2 y 3):
-#      python scripts/run_client.py \
-#          --config configs/exp01_fedavg_resnet50_client.yaml \
-#          --server <IP_SERVIDOR>:8080 \
-#          --client-id 0 \
-#          --manifest manifests/node0_manifest.csv \
-#          --data-dir data/mammobench/images
-# ──────────────────────────────────────────────────────────────────────
+# ARRANCAR SERVIDOR:
+#   bash scripts/start_server.sh configs/exp01_fedavg_resnet50_6nodes_server.yaml
+#
+# ARRANCAR CLIENTES (reemplazar SERVER_IP con IP LAN del servidor):
+#   bash scripts/start_client.sh 0 <SERVER_IP>
+#   bash scripts/start_client.sh 1 <SERVER_IP>
+#   bash scripts/start_client.sh 2 <SERVER_IP>
+#   bash scripts/start_client.sh 3 <SERVER_IP>
+#   bash scripts/start_client.sh 4 <SERVER_IP>
+#   bash scripts/start_client.sh 5 <SERVER_IP>
+# ──────────────────────────────────────────────────────────────────────────────
 
-name: exp01_fedavg_resnet50
+name: exp01_fedavg_resnet50_6nodes
 mode: federated
 seed: 42
-output_dir: runs/exp01_fedavg_resnet50
+output_dir: runs/exp01_fedavg_resnet50_6nodes
 device: auto
 
 data:
-  # El servidor no tiene imágenes: evaluación 100% federada.
-  # Para habilitar evaluación centralizada, cambiar a name: mammo_bench
-  # y proporcionar manifest_path e image_root del servidor.
+  # Evaluación federada pura (sin holdout en servidor)
   name: none
   image_size: 224
-  grayscale: false      # false → in_channels=3 (grayscale replicado a RGB, igual que centralizado)
-  num_classes: 2        # clases del dataset (benign=0, malignant=1) — siempre 2
-  batch_size: 32        # igual que centralizado (base.yaml batch_size=32)
-  num_workers: 0        # 0 evita conflictos gRPC/fork
-  val_fraction: 0.0
-  test_fraction: 0.0
+  grayscale: false      # false → in_channels=3
+  num_classes: 2        # clases del dataset (benign=0, malignant=1)
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
 
 model:
   name: resnet50
   weight_source: radimagenet
   checkpoint_path: null          # null → usa $FEDMAMMOBENCH_RADIMAGENET_DIR
-  in_channels: 3                 # 3 canales: grayscale replicado a RGB (igual que centralizado)
+  in_channels: 3
   num_classes: 1                 # logit único: BCEWithLogitsLoss
-  dropout: 0.0                   # sin dropout — idéntico al modelo centralizado
-  freeze_backbone: true          # Fase A: solo cabeza entrenable (rondas 0–4)
-  unfreeze_at_epoch: 5           # Fase B: fine-tuning completo desde ronda 5
+  dropout: 0.0
+  freeze_backbone: true          # Fase A: solo cabeza (rondas 0–4)
+  unfreeze_at_epoch: 5           # Fase B: fine-tuning desde ronda 5
+  unfreeze_layers: [layer4, fc]  # igual que centralizada: solo layer4 + cabeza
 
 training:
   local_epochs: 1
-  grad_clip_norm: 1.0            # clipping de gradiente como en entrenamiento centralizado
-  mixed_precision: false
+  grad_clip_norm: 1.0
+  mixed_precision: true
   optimizer:
     name: adamw
-    lr: 5.0e-5                   # lr conservador para FL; protege contra deriva non-IID
+    lr: 1.0e-4                   # fallback; anulado por lr_head/lr_backbone
+    lr_head: 1.0e-3              # igual que centralizada
+    lr_backbone: 1.0e-4          # igual que centralizada
     weight_decay: 1.0e-4
   scheduler:
     name: cosine
-    t_max: 30                    # decae sobre todas las rondas
+    t_max: 30
   augmentation:
-    normalize_preset: radimagenet_rgb   # mean=(0.5,0.5,0.5) std=(0.5,0.5,0.5) — correcto para RadImageNet
+    normalize_preset: radimagenet_rgb
   loss:
-    name: bce                    # BCEWithLogitsLoss con pos_weight automático
-    auto_class_weights: true     # pos_weight = n_neg / n_pos (por nodo)
+    name: bce
+    auto_class_weights: true
 
 evaluation:
   threshold: 0.5
   save_predictions: true
 
 federated:
-  num_clients: 2                 # Nodo 0 (CMMD/China) + Nodo 1 (DMID)
-  rounds: 30                     # 5 rondas Fase A + 25 rondas Fase B
-  fraction_fit: 1.0              # ambos clientes participan en cada ronda
+  num_clients: 6                 # 6 nodos físicos cliente
+  rounds: 30                     # 30 rondas totales
+  fraction_fit: 1.0
   fraction_evaluate: 1.0
-  min_fit_clients: 2
-  min_evaluate_clients: 2
-  min_available_clients: 2       # bloquea hasta que ambos nodos estén conectados
-  accept_failures: false         # falla rápido; cambiar a true para producción
+  min_fit_clients: 6
+  min_evaluate_clients: 6
+  min_available_clients: 6       # bloquea hasta que los 6 nodos se conecten
+  accept_failures: false
   server_address: "0.0.0.0:8080"
   strategy:
     name: fedavg

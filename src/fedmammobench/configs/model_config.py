@@ -88,6 +88,10 @@ class ModelConfig:
     freeze_backbone: bool = False
     freeze_head: bool = False
     unfreeze_at_epoch: int | None = None
+    # When set, progressive unfreezing only enables these named backbone
+    # submodules (e.g. ["layer4", "fc"]), matching the centralizada phase_b
+    # policy. When None, all backbone parameters are unfrozen (original behavior).
+    unfreeze_layers: list[str] | None = None
 
     def validate(self, normalize_preset: str | None = None) -> None:
         """Raise ValueError for invalid model configurations.

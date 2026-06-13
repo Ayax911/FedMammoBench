@@ -11,6 +11,12 @@ from typing import Any, Literal
 class OptimizerConfig:
     name: Literal["sgd", "adam", "adamw"] = "adamw"
     lr: float = 1e-4
+    # Discriminative LRs: when both are set, the optimizer uses separate param
+    # groups for the classification head and the backbone feature extractor,
+    # mirroring the centralizada setup (lr_head=1e-3, lr_backbone=1e-4).
+    # Falls back to `lr` for any group whose specific rate is None.
+    lr_head: float | None = None
+    lr_backbone: float | None = None
     weight_decay: float = 1e-4
     momentum: float = 0.9  # only used by SGD
 
@@ -89,6 +95,10 @@ class TrainingConfig:
             raise ValueError(f"local_epochs must be >= 1, got {self.local_epochs}")
         if self.optimizer.lr <= 0.0:
             raise ValueError(f"optimizer.lr must be > 0, got {self.optimizer.lr}")
+        if self.optimizer.lr_head is not None and self.optimizer.lr_head <= 0.0:
+            raise ValueError(f"optimizer.lr_head must be > 0, got {self.optimizer.lr_head}")
+        if self.optimizer.lr_backbone is not None and self.optimizer.lr_backbone <= 0.0:
+            raise ValueError(f"optimizer.lr_backbone must be > 0, got {self.optimizer.lr_backbone}")
 
         # Warn about FedProx + AMP: the proximal term is computed in FP32 inside
         # Trainer.train_one_epoch so underflow is prevented, but AMP reduces

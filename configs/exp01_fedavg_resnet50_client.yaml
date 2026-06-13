@@ -16,7 +16,7 @@
 #   - Mismas augmentaciones: HorizontalFlip, Rotation±15°, BrightnessContrast
 #
 # Diferencias conocidas FL vs centralizado:
-#   - LR único 5e-5 (FL) vs discriminativo head=1e-3/backbone=1e-4 (centralizado)
+#   - LR discriminativo head=1e-3/backbone=1e-4 (igual que centralizado)
 #   - Sin early stopping por rondas fijas (FL)
 #   - Threshold fijo 0.5 (FL) vs Youden en val (centralizado)
 #   - Datos no-IID por nodo (FL) vs pool completo (centralizado)
@@ -70,14 +70,17 @@ model:
   dropout: 0.0                   # sin dropout — idéntico al modelo centralizado
   freeze_backbone: true          # DEBE coincidir con el servidor
   unfreeze_at_epoch: 5           # DEBE coincidir con el servidor
+  unfreeze_layers: [layer4, fc]  # DEBE coincidir con el servidor
 
 training:
   local_epochs: 1                # 1 época local por ronda de FL
   grad_clip_norm: 1.0
-  mixed_precision: false
+  mixed_precision: true          # DEBE coincidir con el servidor
   optimizer:
     name: adamw
-    lr: 5.0e-5
+    lr: 1.0e-4                   # fallback; anulado por lr_head/lr_backbone
+    lr_head: 1.0e-3              # DEBE coincidir con el servidor
+    lr_backbone: 1.0e-4          # DEBE coincidir con el servidor
     weight_decay: 1.0e-4
   scheduler:
     name: cosine
