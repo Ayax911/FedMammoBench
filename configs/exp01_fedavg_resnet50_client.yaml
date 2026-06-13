@@ -49,9 +49,10 @@ device: auto
 
 data:
   name: mammo_bench
-  # Rutas sobreescritas por --manifest y --data-dir en CLI.
+  # Solo cambiar manifest_path según el nodo (node0_manifest.csv, node1_manifest.csv, …).
+  # image_root es idéntico en todos los nodos: las rutas del CSV son relativas a data/.
   manifest_path: manifests/node0_manifest.csv
-  image_root: data/mammobench/images
+  image_root: data/
   image_size: 224
   grayscale: false      # false → in_channels=3 (grayscale replicado a RGB, igual que centralizado)
   num_classes: 2        # clases del dataset (benign=0, malignant=1) — siempre 2
@@ -66,7 +67,7 @@ data:
 model:
   name: resnet50
   weight_source: radimagenet
-  checkpoint_path: null          # null → usa $FEDMAMMOBENCH_RADIMAGENET_DIR
+  checkpoint_path: weights/RadImageNet-resnet50.pth
   in_channels: 3                 # 3 canales: grayscale replicado a RGB (igual que centralizado)
   num_classes: 1                 # logit único: BCEWithLogitsLoss
   dropout: 0.0                   # sin dropout — idéntico al modelo centralizado
