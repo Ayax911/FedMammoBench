@@ -43,7 +43,7 @@ model:
   unfreeze_layers: [layer4, fc]  # DEBE coincidir con el servidor
 
 training:
-  local_epochs: 1
+  local_epochs: 5
   grad_clip_norm: 1.0
   mixed_precision: true          # DEBE coincidir con el servidor
   optimizer:
