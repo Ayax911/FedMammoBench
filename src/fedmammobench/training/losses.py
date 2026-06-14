@@ -18,6 +18,9 @@ import torch
 from torch import nn
 
 from fedmammobench.configs.schema import LossConfig
+from fedmammobench.utils.logging_utils import get_logger
+
+_logger = get_logger(__name__)
 
 
 class FocalLoss(nn.Module):
@@ -129,6 +132,12 @@ def build_loss(
             n_neg = float((train_labels == 0).sum())
             if n_pos > 0:
                 pos_weight = torch.tensor([n_neg / n_pos], dtype=torch.float32)
+            else:
+                _logger.warning(
+                    "build_loss: training set has ZERO positive (class-1) samples. "
+                    "pos_weight defaults to 1.0 — model will trivially minimise BCE "
+                    "by predicting all-negative. Check your data partition."
+                )
         return BCEWithLogitsLossWrapper(pos_weight=pos_weight)
     raise ValueError(f"Unknown loss name: {cfg.name!r}")
 

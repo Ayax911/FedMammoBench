@@ -7,6 +7,9 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from fedmammobench.datasets.base import MammographyDataset
+from fedmammobench.utils.logging_utils import get_logger
+
+_logger = get_logger(__name__)
 
 
 def build_dataloader(
@@ -37,7 +40,16 @@ def build_dataloader(
 
     if balance_classes:
         labels = dataset.labels
-        counts = np.bincount(labels, minlength=int(labels.max()) + 1).astype(np.float64)
+        n_classes = int(labels.max()) + 1
+        counts = np.bincount(labels, minlength=n_classes).astype(np.float64)
+        absent = [c for c in range(n_classes) if counts[c] == 0]
+        if absent:
+            _logger.warning(
+                "balance_classes=True but class(es) %s are absent from this dataset — "
+                "WeightedRandomSampler cannot oversample what does not exist. "
+                "Check the data partition.",
+                absent,
+            )
         # Avoid divide-by-zero for absent classes.
         counts = np.where(counts == 0, 1.0, counts)
         inv = 1.0 / counts

@@ -68,6 +68,15 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         self.cfg = cfg
         self.device = device
 
+        train_labels = train_dataset.labels
+        if (train_labels == 1).sum() == 0:
+            _logger.error(
+                "Client %d: training set has NO malignant samples. "
+                "The model will not learn to detect malignancy. "
+                "Review the manifest and split configuration.",
+                self.client_id,
+            )
+
         # Build a fresh model from the same config; weights will be set by
         # the server in ``fit``/``evaluate``.
         self.model = build_model(cfg.model).to(device)

@@ -18,6 +18,8 @@ from fedmammobench.federated.strategies.registry import (
 # Side-effect imports populate the registry.
 from fedmammobench.federated.strategies import fedavg  # noqa: F401
 from fedmammobench.federated.strategies import fedprox  # noqa: F401
+from fedmammobench.federated.strategies import fedyogi  # noqa: F401
+from fedmammobench.federated.strategies import fedadam  # noqa: F401
 from fedmammobench.federated.strategies import scaffold  # noqa: F401
 from fedmammobench.federated.strategies import fedbn  # noqa: F401
 

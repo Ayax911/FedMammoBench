@@ -1,7 +1,8 @@
-# exp01_fedavg_resnet50 — SERVIDOR CENTRAL — 5 NODOS (sin node0/rsna)
+# exp06_fedprox_resnet50 — SERVIDOR CENTRAL — 5 NODOS
 #
-# Configuración para agregación FedAvg con 5 nodos cliente.
-# Nodo 0 (rsna-screening, 0% malignant) excluido del benchmark comparativo.
+# Estrategia: FedProx (Li et al., 2020)
+# Añade término proximal (mu/2)||w - w_global||^2 a la función objetivo local.
+# El servidor inyecta proximal_mu en cada FitIns; los clientes lo aplican en client.py.
 #
 # DISTRIBUCIÓN DE DATOS (5 NODOS + SERVIDOR):
 #   Nodo 1 — cmmd       — China                  (~5 202 filas)
@@ -11,35 +12,28 @@
 #   Nodo 5 — dmid       — Origen desconocido     (~  757 filas)
 #   Servidor — mini-ddsm — USA / CBIS-DDSM       (~7 808 filas)
 #
-# ARRANCAR SERVIDOR:
-#   bash scripts/run_server.sh
-#   (o: SERVER_CONFIG=configs/exp01_fedavg_resnet50_server.yaml bash scripts/run_server.sh)
-#
-# ARRANCAR TODOS LOS EXPERIMENTOS EN LOTE:
-#   bash scripts/run_all_experiments_server.sh          # en la máquina servidor
-#   bash scripts/run_all_node1.sh                       # en la máquina del nodo 1
-#   bash scripts/run_all_node5.sh                       # en la máquina del nodo 5
+# ARRANCAR EN LOTE:
+#   bash scripts/run_all_experiments_server.sh
 # ──────────────────────────────────────────────────────────────────────────────
 
-name: exp01_fedavg_resnet50_5nodes
+name: exp06_fedprox_resnet50_5nodes
 mode: federated
 seed: 42
-output_dir: runs/exp01_fedavg_resnet50_5nodes
+output_dir: runs/exp06_fedprox_resnet50_5nodes
 device: auto
 
 data:
-  # Evaluación federada pura (sin holdout en servidor)
   name: none
   manifest_path: manifests/rsna-screening.csv
   image_size: 224
-  grayscale: false      # false → in_channels=3
-  num_classes: 2        # clases del dataset (benign=0, malignant=1)
+  grayscale: false
+  num_classes: 2
   batch_size: 32
   num_workers: 0
   val_fraction: 0.1
   test_fraction: 0.1
   image_format: jpg
-  normal_policy: benign          # Normal → 0 (igual que Benign); usar "drop" para excluirlos
+  normal_policy: benign
   image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench
   columns:
     image_path: preprocessed_image_path
@@ -52,12 +46,11 @@ model:
   weight_source: radimagenet
   checkpoint_path: weights/RadImageNet-resnet50.pth
   in_channels: 3
-  num_classes: 1                 # logit único: BCEWithLogitsLoss
+  num_classes: 1
   dropout: 0.0
-  freeze_backbone: true          # Fase A: solo cabeza (rondas 0–4)
-  unfreeze_at_epoch: 5           # Fase B: fine-tuning desde ronda 5
-  unfreeze_layers: [layer4, fc]  # igual que centralizada: solo layer4 + cabeza
-
+  freeze_backbone: true
+  unfreeze_at_epoch: 5
+  unfreeze_layers: [layer4, fc]
 
 training:
   local_epochs: 5
@@ -65,13 +58,13 @@ training:
   mixed_precision: true
   optimizer:
     name: adamw
-    lr: 1.0e-4                   # fallback; anulado por lr_head/lr_backbone
-    lr_head: 1.0e-3              # igual que centralizada
-    lr_backbone: 1.0e-4          # igual que centralizada
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
     weight_decay: 1.0e-4
   scheduler:
     name: cosine
-    t_max: 50
+    t_max: 10
   augmentation:
     normalize_preset: radimagenet_rgb
   loss:
@@ -83,15 +76,16 @@ evaluation:
   save_predictions: true
 
 federated:
-  num_clients: 5                 # 5 nodos físicos cliente (sin node0/rsna)
-  rounds: 10                     # 10 rondas totales
+  num_clients: 5
+  rounds: 10
   fraction_fit: 1.0
   fraction_evaluate: 1.0
   min_fit_clients: 5
   min_evaluate_clients: 5
-  min_available_clients: 5       # bloquea hasta que los 5 nodos se conecten
+  min_available_clients: 5
   accept_failures: false
   server_address: "0.0.0.0:8080"
   strategy:
-    name: fedavg
-    params: {}
+    name: fedprox
+    params:
+      proximal_mu: 0.01   # regularización proximal (Li et al. recomiendan 0.01–0.1)

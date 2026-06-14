@@ -73,6 +73,12 @@ class NodeMetricsRecorder:
         self._start_time: float | None = None
         self._last_round_end: float | None = None
 
+        # Per-node accumulated fit time and samples (for final summary)
+        self._node_fit_seconds_total: dict[int, float] = {}
+        self._node_fit_samples_total: dict[int, int] = {}
+        # Aggregated federated eval metrics per round (for final summary)
+        self._round_agg_metrics: list[dict] = []
+
     # -- lazy per-client sinks --------------------------------------------
 
     def _client_root(self, cid: int) -> Path:
@@ -138,6 +144,10 @@ class NodeMetricsRecorder:
             tb.flush()
             if fs == fs:
                 fit_secs.append(fs)
+                self._node_fit_seconds_total[cid] = self._node_fit_seconds_total.get(cid, 0.0) + fs
+            self._node_fit_samples_total[cid] = (
+                self._node_fit_samples_total.get(cid, 0) + int(res.num_examples)
+            )
 
         wall = (now - self._last_round_end) if self._last_round_end is not None else float("nan")
         self._last_round_end = now
@@ -190,6 +200,27 @@ class NodeMetricsRecorder:
                 server_round,
             )
             tb.flush()
+
+        # Accumulate weighted-average metrics across clients for this round
+        total_samples = sum(int(r.num_examples) for _, r in results)
+        if total_samples > 0:
+            agg: dict[str, Any] = {
+                "round": server_round,
+                "num_clients": len(results),
+                "total_samples": total_samples,
+            }
+            for k in _EVAL_KEYS:
+                weighted_vals = []
+                weights = []
+                for _, res in results:
+                    m_r = dict(res.metrics or {})
+                    v = float(res.loss) if k == "loss" else float(m_r.get(k, float("nan")))
+                    if v == v:  # skip NaN
+                        weighted_vals.append(v * int(res.num_examples))
+                        weights.append(int(res.num_examples))
+                if weights:
+                    agg[k] = sum(weighted_vals) / sum(weights)
+            self._round_agg_metrics.append(agg)
 
     # -- strategy wrapping ------------------------------------------------
 
@@ -254,22 +285,105 @@ class NodeMetricsRecorder:
         return out
 
     def write_timing_summary(self, cfg: ExperimentConfig, total_seconds: float) -> None:
-        """Write the overall process timing to ``timing_summary.csv``."""
+        """Write timing summary CSVs and a human-readable final_summary.txt."""
         rounds = max(int(cfg.federated.rounds), 1)
+
+        # 1. Overall timing CSV
         summary = CSVLogger(self.out_root / "timing_summary.csv")
         summary.append(
             {
-                "total_seconds": float(total_seconds),
+                "total_seconds": round(total_seconds, 3),
+                "total_minutes": round(total_seconds / 60, 2),
                 "num_rounds": cfg.federated.rounds,
                 "num_clients": cfg.federated.num_clients,
-                "avg_seconds_per_round": float(total_seconds) / rounds,
+                "avg_seconds_per_round": round(float(total_seconds) / rounds, 3),
             }
         )
+
+        # 2. Per-node timing CSV
+        if self._node_fit_seconds_total:
+            node_csv = CSVLogger(self.out_root / "per_node_timing.csv")
+            for cid in sorted(self._node_fit_seconds_total):
+                total_fit = self._node_fit_seconds_total[cid]
+                total_samp = self._node_fit_samples_total.get(cid, 0)
+                node_csv.append(
+                    {
+                        "client_id": cid,
+                        "total_fit_seconds": round(total_fit, 3),
+                        "total_fit_minutes": round(total_fit / 60, 2),
+                        "total_samples_trained": total_samp,
+                        "avg_seconds_per_sample": (
+                            round(total_fit / total_samp, 6) if total_samp else ""
+                        ),
+                    }
+                )
+
+        # 3. Human-readable final summary
+        def _fmt(val: object, decimals: int = 4) -> str:
+            if isinstance(val, float) and val != val:
+                return "n/a"
+            if isinstance(val, float):
+                return f"{val:.{decimals}f}"
+            return str(val)
+
+        lines: list[str] = [
+            "=" * 62,
+            f"  RESUMEN FINAL — {cfg.name}",
+            "=" * 62,
+            f"  Estrategia         : {cfg.federated.strategy.name}",
+            f"  Rondas completadas : {cfg.federated.rounds}",
+            f"  Clientes           : {cfg.federated.num_clients}",
+            f"  Tiempo total       : {total_seconds:.2f}s  ({total_seconds / 60:.1f} min)",
+            f"  Promedio por ronda : {total_seconds / rounds:.2f}s",
+            "",
+            "  TIEMPO POR NODO (fit acumulado):",
+        ]
+        for cid in sorted(self._node_fit_seconds_total):
+            tf = self._node_fit_seconds_total[cid]
+            ts = self._node_fit_samples_total.get(cid, 0)
+            lines.append(
+                f"    Node {cid:>2d}: {tf:>8.2f}s  ({tf / 60:.1f} min)  "
+                f"{ts} muestras entrenadas"
+            )
+
+        if self._round_agg_metrics:
+            best = max(
+                self._round_agg_metrics, key=lambda r: float(r.get("roc_auc", 0.0))
+            )
+            last = self._round_agg_metrics[-1]
+            lines += [
+                "",
+                "  MÉTRICAS FEDERADAS (promedio ponderado de clientes):",
+                f"    Última ronda (#{last['round']:>2d}) — "
+                f"AUC={_fmt(last.get('roc_auc'))}  "
+                f"F1={_fmt(last.get('f1'))}  "
+                f"Loss={_fmt(last.get('loss'))}",
+                f"    Mejor ronda  (#{best['round']:>2d}) — "
+                f"AUC={_fmt(best.get('roc_auc'))}  "
+                f"F1={_fmt(best.get('f1'))}  "
+                f"Loss={_fmt(best.get('loss'))}",
+                "",
+                "  MÉTRICAS COMPLETAS POR RONDA:",
+            ]
+            for r in self._round_agg_metrics:
+                lines.append(
+                    f"    Ronda {r['round']:>2d}: "
+                    f"AUC={_fmt(r.get('roc_auc'))}  "
+                    f"F1={_fmt(r.get('f1'))}  "
+                    f"Sens={_fmt(r.get('sensitivity'))}  "
+                    f"Spec={_fmt(r.get('specificity'))}  "
+                    f"Loss={_fmt(r.get('loss'))}"
+                )
+
+        lines += ["", "=" * 62]
+        summary_text = "\n".join(lines) + "\n"
+        summary_path = self.out_root / "final_summary.txt"
+        summary_path.write_text(summary_text, encoding="utf-8")
+        _logger.info("\n%s", summary_text)
         _logger.info(
-            "Total process time: %.2fs over %d rounds (%.2fs/round avg).",
-            total_seconds,
-            cfg.federated.rounds,
-            float(total_seconds) / rounds,
+            "Artefactos guardados en %s  (final_summary.txt, per_node_timing.csv, "
+            "timing_summary.csv)",
+            self.out_root,
         )
 
     def close(self) -> None:

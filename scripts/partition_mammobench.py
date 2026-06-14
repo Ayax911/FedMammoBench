@@ -65,13 +65,13 @@ PARTITION_MAP_5NODES: dict[str, list[str]] = {
 }
 
 PARTITION_MAP_6NODES: dict[str, list[str]] = {
-    "node0": ["rsna"],                                              # RSNA Screening Mammography Challenge
+    "node0": ["rsna-screening"],                                   # RSNA Screening Mammography Challenge
     "node1": ["cmmd"],                                             # China
     "node2": ["inbreast"],                                         # Portugal
     "node3": ["cdd-cesm"],                                         # Egipto
     "node4": ["kau-bcmd"],                                         # Arabia Saudita
     "node5": ["dmid"],                                             # Desconocido
-    "server_train": ["ddsm"],                                      # USA / CBIS-DDSM — pre-entrenamiento servidor
+    "server_train": ["mini-ddsm"],                                 # Mini-DDSM — evaluación servidor
 }
 
 SUSPICIOUS_LABEL = "Suspicious Malignant"
@@ -91,7 +91,14 @@ def _stats(df: pd.DataFrame) -> str:
     )
 
 
-def partition(csv_path: Path, out_dir: Path, *, num_nodes: int = 5) -> None:
+def partition(
+    csv_path: Path,
+    out_dir: Path,
+    *,
+    num_nodes: int = 5,
+    add_image_id: bool = False,
+    max_samples: int | None = None,
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if num_nodes == 2:
@@ -103,8 +110,12 @@ def partition(csv_path: Path, out_dir: Path, *, num_nodes: int = 5) -> None:
     else:
         raise ValueError(f"--nodes must be 2, 5, or 6, got {num_nodes}")
 
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, low_memory=False)
     print(f"Loaded {len(df)} rows from {csv_path}  (layout: {num_nodes} nodes)")
+
+    if add_image_id:
+        df.insert(0, "image_id", df["preprocessed_image_path"].apply(lambda p: Path(p).stem))
+        print("Added column 'image_id' (stem of preprocessed_image_path)")
 
     # Drop ambiguous label rows (235 cases in the dataset).
     n_before = len(df)
@@ -133,6 +144,9 @@ def partition(csv_path: Path, out_dir: Path, *, num_nodes: int = 5) -> None:
 
     for partition_name, sources in partition_map.items():
         subset = df[df["source_dataset"].isin(sources)].copy()
+        if max_samples is not None and len(subset) > max_samples:
+            subset = subset.sample(n=max_samples, random_state=42)
+            print(f"  [{partition_name}] subsampled to {max_samples} rows")
 
         # Determine output filename.
         if partition_name == "server_test":
@@ -205,8 +219,31 @@ def main() -> None:
         choices=[2, 5, 6],
         help="Number of client nodes (2, 5, or 6, default 5).",
     )
+    parser.add_argument(
+        "--add-image-id",
+        action="store_true",
+        default=False,
+        help="Add 'image_id' column with the stem of preprocessed_image_path (e.g. 'cmmd_0').",
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Cap each partition at N rows (random sample, seed=42). "
+            "Useful to balance training time when one source (e.g. rsna-screening) "
+            "is much larger than the rest. Example: --max-samples 10000"
+        ),
+    )
     args = parser.parse_args()
-    partition(args.csv, args.out, num_nodes=args.nodes)
+    partition(
+        args.csv,
+        args.out,
+        num_nodes=args.nodes,
+        add_image_id=args.add_image_id,
+        max_samples=args.max_samples,
+    )
 
 
 if __name__ == "__main__":

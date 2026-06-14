@@ -66,8 +66,8 @@ class Trainer:
         self.tb_writer = tb_writer
         self.csv_logger = csv_logger
         self.log_tag = log_tag
-        self._scaler: torch.cuda.amp.GradScaler | None = (
-            torch.cuda.amp.GradScaler() if self.mixed_precision else None
+        self._scaler: torch.amp.GradScaler | None = (
+            torch.amp.GradScaler("cuda") if self.mixed_precision else None
         )
         self._global_step = 0
 
@@ -107,14 +107,14 @@ class Trainer:
 
             self.optimizer.zero_grad(set_to_none=True)
             if self._scaler is not None:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast("cuda"):
                     logits = self.model(images)
                     task_loss = self.criterion(logits, targets)
                 loss = task_loss
                 if use_prox:
                     # Proximal term computed in FP32 (via flat vector) to prevent
                     # FP16 underflow when drift is small (early rounds, low mu).
-                    with torch.cuda.amp.autocast(enabled=False):
+                    with torch.amp.autocast("cuda", enabled=False):
                         current = torch.nn.utils.parameters_to_vector(
                             self.model.parameters()
                         ).float()

@@ -1,4 +1,7 @@
-# exp01_fedavg_resnet50 — NODOS CLIENTE
+# exp01_fedavg_resnet50 — NODOS CLIENTE (5 nodos, sin node0/rsna)
+#
+# Nodos activos: 1 (cmmd), 2 (inbreast), 3 (cdd-cesm), 4 (kau-bcmd), 5 (dmid).
+# Nodo 0 (rsna-screening) excluido del benchmark comparativo.
 #
 # Cada nodo físico usa este mismo YAML. Las rutas específicas del nodo
 # (manifest y directorio de imágenes) se pasan como argumentos CLI.
@@ -7,44 +10,24 @@
 #   model.freeze_backbone, model.unfreeze_at_epoch y training.scheduler.t_max
 #   DEBEN coincidir exactamente con el config del servidor.
 #
-# Comparable con infraestructura centralizada/src/train.py:
-#   - Mismo modelo: ResNet-50, num_classes=1, dropout=0.0, in_channels=3
-#   - Mismo transfer learning: RadImageNet con remapping backbone.N → torchvision
-#   - Misma normalización: RadImageNet RGB mean=(0.5,0.5,0.5) std=(0.5,0.5,0.5)
-#   - Misma pérdida: BCEWithLogitsLoss con pos_weight por nodo
-#   - Mismo batch_size: 32
-#   - Mismas augmentaciones: HorizontalFlip, Rotation±15°, BrightnessContrast
-#
-# Diferencias conocidas FL vs centralizado:
-#   - LR discriminativo head=1e-3/backbone=1e-4 (igual que centralizado)
-#   - Sin early stopping por rondas fijas (FL)
-#   - Threshold fijo 0.5 (FL) vs Youden en val (centralizado)
-#   - Datos no-IID por nodo (FL) vs pool completo (centralizado)
-#
-# ── EJECUCIÓN ──────────────────────────────────────────────────────────
-#   Nodo 0 (CMMD / China):
-#   python scripts/run_client.py \
-#       --config configs/exp01_fedavg_resnet50_client.yaml \
-#       --server <IP_SERVIDOR>:8080 \
-#       --client-id 0 \
-#       --manifest manifests/node0_manifest.csv \
-#       --data-dir data/mammobench/images
-#
-#   Nodo 1 (DMID):
+# ── EJECUCIÓN MANUAL ───────────────────────────────────────────────────
+#   Nodo 1 (CMMD / China):
 #   python scripts/run_client.py \
 #       --config configs/exp01_fedavg_resnet50_client.yaml \
 #       --server <IP_SERVIDOR>:8080 \
 #       --client-id 1 \
 #       --manifest manifests/node1_manifest.csv \
-#       --data-dir data/mammobench/images
+#       --data-dir <ruta_local_imágenes>
 #
-# Ver docs/FEDERATED_DEPLOYMENT_GUIDE.md para el checklist completo.
+# ── EJECUCIÓN EN LOTE (recomendado) ────────────────────────────────────
+#   bash scripts/run_all_node1.sh    (fijar SERVER_ADDRESS e IMAGE_ROOT_HOST)
+#   bash scripts/run_all_node5.sh
 # ──────────────────────────────────────────────────────────────────────
 
-name: exp01_fedavg_resnet50
+name: exp01_fedavg_resnet50_5nodes
 mode: federated
 seed: 42
-output_dir: runs/exp01_fedavg_resnet50
+output_dir: runs/exp01_fedavg_resnet50_5nodes
 device: auto
 
 data:
@@ -87,7 +70,7 @@ training:
     weight_decay: 1.0e-4
   scheduler:
     name: cosine
-    t_max: 30                    # DEBE coincidir con federated.rounds del servidor
+    t_max: 10                    # DEBE coincidir con federated.rounds del servidor
   augmentation:
     horizontal_flip: true        # válido anatómicamente en mamografía
     rotate_limit: 15             # ±15° — igual que centralizado (transforms.py)
@@ -102,7 +85,7 @@ evaluation:
   save_predictions: false
 
 federated:
-  rounds: 30          # DEBE coincidir con el servidor
+  rounds: 10          # DEBE coincidir con el servidor
   strategy:
     name: fedavg
     params: {}
