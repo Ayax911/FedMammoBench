@@ -23,14 +23,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Ensure python3.11 is the active interpreter.
-# CUDA base images ship Python 3.10; install 3.11 and bootstrap its pip.
+# CUDA base images ship Python 3.10; Debian/Ubuntu disable ensurepip for system Python,
+# so pip is bootstrapped via get-pip.py (downloaded with Python's own urllib).
 RUN if ! python3.11 --version >/dev/null 2>&1; then \
         apt-get update && \
         apt-get install -y --no-install-recommends python3.11 python3.11-venv && \
         rm -rf /var/lib/apt/lists/*; \
     fi && \
     ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
-    python3.11 -m ensurepip --upgrade
+    python3.11 -c "\
+import urllib.request; \
+open('/tmp/get-pip.py','wb').write(urllib.request.urlopen('https://bootstrap.pypa.io/get-pip.py').read())" && \
+    python3.11 /tmp/get-pip.py && \
+    rm /tmp/get-pip.py
 
 WORKDIR /app
 
