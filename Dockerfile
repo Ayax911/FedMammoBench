@@ -22,25 +22,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# If BASE_IMAGE is the CUDA image it won't ship Python; install it.
-RUN command -v python3.11 >/dev/null 2>&1 || ( \
+# Ensure python3.11 is the active interpreter.
+# CUDA base images ship Python 3.10; install 3.11 and bootstrap its pip.
+RUN if ! python3.11 --version >/dev/null 2>&1; then \
         apt-get update && \
-        apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip && \
-        ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
-        rm -rf /var/lib/apt/lists/* \
-    )
+        apt-get install -y --no-install-recommends python3.11 python3.11-venv && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi && \
+    ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
+    python3.11 -m ensurepip --upgrade
 
 WORKDIR /app
 
 # Install Python deps first for layer caching.
 COPY requirements.txt pyproject.toml ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
 # Now copy the project sources and install the package itself.
 COPY src ./src
 COPY configs ./configs
 COPY scripts ./scripts
-RUN pip install -e .
+RUN python -m pip install -e .
 
 # Default to an interactive shell; CI / experiments override this.
 CMD ["bash"]
