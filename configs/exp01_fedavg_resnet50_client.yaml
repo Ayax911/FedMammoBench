@@ -82,7 +82,7 @@ training:
 
 evaluation:
   threshold: 0.5
-  save_predictions: false
+  save_predictions: true
 
 federated:
   rounds: 10          # DEBE coincidir con el servidor
