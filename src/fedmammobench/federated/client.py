@@ -37,7 +37,7 @@ from fedmammobench.federated.param_utils import (
 )
 from fedmammobench.models import build_model
 from fedmammobench.models.weight_loaders import apply_freeze_policy
-from fedmammobench.training import Trainer, build_loss, build_optimizer
+from fedmammobench.training import Trainer, build_loss, build_optimizer, build_scheduler
 from fedmammobench.utils.device import resolve_device
 from fedmammobench.utils.logging_utils import get_logger
 from fedmammobench.utils.seeding import set_global_seed
@@ -145,6 +145,7 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         # Fresh optimizer each round — standard in Flower; cross-round state
         # would otherwise pollute aggregation.
         optimizer = build_optimizer(self.model, self.cfg.training.optimizer)
+        scheduler = build_scheduler(optimizer, self.cfg.training.scheduler)
         trainer = Trainer(
             self.model,
             optimizer,
@@ -153,6 +154,7 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             grad_clip_norm=self.cfg.training.grad_clip_norm,
             mixed_precision=self.cfg.training.mixed_precision,
             log_tag=f"client_{self.client_id}",
+            scheduler=scheduler,
         )
         last: dict[str, Any] = {}
         fit_start = time.perf_counter()

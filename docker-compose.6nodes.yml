@@ -43,6 +43,7 @@ x-fedmammobench-common: &fed-common
     - ./data:/app/data:ro
     - ./manifests:/app/manifests:ro
     - ./checkpoints:/app/checkpoints:ro
+    - ./weights:/app/weights:ro
   networks:
     - fednet
   restart: "no"

@@ -398,6 +398,7 @@ def run_grpc_server(
             csv_logger,
         ),
         "on_fit_config_fn": _make_on_fit_config_fn(cfg),
+        "on_evaluate_config_fn": lambda rnd: {"current_round": rnd},
     }
     strategy_kwargs.update(cfg.federated.strategy.params)
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
