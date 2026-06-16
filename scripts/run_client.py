@@ -159,6 +159,7 @@ def main() -> int:
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         device=device,
+        out_root=out_root,
     )
 
     logger.info("Connecting to server at %s ...", args.server)

@@ -398,6 +398,7 @@ def run_grpc_server(
             csv_logger,
         ),
         "on_fit_config_fn": _make_on_fit_config_fn(cfg),
+        "on_evaluate_config_fn": lambda rnd: {"current_round": rnd},
     }
     strategy_kwargs.update(cfg.federated.strategy.params)
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
@@ -423,6 +424,24 @@ def run_grpc_server(
         cfg.federated.grpc_max_message_length // (1024 * 1024),
         f"{round_timeout}s" if round_timeout else "none",
     )
+    # Inject gRPC keepalive so long-running fit rounds (>2 min) don't cause
+    # GrpcBridgeClosed errors. Flower's start_server() doesn't expose these
+    # options directly, so we patch grpc.server() before calling it.
+    import grpc as _grpc
+    _orig_grpc_server = _grpc.server
+
+    def _grpc_server_with_keepalive(thread_pool, **kwargs):
+        opts = list(kwargs.pop("options", []))
+        opts += [
+            ("grpc.keepalive_time_ms", 120_000),         # ping every 2 min
+            ("grpc.keepalive_timeout_ms", 20_000),        # 20 s to ack ping
+            ("grpc.http2.max_pings_without_data", 0),     # no ping limit
+            ("grpc.keepalive_permit_without_calls", 1),   # ping even when idle
+            ("grpc.max_connection_idle_ms", 3_600_000),   # 1 h idle before close
+        ]
+        return _orig_grpc_server(thread_pool, options=opts, **kwargs)
+
+    _grpc.server = _grpc_server_with_keepalive
     recorder.start()
     t0 = time.perf_counter()
     try:
@@ -433,6 +452,7 @@ def run_grpc_server(
             grpc_max_message_length=cfg.federated.grpc_max_message_length,
         )
     finally:
+        _grpc.server = _orig_grpc_server  # restore original
         total_seconds = time.perf_counter() - t0
         recorder.save_global_model(cfg)
         recorder.write_timing_summary(cfg, total_seconds)

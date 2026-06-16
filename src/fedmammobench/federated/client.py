@@ -17,7 +17,9 @@ engine calls per virtual client, given a numeric client id.
 
 from __future__ import annotations
 
+import csv
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
@@ -35,7 +37,7 @@ from fedmammobench.federated.param_utils import (
 )
 from fedmammobench.models import build_model
 from fedmammobench.models.weight_loaders import apply_freeze_policy
-from fedmammobench.training import Trainer, build_loss, build_optimizer
+from fedmammobench.training import Trainer, build_loss, build_optimizer, build_scheduler
 from fedmammobench.utils.device import resolve_device
 from fedmammobench.utils.logging_utils import get_logger
 from fedmammobench.utils.seeding import set_global_seed
@@ -63,10 +65,21 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         train_dataset: MammographyDataset,
         val_dataset: MammographyDataset | None,
         device: torch.device,
+        out_root: Path | None = None,
     ) -> None:
         self.client_id = int(client_id)
         self.cfg = cfg
         self.device = device
+        self.out_root = Path(out_root) if out_root is not None else None
+
+        train_labels = train_dataset.labels
+        if (train_labels == 1).sum() == 0:
+            _logger.error(
+                "Client %d: training set has NO malignant samples. "
+                "The model will not learn to detect malignancy. "
+                "Review the manifest and split configuration.",
+                self.client_id,
+            )
 
         # Build a fresh model from the same config; weights will be set by
         # the server in ``fit``/``evaluate``.
@@ -132,6 +145,7 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         # Fresh optimizer each round — standard in Flower; cross-round state
         # would otherwise pollute aggregation.
         optimizer = build_optimizer(self.model, self.cfg.training.optimizer)
+        scheduler = build_scheduler(optimizer, self.cfg.training.scheduler)
         trainer = Trainer(
             self.model,
             optimizer,
@@ -140,6 +154,7 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             grad_clip_norm=self.cfg.training.grad_clip_norm,
             mixed_precision=self.cfg.training.mixed_precision,
             log_tag=f"client_{self.client_id}",
+            scheduler=scheduler,
         )
         last: dict[str, Any] = {}
         fit_start = time.perf_counter()
@@ -175,16 +190,26 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         return state_dict_to_ndarrays(self.model), n_samples, metrics
 
     def evaluate(
-        self, parameters: NDArrays, config: dict[str, Scalar]  # noqa: ARG002
+        self, parameters: NDArrays, config: dict[str, Scalar]
     ) -> tuple[float, int, dict[str, Scalar]]:
         load_ndarrays_to_state_dict(self.model, parameters, strict=True)
         if self.val_loader is None:
             # Reporting num_examples=0 ensures Flower's weighted aggregator
             # ignores this client's row instead of polluting the global mean.
             return 0.0, 0, {"warning": "no_local_val"}
+        server_round = int(config.get("current_round", 0))
+        save_preds = bool(getattr(self.cfg.evaluation, "save_predictions", False))
         eval_start = time.perf_counter()
-        result = self.evaluator.evaluate(self.val_loader, criterion=self.criterion)
+        result = self.evaluator.evaluate(
+            self.val_loader,
+            criterion=self.criterion,
+            return_predictions=save_preds,
+        )
         eval_seconds = time.perf_counter() - eval_start
+
+        if save_preds and self.out_root is not None:
+            self._save_predictions(server_round, result)
+
         loss = float(result.get("loss", 0.0))
         n_samples = int(len(self.val_loader.dataset))  # type: ignore[arg-type]
         numeric_keys = (
@@ -210,9 +235,30 @@ class FedMammoBenchClient(fl.client.NumPyClient):
                 continue
             metrics[k] = v
         metrics["client_id"] = self.client_id
-        # Wall-clock seconds this node spent evaluating the global model.
         metrics["eval_seconds"] = float(eval_seconds)
         return loss, n_samples, metrics
+
+    def _save_predictions(self, server_round: int, result: dict[str, Any]) -> None:
+        y_true: np.ndarray | None = result.get("y_true")
+        y_prob: np.ndarray | None = result.get("y_prob")
+        if y_true is None or y_prob is None:
+            return
+        assert self.out_root is not None
+        self.out_root.mkdir(parents=True, exist_ok=True)
+        pred_path = self.out_root / "predictions.csv"
+        write_header = not pred_path.exists()
+        threshold = float(getattr(self.cfg.evaluation, "threshold", 0.5))
+        with pred_path.open("a", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=["round", "y_true", "y_prob", "y_pred"])
+            if write_header:
+                writer.writeheader()
+            for yt, yp in zip(y_true.tolist(), y_prob.tolist()):
+                writer.writerow({
+                    "round": server_round,
+                    "y_true": int(yt),
+                    "y_prob": round(float(yp), 6),
+                    "y_pred": int(float(yp) >= threshold),
+                })
 
 
 # ----------------------------------------------------------------------

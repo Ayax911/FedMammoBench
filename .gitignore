@@ -16,6 +16,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# Docker — el .env local lleva rutas/IPs propias de cada host
+.env
+
 # Project artifacts
 runs/
 checkpoints/
@@ -34,6 +37,7 @@ mammobench_info/
 guia_explicativa.docx
 guia_implementacion.docx
 PROMPT_PARA_MODIFICACIONES.md
+manifests/
 
 # Tests / coverage
 .pytest_cache/

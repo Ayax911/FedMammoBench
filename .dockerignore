@@ -1,0 +1,43 @@
+# Build context exclusions. Heavy/runtime artifacts enter via bind-mount
+# volumes (see docker-compose.yml), NOT baked into the image.
+
+# Datasets, weights, experiment outputs — mounted as volumes at runtime.
+data/
+runs/
+checkpoints/
+manifests/
+*.pth
+*.pt
+
+# Python envs / caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# VCS / editors / OS
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+.claude/
+
+# Docs / internal (not needed to run)
+docs/
+mammobench_info/
+*.docx
+
+# Docker meta (avoid copying into context)
+.env
+.dockerignore
+docker-compose*.yml
+run.sh

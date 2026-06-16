@@ -53,8 +53,12 @@ def _stratified_patient_split(
 ) -> dict[str, list[int]]:
     """Split ``samples`` by ``patient_id`` so a patient never appears in two splits.
 
-    Stratification is approximate: we balance malignancy fractions across splits
-    when possible by sorting patients by their majority label.
+    Positive and negative patients are split independently at the requested
+    fractions and then recombined, guaranteeing that each split contains at
+    least one patient from the rare (malignant) class whenever possible.
+    The previous approach of sorting all patients by malignancy rate and then
+    taking consecutive slices placed all rare-class patients in val/test,
+    leaving the train set with zero positives.
     """
     if not 0.0 <= val_fraction + test_fraction < 1.0:
         raise ValueError(
@@ -70,27 +74,36 @@ def _stratified_patient_split(
     rng = np.random.default_rng(seed)
     patients = list(by_patient.keys())
 
-    # Compute per-patient malignancy fraction for stratified ordering.
-    pat_pos = [
-        np.mean([samples[i].label for i in by_patient[p]]) for p in patients
-    ]
-    order = np.argsort(pat_pos)  # benign-leaning patients first
-    patients = [patients[i] for i in order]
+    # Separate patients by whether they have at least one positive sample.
+    pos_patients = [p for p in patients if any(samples[i].label == 1 for i in by_patient[p])]
+    neg_patients = [p for p in patients if p not in set(pos_patients)]
+    rng.shuffle(pos_patients)
+    rng.shuffle(neg_patients)
 
-    n_pat = len(patients)
-    n_test = int(round(n_pat * test_fraction))
-    n_val = int(round(n_pat * val_fraction))
-    n_train = n_pat - n_val - n_test
-    if n_train <= 0:
-        raise ValueError(f"Splits leave no train patients (n_pat={n_pat})")
+    def _split_group(group: list[str]) -> tuple[list[str], list[str], list[str]]:
+        n = len(group)
+        if n == 0:
+            return [], [], []
+        n_test = int(round(n * test_fraction))
+        n_val = int(round(n * val_fraction))
+        n_train = n - n_val - n_test
+        if n_train <= 0:
+            # Too few patients to populate all splits — keep at least 1 in train.
+            n_train = 1
+            n_val = max(n - n_train - n_test, 0)
+        return group[:n_train], group[n_train : n_train + n_val], group[n_train + n_val :]
 
-    # Round-robin from the stratified order into 3 buckets, then shuffle within each.
-    bucket_sizes = {"train": n_train, "val": n_val, "test": n_test}
-    buckets: dict[str, list[str]] = {"train": [], "val": [], "test": []}
-    cur = 0
-    for split in ("train", "val", "test"):
-        buckets[split] = patients[cur : cur + bucket_sizes[split]]
-        cur += bucket_sizes[split]
+    pos_train, pos_val, pos_test = _split_group(pos_patients)
+    neg_train, neg_val, neg_test = _split_group(neg_patients)
+
+    buckets: dict[str, list[str]] = {
+        "train": pos_train + neg_train,
+        "val": pos_val + neg_val,
+        "test": pos_test + neg_test,
+    }
+
+    if len(buckets["train"]) == 0:
+        raise ValueError(f"Splits leave no train patients (n_pat={len(patients)})")
 
     out: dict[str, list[int]] = {}
     for split, pats in buckets.items():

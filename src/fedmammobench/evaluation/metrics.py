@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 from sklearn.metrics import (
+    average_precision_score,
     confusion_matrix,
     precision_recall_fscore_support,
     roc_auc_score,
@@ -25,6 +26,7 @@ class BinaryClassificationMetrics:
     recall: float
     f1: float
     roc_auc: float
+    auc_pr: float       # Average Precision — primary metric in centralized training
     sensitivity: float
     specificity: float
     support: int
@@ -66,11 +68,13 @@ def compute_metrics(
         y_true, y_pred, average="binary", pos_label=1, zero_division=0
     )
 
-    # ROC-AUC needs both classes present.
+    # ROC-AUC and AUC-PR both need both classes present.
     if np.unique(y_true).size < 2:
         roc_auc = float("nan")
+        auc_pr = float("nan")
     else:
         roc_auc = float(roc_auc_score(y_true, y_prob))
+        auc_pr = float(average_precision_score(y_true, y_prob))
 
     # Confusion matrix with explicit labels for stable shape.
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
@@ -85,6 +89,7 @@ def compute_metrics(
         recall=float(recall),
         f1=float(f1),
         roc_auc=roc_auc,
+        auc_pr=auc_pr,
         sensitivity=sensitivity,
         specificity=specificity,
         support=int(y_true.size),

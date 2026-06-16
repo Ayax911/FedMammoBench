@@ -1,0 +1,184 @@
+# Docker Compose para fedmammobench con 6 nodos cliente.
+#
+# PERFILES DISPONIBLES:
+#   - server    : servidor central FL (puerto :8080)
+#   - node0...5 : 6 nodos clientes FL
+#   - all       : servidor + todos los 6 nodos
+#
+# MODOS DE EJECUCIÓN:
+#
+# 1. UNA SOLA MÁQUINA (servidor + 6 nodos juntos, DNS interno):
+#    docker compose -f docker-compose.6nodes.yml --profile all up --build
+#
+# 2. MÁQUINAS SEPARADAS:
+#    Host servidor:
+#      docker compose -f docker-compose.6nodes.yml --profile server up --build
+#
+#    Cada host nodo (reemplazar <IP_LAN_SERVIDOR>):
+#      SERVER_ADDRESS=<IP_LAN_SERVIDOR>:8080 \
+#      NODE_ID=<0-5> \
+#      NODE<ID>_MANIFEST=manifests/node<ID>_manifest.csv \
+#      docker compose -f docker-compose.6nodes.yml --profile node<ID> up --build
+#
+# 3. CON GPU (añadir override):
+#    docker compose -f docker-compose.6nodes.yml -f docker-compose.gpu.yml \
+#      --profile all up --build
+#
+# TODOS LOS PARÁMETROS se configuran vía .env (ver .env.example).
+# NO editar este archivo para cambiar experimento.
+
+x-fedmammobench-common: &fed-common
+  image: ${IMAGE_TAG:-fedmammobench:latest}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      BASE_IMAGE: ${BASE_IMAGE:-python:3.11-slim-bookworm}
+  environment:
+    FEDMAMMOBENCH_RADIMAGENET_DIR: /app/checkpoints/radimagenet
+    PYTHONUNBUFFERED: "1"
+  volumes:
+    - ./configs:/app/configs:ro
+    - ./runs:/app/runs
+    - ./data:/app/data:ro
+    - ./manifests:/app/manifests:ro
+    - ./checkpoints:/app/checkpoints:ro
+    - ./weights:/app/weights:ro
+  networks:
+    - fednet
+  restart: "no"
+
+services:
+  # ── Servidor central de agregación FL ─────────────────────────────────
+  server:
+    <<: *fed-common
+    container_name: fedmammo-server
+    hostname: server
+    profiles: ["server", "all"]
+    command:
+      - python
+      - scripts/run_server.py
+      - --config
+      - ${SERVER_CONFIG:-configs/exp01_fedavg_resnet50_6nodes_server.yaml}
+      - --address
+      - 0.0.0.0:8080
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+
+  # ── Nodo cliente 0 ────────────────────────────────────────────────────
+  node0:
+    <<: *fed-common
+    container_name: fedmammo-node0
+    profiles: ["node0", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "0"
+      - --manifest
+      - ${NODE0_MANIFEST:-manifests/node0_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/images}
+
+  # ── Nodo cliente 1 ────────────────────────────────────────────────────
+  node1:
+    <<: *fed-common
+    container_name: fedmammo-node1
+    profiles: ["node1", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "1"
+      - --manifest
+      - ${NODE1_MANIFEST:-manifests/node1_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/images}
+
+  # ── Nodo cliente 2 ────────────────────────────────────────────────────
+  node2:
+    <<: *fed-common
+    container_name: fedmammo-node2
+    profiles: ["node2", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "2"
+      - --manifest
+      - ${NODE2_MANIFEST:-manifests/node2_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/images}
+
+  # ── Nodo cliente 3 ────────────────────────────────────────────────────
+  node3:
+    <<: *fed-common
+    container_name: fedmammo-node3
+    profiles: ["node3", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "3"
+      - --manifest
+      - ${NODE3_MANIFEST:-manifests/node3_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/images}
+
+  # ── Nodo cliente 4 ────────────────────────────────────────────────────
+  node4:
+    <<: *fed-common
+    container_name: fedmammo-node4
+    profiles: ["node4", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "4"
+      - --manifest
+      - ${NODE4_MANIFEST:-manifests/node4_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/images}
+
+  # ── Nodo cliente 5 ────────────────────────────────────────────────────
+  node5:
+    <<: *fed-common
+    container_name: fedmammo-node5
+    profiles: ["node5", "all"]
+    command:
+      - python
+      - scripts/run_client.py
+      - --config
+      - ${CLIENT_CONFIG:-configs/exp01_fedavg_resnet50_client.yaml}
+      - --server
+      - ${SERVER_ADDRESS:-server:8080}
+      - --client-id
+      - "5"
+      - --manifest
+      - ${NODE5_MANIFEST:-manifests/node5_manifest.csv}
+      - --data-dir
+      - ${NODE_DATA_DIR:-data/mammobench/images}
+
+networks:
+  fednet:
+    driver: bridge
