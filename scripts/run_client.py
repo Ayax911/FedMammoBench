@@ -40,7 +40,7 @@ from fedmammobench.configs import load_config, save_config  # noqa: E402
 from fedmammobench.datasets import build_dataset  # noqa: E402
 from fedmammobench.federated.client import FedMammoBenchClient  # noqa: E402
 from fedmammobench.utils import get_logger, set_global_seed, setup_logging  # noqa: E402
-from fedmammobench.utils.device import resolve_device  # noqa: E402
+from fedmammobench.utils.device import log_device_info, resolve_device  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -151,6 +151,7 @@ def main() -> int:
     )
 
     device = resolve_device(cfg.device)
+    log_device_info(device, logger)
 
     # Instantiate the Flower client directly — no simulation, no Ray.
     np_client = FedMammoBenchClient(

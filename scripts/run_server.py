@@ -29,6 +29,7 @@ _add_src_to_path()
 from fedmammobench.configs import load_config, save_config  # noqa: E402
 from fedmammobench.federated.server import run_grpc_server  # noqa: E402
 from fedmammobench.utils import get_logger, set_global_seed, setup_logging  # noqa: E402
+from fedmammobench.utils.device import log_device_info, resolve_device  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,6 +87,7 @@ def main() -> int:
     set_global_seed(cfg.seed, deterministic=True)
     save_config(cfg, out_root / "config.snapshot.yaml")
 
+    log_device_info(resolve_device(cfg.device), logger)
     logger.info(
         "Server config loaded. address=%s  rounds=%d  strategy=%s  "
         "min_available_clients=%d",
