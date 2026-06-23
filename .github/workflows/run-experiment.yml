@@ -31,15 +31,19 @@ jobs:
   # ── Arranca el servidor primero ─────────────────────────────────────────
   servidor:
     runs-on: [self-hosted, fl-server]
+    defaults:
+      run:
+        shell: bash   # Git Bash en Windows, bash nativo en Linux/WSL2
     steps:
       - name: Recrear contenedor con la config seleccionada
         run: |
           docker rm -f fedmammo-server 2>/dev/null || true
           docker run -d \
             --name fedmammo-server \
-            -v $HOME/fl-data/configs:/app/configs:ro \
-            -v $HOME/fl-data/checkpoints:/app/checkpoints:ro \
-            -v $HOME/fl-data/runs:/app/runs \
+            --gpus all \
+            -v "$HOME/fl-data/configs:/app/configs:ro" \
+            -v "$HOME/fl-data/checkpoints:/app/checkpoints:ro" \
+            -v "$HOME/fl-data/runs:/app/runs" \
             -p 8080:8080 \
             ayax911/federal-learning:latest \
             python scripts/run_server.py \
@@ -67,6 +71,9 @@ jobs:
       matrix:
         node_id: [0, 1, 2, 3, 4, 5]
     runs-on: [self-hosted, "fl-node-${{ matrix.node_id }}"]
+    defaults:
+      run:
+        shell: bash   # Git Bash en Windows, bash nativo en Linux/WSL2
     steps:
       - name: Recrear contenedor del nodo ${{ matrix.node_id }}
         run: |
@@ -74,10 +81,11 @@ jobs:
           docker rm -f fedmammo-node${NODE_ID} 2>/dev/null || true
           docker run -d \
             --name fedmammo-node${NODE_ID} \
-            -v $HOME/fl-data/data:/app/data:ro \
-            -v $HOME/fl-data/manifests:/app/manifests:ro \
-            -v $HOME/fl-data/configs:/app/configs:ro \
-            -v $HOME/fl-data/runs:/app/runs \
+            --gpus all \
+            -v "$HOME/fl-data/data:/app/data:ro" \
+            -v "$HOME/fl-data/manifests:/app/manifests:ro" \
+            -v "$HOME/fl-data/configs:/app/configs:ro" \
+            -v "$HOME/fl-data/runs:/app/runs" \
             ayax911/federal-learning:latest \
             python scripts/run_client.py \
               --config ${{ github.event.inputs.client_config }} \
