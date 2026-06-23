@@ -1,0 +1,80 @@
+# exp09_fedavg_resnet50 — NODOS CLIENTE (sin warm start, ablación de exp07)
+#
+# Funcionalmente idéntico a exp07_fedavg_resnet50_client.yaml.
+# Los nodos NO cargan el checkpoint pretrain directamente: reciben los pesos
+# iniciales del servidor vía Flower en la ronda 1. La diferencia entre exp07 y
+# exp09 es solo el estado inicial del servidor (warm start vs RadImageNet puro).
+#
+# Mapeo nodo → dataset (igual que exp07):
+#   node1 → cmmd         (5202 imgs)
+#   node2 → inbreast     ( 410 imgs)
+#   node3 → cdd-cesm     (1003 imgs)
+#   node4 → kau-bcmd     (2206 imgs)
+#   node5 → dmid         ( 510 imgs)
+#
+# NOTA: DDSM no es un nodo federado. Total FL: 9 331 imgs en 5 nodos.
+
+name: exp09_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp09_fedavg_resnet50
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/node0_manifest.csv   # sobreescrito por --manifest en el workflow
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.15
+  test_fraction: 0.0
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: true
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: 4
+  unfreeze_layers: [layer4, fc]
+
+training:
+  local_epochs: 8
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 8
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  rounds: 6
+  strategy:
+    name: fedavg
+    params: {}

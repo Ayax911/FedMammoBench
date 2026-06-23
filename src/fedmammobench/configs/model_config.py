@@ -92,6 +92,12 @@ class ModelConfig:
     # submodules (e.g. ["layer4", "fc"]), matching the centralizada phase_b
     # policy. When None, all backbone parameters are unfrozen (original behavior).
     unfreeze_layers: list[str] | None = None
+    # Cyclic within-round unfreeze: if set, the backbone is re-frozen at the
+    # start of every FL round and then partially unfrozen at this LOCAL epoch
+    # index (0-based) within each round. Ignored in centralized mode.
+    # Requires freeze_backbone=True and unfreeze_at_epoch=None (otherwise the
+    # global round-level unfreeze takes precedence).
+    local_unfreeze_at_epoch: int | None = None
 
     def validate(self, normalize_preset: str | None = None) -> None:
         """Raise ValueError for invalid model configurations.

@@ -1,0 +1,80 @@
+# exp09_fedavg_resnet50 — SERVIDOR CENTRAL (sin warm start, ablación de exp07)
+#
+# Idéntico a exp07_fedavg_resnet50_server.yaml EXCEPTO en el punto de partida:
+#   exp07: warm start desde pretrain centralizado con DDSM → runs/exp07_pretrain_ddsm/final.pt
+#   exp09: arranque directo desde RadImageNet (sin pretrain previo)
+#
+# Propósito: medir el efecto aislado del warm start.
+#   exp08 vs exp09 → coste del paradigma federado (gap centralizado–federado puro)
+#   exp07 vs exp09 → ganancia del warm start sobre FL puro
+#   exp08 vs exp07 → gap con la mejor configuración FL disponible
+#
+# Mismo diseño FL que exp07: FedAvg, 6 rondas, congelamiento cíclico,
+# 8 épocas locales por ronda, local_unfreeze_at_epoch=4.
+
+name: exp09_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp09_fedavg_resnet50
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: radimagenet                 # sin warm start — solo RadImageNet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: true           # backbone re-congelado al inicio de cada ronda
+  unfreeze_at_epoch: null         # sin unfreeze global por ronda
+  local_unfreeze_at_epoch: 4      # descongelar layer4+fc a partir de la época local 4/8
+  unfreeze_layers: [layer4, fc]
+
+training:
+  local_epochs: 8
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 8              # = training.local_epochs
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 6
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedavg
+    params: {}
