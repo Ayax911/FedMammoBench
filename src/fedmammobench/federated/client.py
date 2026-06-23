@@ -159,8 +159,30 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             scheduler=scheduler,
         )
         last: dict[str, Any] = {}
+        local_unfreeze_ep = self.cfg.model.local_unfreeze_at_epoch
         fit_start = time.perf_counter()
         for ep in range(local_epochs):
+            # Cyclic within-round unfreeze: at the configured local epoch,
+            # partially unfreeze the backbone for the remaining epochs of
+            # this round. The backbone is re-frozen at the start of the next
+            # round by apply_freeze_policy (called above, before this loop).
+            if local_unfreeze_ep is not None and ep == local_unfreeze_ep:
+                backbone = getattr(self.model, "backbone", self.model)
+                layers_to_unfreeze = self.cfg.model.unfreeze_layers or []
+                if layers_to_unfreeze:
+                    for ln in layers_to_unfreeze:
+                        layer = getattr(backbone, ln, None)
+                        if layer is not None:
+                            for p in layer.parameters():
+                                p.requires_grad = True
+                else:
+                    for p in self.model.parameters():
+                        p.requires_grad = True
+                _logger.info(
+                    "client %d round %d: cyclic unfreeze at local epoch %d/%d — layers=%s",
+                    self.client_id, current_round, ep, local_epochs,
+                    layers_to_unfreeze or "all",
+                )
             last = trainer.train_one_epoch(
                 self.train_loader,
                 epoch=ep,

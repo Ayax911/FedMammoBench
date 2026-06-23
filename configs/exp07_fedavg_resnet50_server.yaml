@@ -1,0 +1,90 @@
+# exp07_fedavg_resnet50 — SERVIDOR CENTRAL (6 nodos, datasets reales Mammo-Bench)
+#
+# Agregación FedAvg sobre 6 nodos. Cada nodo entrena con su dataset local
+# (ver exp07_fedavg_resnet50_client.yaml para el mapeo nodo→dataset).
+#
+# WARM START: el servidor carga los pesos del pre-entrenamiento centralizado
+# con DDSM (ver exp07_pretrain_ddsm_centralized.yaml) y los distribuye a los
+# 6 nodos como punto de arranque de la primera ronda FL.
+# Ejecutar primero run_centralized.py con ese config para generar final.pt.
+#
+# EVALUACIÓN: por defecto data.name=none → evaluación 100% federada
+# (se promedian las métricas de validación locales de cada nodo).
+#
+# OPCIONAL — holdout global centralizado:
+#   Si la máquina servidor tiene TODAS las imágenes, puedes evaluar contra el
+#   test set unificado (mamo-bench-split.csv, ~1715 imgs de los 6 datasets)
+#   para una métrica global consistente entre experimentos. Para activarlo:
+#     data:
+#       name: mammo_bench
+#       manifest_path: manifests/mamo-bench-split.csv
+#       image_root: data/
+#       test_fraction: 1.0      # todo el manifest (su split=test) como holdout
+#       val_fraction: 0.0
+
+name: exp07_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp07_fedavg_resnet50
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: custom                           # warm start desde pretrain centralizado con DDSM
+  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: true           # backbone re-congelado al inicio de cada ronda
+  unfreeze_at_epoch: null         # sin unfreeze global por ronda
+  local_unfreeze_at_epoch: 4      # descongelar layer4+fc a partir de la época local 4/8 de cada ronda (50/50)
+  unfreeze_layers: [layer4, fc]
+
+training:
+  local_epochs: 8
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 8              # = training.local_epochs (scheduler se reinicia cada ronda)
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 6
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedavg
+    params: {}

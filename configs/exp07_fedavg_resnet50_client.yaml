@@ -1,0 +1,94 @@
+# exp07_fedavg_resnet50 — NODOS CLIENTE (6 nodos, datasets reales Mammo-Bench)
+#
+# Mapeo nodo → dataset (cada nodo usa SU manifest local):
+#   node1 → cmmd         (5202 imgs: 1108 benign / 4094 malignant)
+#   node2 → inbreast     ( 410 imgs: 310 benign / 100 malignant)
+#   node3 → cdd-cesm     (1003 imgs: 672 benign / 331 malignant)
+#   node4 → kau-bcmd     (2206 imgs: 2112 benign /  94 malignant)
+#   node5 → dmid         ( 510 imgs: 366 benign / 144 malignant)
+#
+# NOTA: DDSM (7808 imgs) se usa solo para el pretrain centralizado (exp07_pretrain),
+# NO como nodo federado. Total FL: 9 331 imgs en 5 nodos.
+#
+# Todos los nodos usan ESTE mismo YAML. Lo específico de cada nodo (manifest
+# y, si hace falta, directorio de imágenes) se pasa por CLI:
+#   --manifest manifests/node<ID>_manifest.csv   (lo hace el workflow)
+#
+# Los manifests ya traen columna `split` (train/val/test), así que el loader
+# respeta esos splits y NO usa val_fraction/test_fraction.
+#
+# IMPORTANTE — coherencia servidor↔cliente:
+#   model.freeze_backbone, model.unfreeze_at_epoch, training.scheduler.t_max
+#   y federated.rounds DEBEN coincidir con exp07_fedavg_resnet50_server.yaml.
+#
+# DISEÑO: backbone CONGELADO toda la fase FL (warm start desde DDSM); solo la
+#   cabeza se entrena y se federa. No hay unfreeze progresivo (unfreeze_at_epoch=null).
+
+name: exp07_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp07_fedavg_resnet50
+device: auto
+
+data:
+  name: mammo_bench
+  # Default; el workflow lo sobreescribe con --manifest por nodo.
+  manifest_path: manifests/node0_manifest.csv
+  # Rutas del CSV son relativas (ej. Preprocessed_Dataset/cdd-cesm/cdd-cesm_0.jpg).
+  # image_root debe ser el directorio que CONTIENE Preprocessed_Dataset/.
+  # En el contenedor se monta $HOME/fl-data/data → /app/data.
+  image_root: data/
+  image_size: 224
+  grayscale: false        # false → in_channels=3 (grayscale replicado a RGB)
+  num_classes: 2          # clases del dataset (benign=0, malignant=1) — siempre 2
+  batch_size: 32
+  num_workers: 0          # 0 evita conflictos entre gRPC y DataLoader workers
+  val_fraction: 0.15      # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.0      # IGNORADO: el manifest ya trae split explícito
+  image_format: jpg
+  normal_policy: benign   # Normal → 0 (estos 6 datasets son solo Benign/Malignant)
+  balance_classes: true   # crítico: kau-bcmd y cmmd están muy desbalanceados
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1                 # logit único: BCEWithLogitsLoss
+  dropout: 0.0
+  freeze_backbone: true           # backbone re-congelado al inicio de cada ronda
+  unfreeze_at_epoch: null         # sin unfreeze global por ronda
+  local_unfreeze_at_epoch: 4      # descongelar layer4+fc a partir de la época local 4/8 de cada ronda (50/50)
+  unfreeze_layers: [layer4, fc]   # DEBE coincidir con el servidor
+
+training:
+  local_epochs: 8                 # 8 épocas locales por ronda: 4 frozen (fc) + 4 unfrozen (fc+layer4)
+  grad_clip_norm: 1.0
+  mixed_precision: true          # DEBE coincidir con el servidor
+  optimizer:
+    name: adamw
+    lr: 1.0e-4                   # fallback; anulado por lr_head/lr_backbone
+    lr_head: 1.0e-3              # DEBE coincidir con el servidor
+    lr_backbone: 1.0e-4          # DEBE coincidir con el servidor
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 8                     # = local_epochs (el scheduler se reinicia y avanza por época local cada ronda)
+  augmentation:
+    horizontal_flip: true        # válido anatómicamente en mamografía
+    rotate_limit: 15             # ±15°
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb   # mean=(0.5,0.5,0.5) std=(0.5,0.5,0.5)
+  loss:
+    name: bce                    # BCEWithLogitsLoss
+    auto_class_weights: true     # pos_weight = n_neg / n_pos sobre datos locales
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  rounds: 6          # DEBE coincidir con el servidor
+  strategy:
+    name: fedavg
+    params: {}

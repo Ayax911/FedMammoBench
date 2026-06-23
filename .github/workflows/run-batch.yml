@@ -81,7 +81,7 @@ jobs:
   nodos:
     strategy:
       matrix:
-        node_id: [0, 1, 2, 3, 4, 5]
+        node_id: [1, 2, 3, 4, 5]
     runs-on: [self-hosted, "fl-node-${{ matrix.node_id }}"]
     defaults:
       run:
