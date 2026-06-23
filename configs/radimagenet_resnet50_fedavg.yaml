@@ -1,0 +1,61 @@
+name: radimagenet_resnet50_fedavg
+mode: federated
+seed: 42
+output_dir: runs/radimagenet_resnet50_fedavg
+device: auto
+
+data:
+  name: cbis_ddsm
+  manifest_path: data/cbis_ddsm/manifest.csv
+  image_root: data/cbis_ddsm/images
+  image_size: 224
+  grayscale: true
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: null
+  in_channels: 1
+  num_classes: 2
+  dropout: 0.0
+  freeze_backbone: true
+
+training:
+  local_epochs: 1
+  grad_clip_norm: 1.0
+  mixed_precision: false
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 10
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_gray
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: false
+
+federated:
+  num_clients: 4
+  rounds: 10
+  min_fit_clients: 2
+  min_evaluate_clients: 2
+  min_available_clients: 2
+  strategy:
+    name: fedavg
+    params: {}

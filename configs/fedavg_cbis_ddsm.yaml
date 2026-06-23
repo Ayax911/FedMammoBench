@@ -1,0 +1,16 @@
+defaults: base.yaml
+
+name: fedavg_cbis_ddsm
+mode: federated
+
+data:
+  name: cbis_ddsm
+  manifest_path: data/cbis_ddsm/manifest.csv
+  image_root: data/cbis_ddsm/images
+
+federated:
+  num_clients: 4
+  rounds: 10
+  strategy:
+    name: fedavg
+    params: {}
