@@ -82,8 +82,10 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             )
 
         # Build a fresh model from the same config; weights will be set by
-        # the server in ``fit``/``evaluate``.
-        self.model = build_model(cfg.model).to(device)
+        # the server in ``fit``/``evaluate`` (strict=True), so loading
+        # pretrained weights here is redundant and would require the checkpoint
+        # to be present on every node.
+        self.model = build_model(cfg.model, load_pretrained_weights=False).to(device)
 
         self.train_loader: DataLoader = build_dataloader(
             train_dataset,

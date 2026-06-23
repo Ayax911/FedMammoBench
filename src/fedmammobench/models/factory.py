@@ -41,13 +41,22 @@ def register_model(name: str) -> Callable[[_BuildFn], _BuildFn]:
     return _decorator
 
 
-def build_model(cfg: ModelConfig) -> nn.Module:
+def build_model(cfg: ModelConfig, *, load_pretrained_weights: bool = True) -> nn.Module:
     """Instantiate a model from its config.
 
     Steps:
     1. Build the architecture (random weights, correct shapes).
-    2. Load pretrained weights via :func:`~fedmammobench.models.weight_loaders.load_weights`.
+    2. Load pretrained weights via :func:`~fedmammobench.models.weight_loaders.load_weights`
+       — skipped when ``load_pretrained_weights=False``.
     3. Apply freeze policy via :func:`~fedmammobench.models.weight_loaders.apply_freeze_policy`.
+
+    Args:
+        cfg: Model configuration.
+        load_pretrained_weights: When ``False`` the weight-loading step is
+            skipped and the model keeps random initialization.  Useful for FL
+            clients that receive all parameters from the server on every round
+            and therefore do not need (or have access to) the pretrained
+            checkpoint locally.
     """
     # Late import avoids circular deps at module load time.
     from fedmammobench.models.weight_loaders import apply_freeze_policy, load_weights
@@ -58,7 +67,8 @@ def build_model(cfg: ModelConfig) -> nn.Module:
             f"Unknown model name: {cfg.name!r}. Registered: {sorted(_REGISTRY.keys())}"
         )
     model = _REGISTRY[key](cfg)
-    load_weights(model, cfg)
+    if load_pretrained_weights:
+        load_weights(model, cfg)
     apply_freeze_policy(model, cfg)
     return model
 

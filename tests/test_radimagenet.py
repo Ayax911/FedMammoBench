@@ -454,6 +454,108 @@ class TestFreezePolicy:
 
 
 # ---------------------------------------------------------------------------
+# build_model(load_pretrained_weights=False) — FL client path
+# ---------------------------------------------------------------------------
+
+class TestClientSkipsPretrained:
+    """FL clients must be buildable without the RadImageNet checkpoint on disk.
+
+    The server pushes all parameters via strict load_state_dict on every round,
+    so loading pretrained weights locally is unnecessary.  These tests verify
+    that build_model(..., load_pretrained_weights=False) never touches disk and
+    that the server path (load_pretrained_weights=True) still requires it.
+    """
+
+    def test_resnet50_radimagenet_builds_without_checkpoint(self, monkeypatch):
+        """Client-side build must succeed even when the .pth is absent."""
+        torch = pytest.importorskip("torch")
+        from fedmammobench.models.factory import build_model
+        from fedmammobench.configs.schema import ModelConfig
+
+        monkeypatch.delenv("FEDMAMMOBENCH_RADIMAGENET_DIR", raising=False)
+        cfg = ModelConfig(
+            name="resnet50",
+            weight_source="radimagenet",
+            pretrained=False,
+            in_channels=1,
+            num_classes=2,
+            dropout=0.0,
+        )
+        model = build_model(cfg, load_pretrained_weights=False)
+        assert isinstance(model, torch.nn.Module)
+
+    def test_resnet50_radimagenet_server_path_still_requires_checkpoint(self, monkeypatch):
+        """Server-side build must still raise when the .pth is absent."""
+        pytest.importorskip("torch")
+        from fedmammobench.models.factory import build_model
+        from fedmammobench.configs.schema import ModelConfig
+
+        monkeypatch.delenv("FEDMAMMOBENCH_RADIMAGENET_DIR", raising=False)
+        cfg = ModelConfig(
+            name="resnet50",
+            weight_source="radimagenet",
+            pretrained=False,
+            in_channels=1,
+            num_classes=2,
+            dropout=0.0,
+        )
+        with pytest.raises(FileNotFoundError):
+            build_model(cfg, load_pretrained_weights=True)
+
+    def test_architecture_shape_identical_with_and_without_weights(self, monkeypatch):
+        """Skipping weight load must not change layer shapes or parameter count."""
+        torch = pytest.importorskip("torch")
+        from fedmammobench.models.factory import build_model
+        from fedmammobench.configs.schema import ModelConfig
+
+        monkeypatch.delenv("FEDMAMMOBENCH_RADIMAGENET_DIR", raising=False)
+        cfg = ModelConfig(
+            name="resnet50",
+            weight_source="none",
+            pretrained=False,
+            in_channels=1,
+            num_classes=2,
+            dropout=0.0,
+        )
+        model_with = build_model(cfg, load_pretrained_weights=True)
+        model_without = build_model(cfg, load_pretrained_weights=False)
+
+        shapes_with = {k: tuple(v.shape) for k, v in model_with.state_dict().items()}
+        shapes_without = {k: tuple(v.shape) for k, v in model_without.state_dict().items()}
+        assert shapes_with == shapes_without
+
+    def test_imagenet_skipped_without_network_call(self, monkeypatch):
+        """load_pretrained_weights=False must not attempt any download."""
+        torch = pytest.importorskip("torch")
+        from fedmammobench.models.factory import build_model
+        from fedmammobench.configs.schema import ModelConfig
+
+        download_called = []
+
+        original_get_state_dict = None
+
+        def patched_get_state_dict(self, *args, **kwargs):
+            download_called.append(True)
+            return original_get_state_dict(self, *args, **kwargs)
+
+        import torchvision.models as tvm
+        weights_cls = tvm.ResNet50_Weights
+        original_get_state_dict = weights_cls.get_state_dict.__func__ if hasattr(weights_cls.get_state_dict, '__func__') else weights_cls.get_state_dict
+        monkeypatch.setattr(weights_cls, "get_state_dict", patched_get_state_dict)
+
+        cfg = ModelConfig(
+            name="resnet50",
+            weight_source="imagenet",
+            pretrained=True,
+            in_channels=1,
+            num_classes=2,
+            dropout=0.0,
+        )
+        build_model(cfg, load_pretrained_weights=False)
+        assert download_called == [], "No download should happen when load_pretrained_weights=False"
+
+
+# ---------------------------------------------------------------------------
 # Config BC — no torch needed (config loader only)
 # ---------------------------------------------------------------------------
 
