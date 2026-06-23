@@ -9,6 +9,9 @@ manifests/
 *.pth
 *.pt
 
+# Tests (not needed in the production image)
+tests/
+
 # Python envs / caches
 .venv/
 venv/

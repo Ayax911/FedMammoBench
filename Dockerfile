@@ -18,21 +18,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 # Ensure python3.11 is the active interpreter.
-# CUDA base images ship Python 3.10; Debian/Ubuntu disable ensurepip for system Python,
-# so pip is bootstrapped via get-pip.py (downloaded with Python's own urllib).
-# python3.11-dev provides Python.h, required to compile C extensions (e.g. stringzilla)
-# when no matching wheel is available.
+# CUDA base images ship Python 3.10; python3.11-dev provides Python.h for C extensions.
+# The default python:3.11-slim-bookworm already has pip, so ensurepip is sufficient.
 RUN if ! python3.11 --version >/dev/null 2>&1; then \
         apt-get update && \
         apt-get install -y --no-install-recommends python3.11 python3.11-venv python3.11-dev && \
-        rm -rf /var/lib/apt/lists/*; \
+        rm -rf /var/lib/apt/lists/* && \
+        python3.11 -m ensurepip --upgrade; \
     fi && \
-    ln -sf "$(command -v python3.11)" /usr/local/bin/python && \
-    python3.11 -c "\
-import urllib.request; \
-open('/tmp/get-pip.py','wb').write(urllib.request.urlopen('https://bootstrap.pypa.io/get-pip.py').read())" && \
-    python3.11 /tmp/get-pip.py && \
-    rm /tmp/get-pip.py
+    ln -sf "$(command -v python3.11)" /usr/local/bin/python
 WORKDIR /app
 # Install Python deps first for layer caching.
 COPY requirements.txt pyproject.toml ./
