@@ -1,0 +1,95 @@
+name: Run Experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_config:
+        description: Config del servidor
+        type: choice
+        default: configs/exp01_fedavg_resnet50_6nodes_server.yaml
+        options:
+          - configs/exp01_fedavg_resnet50_6nodes_server.yaml
+          - configs/exp04_fedyogi_resnet50_server.yaml
+          - configs/exp05_fedadam_resnet50_server.yaml
+          - configs/exp06_fedprox_resnet50_server.yaml
+      client_config:
+        description: Config de los nodos
+        type: choice
+        default: configs/exp01_fedavg_resnet50_client.yaml
+        options:
+          - configs/exp01_fedavg_resnet50_client.yaml
+          - configs/exp04_fedyogi_resnet50_client.yaml
+          - configs/exp05_fedadam_resnet50_client.yaml
+          - configs/exp06_fedprox_resnet50_client.yaml
+      num_nodes:
+        description: Número de nodos a activar
+        type: choice
+        default: "6"
+        options: ["2", "3", "4", "5", "6"]
+
+jobs:
+  # ── Arranca el servidor primero ─────────────────────────────────────────
+  servidor:
+    runs-on: [self-hosted, fl-server]
+    steps:
+      - name: Recrear contenedor con la config seleccionada
+        run: |
+          docker rm -f fedmammo-server 2>/dev/null || true
+          docker run -d \
+            --name fedmammo-server \
+            -v $HOME/fl-data/configs:/app/configs:ro \
+            -v $HOME/fl-data/checkpoints:/app/checkpoints:ro \
+            -v $HOME/fl-data/runs:/app/runs \
+            -p 8080:8080 \
+            ayax911/federal-learning:latest \
+            python scripts/run_server.py \
+              --config ${{ github.event.inputs.server_config }} \
+              --address 0.0.0.0:8080
+
+      - name: Esperar a que el servidor esté listo
+        run: |
+          echo "Esperando que el servidor levante..."
+          for i in $(seq 1 15); do
+            if docker logs fedmammo-server 2>&1 | grep -q "Flower server running"; then
+              echo "Servidor listo."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timeout: el servidor no levantó en 30s"
+          docker logs fedmammo-server
+          exit 1
+
+  # ── Lanza los nodos en paralelo una vez el servidor está listo ──────────
+  nodos:
+    needs: servidor
+    strategy:
+      matrix:
+        node_id: [0, 1, 2, 3, 4, 5]
+    runs-on: [self-hosted, "fl-node-${{ matrix.node_id }}"]
+    steps:
+      - name: Recrear contenedor del nodo ${{ matrix.node_id }}
+        run: |
+          NODE_ID=${{ matrix.node_id }}
+          docker rm -f fedmammo-node${NODE_ID} 2>/dev/null || true
+          docker run -d \
+            --name fedmammo-node${NODE_ID} \
+            -v $HOME/fl-data/data:/app/data:ro \
+            -v $HOME/fl-data/manifests:/app/manifests:ro \
+            -v $HOME/fl-data/configs:/app/configs:ro \
+            -v $HOME/fl-data/runs:/app/runs \
+            ayax911/federal-learning:latest \
+            python scripts/run_client.py \
+              --config ${{ github.event.inputs.client_config }} \
+              --server ${{ secrets.SERVER_ADDRESS }} \
+              --client-id ${NODE_ID} \
+              --manifest manifests/node${NODE_ID}_manifest.csv
+
+      - name: Esperar a que el nodo termine
+        run: |
+          NODE_ID=${{ matrix.node_id }}
+          echo "Esperando que nodo ${NODE_ID} termine..."
+          docker wait fedmammo-node${NODE_ID}
+          EXIT_CODE=$?
+          docker logs fedmammo-node${NODE_ID} --tail 20
+          exit ${EXIT_CODE}
