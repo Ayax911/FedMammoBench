@@ -9,18 +9,12 @@ on:
         default: configs/exp01_fedavg_resnet50_6nodes_server.yaml
         options:
           - configs/exp01_fedavg_resnet50_6nodes_server.yaml
-          - configs/exp04_fedyogi_resnet50_server.yaml
-          - configs/exp05_fedadam_resnet50_server.yaml
-          - configs/exp06_fedprox_resnet50_server.yaml
       client_config:
         description: Config de los nodos
         type: choice
         default: configs/exp01_fedavg_resnet50_client.yaml
         options:
           - configs/exp01_fedavg_resnet50_client.yaml
-          - configs/exp04_fedyogi_resnet50_client.yaml
-          - configs/exp05_fedadam_resnet50_client.yaml
-          - configs/exp06_fedprox_resnet50_client.yaml
       num_nodes:
         description: Número de nodos a activar
         type: choice

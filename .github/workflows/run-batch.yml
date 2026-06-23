@@ -1,0 +1,130 @@
+name: Run Batch Experiments
+
+# Ejecuta VARIOS experimentos en SECUENCIA con un solo disparo.
+#   exp1 completo (servidor + nodos, todas las rondas) → exp2 completo → ...
+#
+# Convención de nombres de config (OBLIGATORIA):
+#   Para cada experimento "<nombre>" de la lista, deben existir:
+#     configs/<nombre>_server.yaml   (config del servidor)
+#     configs/<nombre>_client.yaml   (config de los nodos)
+#   Ejemplo: "exp07_fedavg" → configs/exp07_fedavg_server.yaml + configs/exp07_fedavg_client.yaml
+#
+# Cómo sincroniza entre máquinas:
+#   - El job 'servidor' y los jobs 'nodos' corren EN PARALELO, recorriendo la
+#     misma lista en el mismo orden.
+#   - Cada experimento bloquea ambos lados (docker wait) hasta completar sus rondas.
+#   - El servidor espera a min_available_clients; los clientes Flower reintentan
+#     conectar hasta que el servidor del experimento esté listo. Eso evita carreras.
+
+on:
+  workflow_dispatch:
+    inputs:
+      experiments:
+        description: "Experimentos separados por espacio (ej: exp07_fedavg exp08_fedprox)"
+        type: string
+        required: true
+        default: "exp07_fedavg"
+
+jobs:
+  # ── Servidor: recorre la lista, un experimento a la vez ──────────────────
+  servidor:
+    runs-on: [self-hosted, fl-server]
+    defaults:
+      run:
+        shell: bash   # Git Bash en Windows, bash nativo en Linux/WSL2
+    env:
+      EXPERIMENTS: ${{ github.event.inputs.experiments }}   # vía env evita inyección
+    steps:
+      - name: Ejecutar experimentos en secuencia (servidor)
+        run: |
+          docker pull ayax911/federal-learning:latest || true
+          for EXP in $EXPERIMENTS; do
+            CONFIG="configs/${EXP}_server.yaml"
+            echo "══════════════════════════════════════════"
+            echo "  [servidor] Iniciando: $EXP  ($CONFIG)"
+            echo "  $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "══════════════════════════════════════════"
+
+            docker rm -f fedmammo-server 2>/dev/null || true
+            docker run -d \
+              --name fedmammo-server \
+              --gpus all \
+              -v "$HOME/fl-data/configs:/app/configs:ro" \
+              -v "$HOME/fl-data/checkpoints:/app/checkpoints:ro" \
+              -v "$HOME/fl-data/runs:/app/runs" \
+              -p 8080:8080 \
+              ayax911/federal-learning:latest \
+              python scripts/run_server.py --config "$CONFIG" --address 0.0.0.0:8080
+
+            # Esperar a que el servidor levante antes de seguir
+            echo "[servidor] Esperando a que $EXP levante..."
+            for i in $(seq 1 30); do
+              if docker logs fedmammo-server 2>&1 | grep -q "Flower server running"; then
+                echo "[servidor] $EXP listo."
+                break
+              fi
+              sleep 2
+            done
+
+            # Bloquear hasta que el servidor complete TODAS las rondas
+            EXIT=$(docker wait fedmammo-server)
+            echo "[servidor] $EXP terminó (exit=$EXIT) — $(date '+%H:%M:%S')"
+            docker logs fedmammo-server --tail 30
+            if [ "$EXIT" != "0" ]; then
+              echo "ERROR: $EXP falló en el servidor (exit=$EXIT). Abortando lote." >&2
+              exit 1
+            fi
+          done
+          echo "✓ Lote completo en el servidor."
+
+  # ── Nodos: cada uno recorre la MISMA lista en paralelo con el servidor ───
+  nodos:
+    strategy:
+      matrix:
+        node_id: [0, 1, 2, 3, 4, 5]
+    runs-on: [self-hosted, "fl-node-${{ matrix.node_id }}"]
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXPERIMENTS: ${{ github.event.inputs.experiments }}
+    steps:
+      - name: Ejecutar experimentos en secuencia (nodo ${{ matrix.node_id }})
+        run: |
+          NODE_ID=${{ matrix.node_id }}
+          docker pull ayax911/federal-learning:latest || true
+          for EXP in $EXPERIMENTS; do
+            CONFIG="configs/${EXP}_client.yaml"
+            echo "══════════════════════════════════════════"
+            echo "  [nodo $NODE_ID] Iniciando: $EXP  ($CONFIG)"
+            echo "  $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "══════════════════════════════════════════"
+
+            # Pequeño head-start para que el servidor recree su contenedor.
+            # Flower reintenta conectar, pero esto reduce la carrera entre experimentos.
+            sleep 8
+
+            docker rm -f fedmammo-node${NODE_ID} 2>/dev/null || true
+            docker run -d \
+              --name fedmammo-node${NODE_ID} \
+              --gpus all \
+              -v "$HOME/fl-data/data:/app/data:ro" \
+              -v "$HOME/fl-data/manifests:/app/manifests:ro" \
+              -v "$HOME/fl-data/configs:/app/configs:ro" \
+              -v "$HOME/fl-data/runs:/app/runs" \
+              ayax911/federal-learning:latest \
+              python scripts/run_client.py --config "$CONFIG" \
+                --server ${{ secrets.SERVER_ADDRESS }} \
+                --client-id ${NODE_ID} \
+                --manifest manifests/node${NODE_ID}_manifest.csv
+
+            # Bloquear hasta que este nodo termine el experimento
+            EXIT=$(docker wait fedmammo-node${NODE_ID})
+            echo "[nodo $NODE_ID] $EXP terminó (exit=$EXIT) — $(date '+%H:%M:%S')"
+            docker logs fedmammo-node${NODE_ID} --tail 20
+            if [ "$EXIT" != "0" ]; then
+              echo "ERROR: $EXP falló en el nodo $NODE_ID (exit=$EXIT). Abortando lote." >&2
+              exit 1
+            fi
+          done
+          echo "✓ Lote completo en el nodo $NODE_ID."

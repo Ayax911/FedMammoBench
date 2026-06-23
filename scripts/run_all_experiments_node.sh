@@ -35,7 +35,7 @@ REPO_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 # ─────────────────────────────────────────────────────────────────────────────
 # EXPERIMENTOS — debe coincidir exactamente con el orden del servidor
 # ─────────────────────────────────────────────────────────────────────────────
-EXPERIMENTS="${EXPERIMENTS:-exp01_fedavg exp04_fedyogi exp05_fedadam exp06_fedprox}"
+EXPERIMENTS="${EXPERIMENTS:-exp01_fedavg}"
 
 echo "=========================================="
 echo "  fedmammobench — Lote Nodo ${NODE_ID}"
