@@ -1,4 +1,4 @@
-defaults: base.yaml
+defaults: ../base.yaml
 
 name: fedavg_cbis_ddsm
 mode: federated

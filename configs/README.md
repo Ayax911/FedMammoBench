@@ -41,7 +41,7 @@ Definir en la terminal antes de lanzar cualquier contenedor:
 
 ```bash
 # Raíz del repositorio en el host
-REPO="/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning"
+REPO="ruta/al/proyecto/Federal-Learning"
 
 # Directorio que contiene Preprocessed_Dataset/ con las imágenes JPG
 MAMMO_DATA="/ruta/a/mammo-bench/data"
