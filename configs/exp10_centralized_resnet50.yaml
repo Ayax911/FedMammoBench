@@ -1,0 +1,70 @@
+# exp10_centralized_resnet50 — BASELINE CENTRALIZADO (réplica de exp08)
+#
+# Segunda corrida del baseline centralizado con la misma configuración que exp08.
+# Permite verificar reproducibilidad y estabilidad de los resultados.
+#
+# Estructura del manifest:
+#   train: 13 709 imgs  val: 1 715 imgs  test: 1 715 imgs
+#   (splits ya definidos en mamo-bench-split.csv — val/test_fraction ignorados)
+#
+# Comando:
+#   docker run ... python scripts/run_centralized.py \
+#     --config configs/exp10_centralized_resnet50.yaml
+
+name: exp10_centralized_resnet50
+mode: centralized
+seed: 42
+output_dir: runs/exp10_centralized_resnet50
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/mamo-bench-split.csv   # 17 139 imgs, 6 datasets
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1        # IGNORADO: mamo-bench-split.csv ya trae split explícito
+  test_fraction: 0.1       # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true    # datasets muy desbalanceados (kau-bcmd, cmmd)
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1                    # logit único: BCEWithLogitsLoss
+  dropout: 0.0
+  freeze_backbone: false
+  unfreeze_at_epoch: null
+  unfreeze_layers: null
+
+training:
+  epochs: 100
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 100
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
