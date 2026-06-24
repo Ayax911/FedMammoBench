@@ -31,3 +31,6 @@ pydicom>=2.4,<4.0
 PyYAML>=6.0,<7.0
 tensorboard>=2.15,<3.0
 tqdm>=4.66,<5.0
+
+# --- Plotting ---
+matplotlib>=3.8,<4.0

@@ -8,6 +8,7 @@ epoch per round).
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import torch
@@ -185,12 +186,22 @@ class Trainer:
         """Train for ``epochs`` epochs. Returns the last epoch's metrics."""
         last_metrics: dict[str, Any] = {}
         for epoch in range(start_epoch, start_epoch + epochs):
+            t0 = time.perf_counter()
             train_stats = self.train_one_epoch(train_loader, epoch=epoch)
-            last_metrics = {"epoch": epoch, **{f"train_{k}": v for k, v in train_stats.items()}}
+            train_seconds = time.perf_counter() - t0
+            last_metrics = {
+                "epoch": epoch,
+                **{f"train_{k}": v for k, v in train_stats.items()},
+                "train_seconds": round(train_seconds, 3),
+            }
 
             if val_loader is not None and evaluator is not None:
+                t1 = time.perf_counter()
                 val_metrics = evaluator.evaluate(val_loader, criterion=self.criterion)
+                val_seconds = time.perf_counter() - t1
                 last_metrics.update({f"val_{k}": v for k, v in val_metrics.items()})
+                last_metrics["val_seconds"] = round(val_seconds, 3)
+                last_metrics["epoch_seconds"] = round(train_seconds + val_seconds, 3)
                 if self.tb_writer is not None:
                     self.tb_writer.log_scalars(
                         f"{self.log_tag}/val",
@@ -198,12 +209,15 @@ class Trainer:
                         epoch,
                     )
                 _logger.info(
-                    "[%s] epoch %d: val_loss=%.4f val_auc=%.4f val_f1=%.4f",
+                    "[%s] epoch %d: val_loss=%.4f val_auc=%.4f val_f1=%.4f  "
+                    "[train=%.1fs val=%.1fs]",
                     self.log_tag,
                     epoch,
                     val_metrics.get("loss", float("nan")),
                     val_metrics.get("roc_auc", float("nan")),
                     val_metrics.get("f1", float("nan")),
+                    train_seconds,
+                    val_seconds,
                 )
                 if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     self.scheduler.step(val_metrics.get("roc_auc", val_metrics.get("f1", 0.0)))
