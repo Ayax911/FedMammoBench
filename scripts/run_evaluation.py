@@ -98,12 +98,29 @@ def main() -> int:
     print(json.dumps(summary, indent=2, default=str))
 
     if args.predictions_out is not None and "y_true" in result and "y_prob" in result:
-        df = pd.DataFrame(
-            {
-                "y_true": np.asarray(result["y_true"]),
-                "y_prob_malignant": np.asarray(result["y_prob"]),
+        y_true = np.asarray(result["y_true"])
+        y_prob = np.asarray(result["y_prob"])
+        # Predictions are produced with shuffle=False, so their order matches
+        # the split's `samples` list one-to-one. Recover the image identity
+        # (and patient id) from there to make the CSV self-describing.
+        samples = datasets[args.split].samples
+        if len(samples) != len(y_true):
+            logger.warning(
+                "Sample/prediction count mismatch (%d vs %d); image paths "
+                "may be misaligned. Writing predictions without them.",
+                len(samples),
+                len(y_true),
+            )
+            data = {"y_true": y_true, "y_prob_malignant": y_prob}
+        else:
+            data = {
+                "image_path": [s.image_path for s in samples],
+                "patient_id": [s.patient_id for s in samples],
+                "y_true": y_true,
+                "y_pred": (y_prob >= cfg.evaluation.threshold).astype(int),
+                "y_prob_malignant": y_prob,
             }
-        )
+        df = pd.DataFrame(data)
         out_path = Path(args.predictions_out).expanduser().resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
