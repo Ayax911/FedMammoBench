@@ -98,16 +98,60 @@ def main() -> int:
     print(json.dumps(summary, indent=2, default=str))
 
     if args.predictions_out is not None and "y_true" in result and "y_prob" in result:
-        df = pd.DataFrame(
-            {
-                "y_true": np.asarray(result["y_true"]),
-                "y_prob_malignant": np.asarray(result["y_prob"]),
-            }
-        )
+        y_true = np.asarray(result["y_true"])
+        y_prob = np.asarray(result["y_prob"])
+        y_pred = (y_prob >= cfg.evaluation.threshold).astype(int)
+        # Predictions are produced with shuffle=False, so their order matches
+        # the split's `samples` list one-to-one.
+        samples = datasets[args.split].samples
+        if len(samples) != len(y_true):
+            logger.warning(
+                "Sample/prediction count mismatch (%d vs %d); writing a bare "
+                "predictions CSV without manifest columns.",
+                len(samples),
+                len(y_true),
+            )
+            df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred, "y_prob_malignant": y_prob})
+        else:
+            # Per-sample predictions keyed by the manifest's original image path
+            # (stored in Sample.extra by the loader).
+            key_col = "preprocessed_image_path"
+            preds = pd.DataFrame(
+                {
+                    key_col: [s.extra.get(key_col, s.image_path) for s in samples],
+                    "y_true": y_true,
+                    "y_pred": y_pred,
+                    "y_prob_malignant": y_prob,
+                }
+            )
+            # Take the manifest and add the y_true / y_pred columns onto the
+            # rows of the evaluated split (inner join → only evaluated images).
+            try:
+                manifest = pd.read_csv(cfg.data.manifest_path)
+            except Exception as exc:  # noqa: BLE001 — fall back to bare predictions
+                logger.warning(
+                    "Could not read manifest %s (%s); writing predictions "
+                    "without manifest columns.",
+                    cfg.data.manifest_path,
+                    exc,
+                )
+                df = preds
+            else:
+                if key_col in manifest.columns:
+                    df = manifest.merge(preds, on=key_col, how="inner")
+                else:
+                    logger.warning(
+                        "Manifest has no %r column; writing predictions keyed "
+                        "by resolved image path instead.",
+                        key_col,
+                    )
+                    df = preds
         out_path = Path(args.predictions_out).expanduser().resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
-        logger.info("Per-sample predictions written to %s", out_path)
+        logger.info(
+            "Per-sample predictions (%d rows) written to %s", len(df), out_path
+        )
     return 0
 
 

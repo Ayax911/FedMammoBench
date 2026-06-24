@@ -183,7 +183,10 @@ class MammoBenchDataset(MammographyDataset):
                 image_path=str(row["_abs_path"]),
                 label=int(row["_label"]),
                 patient_id=(str(row[_COL_PATIENT]) if has_patient else None),
-                extra={},
+                # Keep the manifest's original image path so downstream
+                # evaluation can merge per-sample predictions back onto the
+                # manifest by an exact key (no path-resolution duplication).
+                extra={_COL_IMAGE: str(row[_COL_IMAGE])},
             )
             for _, row in df.iterrows()
         ]
