@@ -288,20 +288,22 @@ def run_simulation(
     )
     recorder.start()
     t0 = time.perf_counter()
-    history = fl.simulation.start_simulation(
-        client_fn=client_fn,
-        num_clients=cfg.federated.num_clients,
-        config=server_config,
-        strategy=strategy,
-        client_resources=cfg.federated.client_resources,
-        ray_init_args=cfg.federated.ray_init_args or None,
-    )
-    total_seconds = time.perf_counter() - t0
-    recorder.save_global_model(cfg)
-    recorder.write_timing_summary(cfg, total_seconds)
-    recorder.close()
-    tb_writer.close()
-    _logger.info("Simulation complete. Artifacts in %s", out_root)
+    try:
+        history = fl.simulation.start_simulation(
+            client_fn=client_fn,
+            num_clients=cfg.federated.num_clients,
+            config=server_config,
+            strategy=strategy,
+            client_resources=cfg.federated.client_resources,
+            ray_init_args=cfg.federated.ray_init_args or None,
+        )
+    finally:
+        total_seconds = time.perf_counter() - t0
+        recorder.save_global_model(cfg)
+        recorder.write_timing_summary(cfg, total_seconds)
+        recorder.close()
+        tb_writer.close()
+        _logger.info("Simulation complete. Artifacts in %s", out_root)
     return history
 
 

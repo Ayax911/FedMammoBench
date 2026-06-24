@@ -125,13 +125,14 @@ def main() -> int:
         epochs=cfg.training.epochs,
     )
 
+    save_checkpoint(out_root / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs)
+
     test_metrics = evaluator.evaluate(test_loader, criterion=criterion)
     logger.info("Test metrics: %s", {k: v for k, v in test_metrics.items() if k != "y_true"})
-    csv_logger.append({"epoch": -1, "phase": "test", **{
-        f"test_{k}": v for k, v in test_metrics.items() if isinstance(v, (int, float))
-    }})
+    scalar_test = {k: v for k, v in test_metrics.items() if isinstance(v, (int, float))}
+    test_csv = CSVLogger(out_root / "test_metrics.csv")
+    test_csv.append({"epoch": -1, "phase": "test", **{f"test_{k}": v for k, v in scalar_test.items()}})
 
-    save_checkpoint(out_root / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs)
     tb_writer.close()
     logger.info("Run complete. Artifacts at %s", out_root)
     return 0
