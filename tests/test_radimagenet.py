@@ -565,9 +565,9 @@ class TestConfigBC:
         from fedmammobench.configs.loader import load_config
 
         for name in [
-            "radimagenet_resnet50_centralized.yaml",
-            "radimagenet_resnet50_fedavg.yaml",
-            "radimagenet_densenet121_fedavg.yaml",
+            "legacy/radimagenet_resnet50_centralized.yaml",
+            "legacy/radimagenet_resnet50_fedavg.yaml",
+            "legacy/radimagenet_densenet121_fedavg.yaml",
         ]:
             cfg = load_config(str(configs_dir / name))
             assert cfg.model.weight_source == "radimagenet"
@@ -578,7 +578,7 @@ class TestConfigBC:
         configs_dir = Path(__file__).resolve().parent.parent / "configs"
         from fedmammobench.configs.loader import load_config
 
-        for name in ["base.yaml", "fedavg_cbis_ddsm.yaml"]:
+        for name in ["base.yaml", "legacy/fedavg_cbis_ddsm.yaml"]:
             cfg = load_config(str(configs_dir / name))
             assert cfg.model.weight_source == "auto"
             assert cfg.model.freeze_backbone is False
