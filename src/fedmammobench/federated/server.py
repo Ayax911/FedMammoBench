@@ -272,7 +272,7 @@ def run_simulation(
     recorder = NodeMetricsRecorder(out_root, tb_writer)
     recorder.wrap(strategy)
 
-    client_fn = client_fn_factory(cfg, datasets)
+    client_fn = client_fn_factory(cfg, datasets, out_root=out_root / "clients")
 
     round_timeout = cfg.federated.round_timeout_seconds or None
     server_config = ServerConfig(

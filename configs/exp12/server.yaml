@@ -1,31 +1,23 @@
-# exp07_fedavg_resnet50 — SERVIDOR CENTRAL (6 nodos, datasets reales Mammo-Bench)
+# exp12_fedavg_resnet50 — SERVIDOR CENTRAL (5 nodos, datasets reales Mammo-Bench)
 #
-# Agregación FedAvg sobre 6 nodos. Cada nodo entrena con su dataset local
-# (ver exp07_fedavg_resnet50_client.yaml para el mapeo nodo→dataset).
+# Configuración idéntica a exp07 con:
+#   - 15 épocas locales por ronda (7 frozen fc + 8 unfrozen fc+layer4)
+#   - 7 rondas federadas
+#   - Métricas por época guardadas en clients/client_<id>/epoch_metrics.csv
+#     (train_loss, task_loss, val_loss, val_auc, val_f1, val_sensitivity, val_specificity)
+#   - Predicciones enriquecidas con columnas del manifest (image_path, patient_id, ...)
+#     en clients/client_<id>/predictions.csv
 #
 # WARM START: el servidor carga los pesos del pre-entrenamiento centralizado
-# con DDSM (ver exp07_pretrain_ddsm_centralized.yaml) y los distribuye a los
-# 6 nodos como punto de arranque de la primera ronda FL.
+# con DDSM (configs/exp07/pretrain.yaml → runs/exp07_pretrain_ddsm/final.pt).
 # Ejecutar primero run_centralized.py con ese config para generar final.pt.
 #
-# EVALUACIÓN: por defecto data.name=none → evaluación 100% federada
-# (se promedian las métricas de validación locales de cada nodo).
-#
-# OPCIONAL — holdout global centralizado:
-#   Si la máquina servidor tiene TODAS las imágenes, puedes evaluar contra el
-#   test set unificado (mamo-bench-split.csv, ~1715 imgs de los 6 datasets)
-#   para una métrica global consistente entre experimentos. Para activarlo:
-#     data:
-#       name: mammo_bench
-#       manifest_path: manifests/mamo-bench-split.csv
-#       image_root: data/
-#       test_fraction: 1.0      # todo el manifest (su split=test) como holdout
-#       val_fraction: 0.0
+# EVALUACIÓN: data.name=none → evaluación 100% federada.
 
-name: exp07_fedavg_resnet50
+name: exp12_fedavg_resnet50
 mode: federated
 seed: 42
-output_dir: runs/exp07_fedavg_resnet50
+output_dir: runs/exp12_fedavg_resnet50
 device: auto
 
 data:
