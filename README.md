@@ -181,6 +181,8 @@ Structured experiments live under `configs/expNN/`. Each directory contains
 | exp09 | Federated | FedAvg + ResNet50 sin warm-start (ablación desde RadImageNet) |
 | exp10 | Centralized | Variante centralizada de ablación |
 | exp12 | Federated | FedAvg + ResNet50, igual a exp07 con métricas por época por nodo y predicciones enriquecidas |
+| exp13 | Federated | FedAvg + ResNet50 con RadImageNet directo + fine-tuning completo (freeze_backbone: false) |
+| exp14 | Federated | FedProx + ResNet50, 25 rounds, 3 epochs, aggressive fine-tuning, lower learning rates |
 
 ### exp12 — FedAvg + warm-start + métricas extendidas
 
@@ -208,6 +210,51 @@ Para lanzar desde GitHub Actions (reemplaza exp07 por exp12 en el batch):
 ```
 workflow: Run Batch Experiments
   experiments: exp12_fedavg_resnet50
+```
+
+### exp13 — FedAvg + RadImageNet directo + fine-tuning completo
+
+exp13 corrige configuraciones de exp07/exp12 para resolver capacidad limitada de aprendizaje:
+- **weight_source: radimagenet** (pesos iniciales de RadImageNet)
+- **freeze_backbone: false** (fine-tuning completo de toda la red, no solo layer4+fc)
+- **Sin descongelamiento progresivo** (local_unfreeze_at_epoch: null)
+- **Parámetros iguales a exp12** (15 épocas, 7 rondas, FedAvg)
+- **strict_load: true** (detección explícita de missing keys)
+
+Esta configuración comparte arquitectura con exp10 centralizado (freeze_backbone: false) pero en modo federado.
+
+```bash
+# FL distribuido (gRPC) — sin pretrain, solo RadImageNet
+# En el servidor:
+python scripts/run_server.py --config configs/exp13/server.yaml
+
+# En cada nodo (N = 1..5):
+python scripts/run_client.py --config configs/exp13/client.yaml \
+    --server <SERVER_IP>:8080 \
+    --client-id <N> \
+    --manifest manifests/node<N>_manifest.csv
+```
+
+### exp14 — FedProx + fine-tuning agresivo, 25 rounds
+
+exp14 experimenta con configuración alternativa para mejorar convergencia en entorno no-IID:
+- **strategy: fedprox** con proximal_mu: 0.1 (regularización para no-IID data)
+- **freeze_backbone: false** (fine-tuning completo)
+- **25 rondas, 3 épocas locales** (más rondas, menos trabajo local)
+- **Learning rates bajos**: lr_head: 0.0005, lr_backbone: 0.00005
+- **weight_decay: 0.0001**
+- **scheduler.t_max: 25** (total rondas, no por-ronda)
+
+```bash
+# FL distribuido (gRPC)
+# En el servidor:
+python scripts/run_server.py --config configs/exp14/server.yaml
+
+# En cada nodo (N = 1..5):
+python scripts/run_client.py --config configs/exp14/client.yaml \
+    --server <SERVER_IP>:8080 \
+    --client-id <N> \
+    --manifest manifests/node<N>_manifest.csv
 ```
 
 ---

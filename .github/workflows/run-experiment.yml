@@ -1,25 +1,31 @@
 name: Run Experiment
 
+# Lanza UN solo experimento federado (servidor + nodos en paralelo).
+# Útil para pruebas rápidas o experimentos individuales.
+#
+# Para lanzar VARIOS experimentos en secuencia usa "Run Batch Experiments".
+#
+# Resolución de configs (automática):
+#   1. configs/<exp>/<role>.yaml      ← estructura por subdirectorio (nueva)
+#   2. configs/<exp>_<role>.yaml      ← estructura flat (legacy)
+#
+# Ejemplos de experiment_name:
+#   exp13_fedavg_resnet50   → configs/exp13/server.yaml + configs/exp13/client.yaml
+#   exp14_fedprox_resnet50  → configs/exp14/server.yaml + configs/exp14/client.yaml
+
 on:
   workflow_dispatch:
     inputs:
-      server_config:
-        description: Config del servidor
-        type: choice
-        default: configs/exp01_fedavg_resnet50_6nodes_server.yaml
-        options:
-          - configs/exp01_fedavg_resnet50_6nodes_server.yaml
-      client_config:
-        description: Config de los nodos
-        type: choice
-        default: configs/exp01_fedavg_resnet50_client.yaml
-        options:
-          - configs/exp01_fedavg_resnet50_client.yaml
+      experiment_name:
+        description: "Nombre del experimento (ej: exp13_fedavg_resnet50)"
+        type: string
+        required: true
+        default: "exp13_fedavg_resnet50"
       num_nodes:
-        description: Número de nodos a activar
+        description: "Número de nodos a activar"
         type: choice
-        default: "6"
-        options: ["2", "3", "4", "5", "6"]
+        default: "5"
+        options: ["1", "2", "3", "4", "5"]
 
 jobs:
   # ── Arranca el servidor primero ─────────────────────────────────────────
@@ -27,36 +33,61 @@ jobs:
     runs-on: [self-hosted, fl-server]
     defaults:
       run:
-        shell: bash   # Git Bash en Windows, bash nativo en Linux/WSL2
+        shell: bash
+    env:
+      EXP: ${{ github.event.inputs.experiment_name }}
     steps:
-      - name: Recrear contenedor con la config seleccionada
+      - name: Resolver config y arrancar servidor
         run: |
+          NEW="configs/${EXP}/server.yaml"
+          LEGACY="configs/${EXP}_server.yaml"
+          if [ -f "$NEW" ]; then CONFIG="$NEW"
+          elif [ -f "$LEGACY" ]; then CONFIG="$LEGACY"
+          else
+            echo "ERROR: Config de servidor no encontrado para '$EXP'." >&2
+            echo "  Buscado en: $NEW" >&2
+            echo "  Buscado en: $LEGACY" >&2
+            exit 1
+          fi
+
+          echo "══════════════════════════════════════════"
+          echo "  [servidor] Experimento: $EXP"
+          echo "  Config: $CONFIG"
+          echo "  $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "══════════════════════════════════════════"
+
+          docker pull ayax911/federal-learning:latest || true
           docker rm -f fedmammo-server 2>/dev/null || true
           docker run -d \
             --name fedmammo-server \
             --gpus all \
             -v "$HOME/fl-data/configs:/app/configs:ro" \
-            -v "$HOME/fl-data/checkpoints:/app/checkpoints:ro" \
+            -v "$HOME/fl-data/weights:/app/weights:ro" \
             -v "$HOME/fl-data/runs:/app/runs" \
             -p 8080:8080 \
             ayax911/federal-learning:latest \
-            python scripts/run_server.py \
-              --config ${{ github.event.inputs.server_config }} \
-              --address 0.0.0.0:8080
+            python scripts/run_server.py --config "$CONFIG" --address 0.0.0.0:8080
 
       - name: Esperar a que el servidor esté listo
         run: |
           echo "Esperando que el servidor levante..."
-          for i in $(seq 1 15); do
+          for i in $(seq 1 30); do
             if docker logs fedmammo-server 2>&1 | grep -q "Flower server running"; then
               echo "Servidor listo."
               exit 0
             fi
             sleep 2
           done
-          echo "Timeout: el servidor no levantó en 30s"
+          echo "Timeout: el servidor no levantó en 60s"
           docker logs fedmammo-server
           exit 1
+
+      - name: Esperar a que el servidor complete todas las rondas
+        run: |
+          EXIT=$(docker wait fedmammo-server)
+          echo "Servidor terminó (exit=$EXIT) — $(date '+%H:%M:%S')"
+          docker logs fedmammo-server --tail 30
+          exit $EXIT
 
   # ── Lanza los nodos en paralelo una vez el servidor está listo ──────────
   nodos:
@@ -67,11 +98,38 @@ jobs:
     runs-on: [self-hosted, "fl-node-${{ matrix.node_id }}"]
     defaults:
       run:
-        shell: bash   # Git Bash en Windows, bash nativo en Linux/WSL2
+        shell: bash
+    env:
+      EXP: ${{ github.event.inputs.experiment_name }}
+      NUM_NODES: ${{ github.event.inputs.num_nodes }}
     steps:
-      - name: Recrear contenedor del nodo ${{ matrix.node_id }}
+      - name: Saltar nodo si está fuera del rango seleccionado
+        if: ${{ matrix.node_id > fromJSON(github.event.inputs.num_nodes) }}
         run: |
+          echo "Nodo ${{ matrix.node_id }} fuera del rango ($NUM_NODES nodos). Saltando."
+          exit 0
+
+      - name: Resolver config y arrancar nodo ${{ matrix.node_id }}
+        run: |
+          NEW="configs/${EXP}/client.yaml"
+          LEGACY="configs/${EXP}_client.yaml"
+          if [ -f "$NEW" ]; then CONFIG="$NEW"
+          elif [ -f "$LEGACY" ]; then CONFIG="$LEGACY"
+          else
+            echo "ERROR: Config de cliente no encontrado para '$EXP'." >&2
+            echo "  Buscado en: $NEW" >&2
+            echo "  Buscado en: $LEGACY" >&2
+            exit 1
+          fi
+
           NODE_ID=${{ matrix.node_id }}
+          echo "══════════════════════════════════════════"
+          echo "  [nodo $NODE_ID] Experimento: $EXP"
+          echo "  Config: $CONFIG"
+          echo "  $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "══════════════════════════════════════════"
+
+          docker pull ayax911/federal-learning:latest || true
           docker rm -f fedmammo-node${NODE_ID} 2>/dev/null || true
           docker run -d \
             --name fedmammo-node${NODE_ID} \
@@ -82,16 +140,17 @@ jobs:
             -v "$HOME/fl-data/runs:/app/runs" \
             ayax911/federal-learning:latest \
             python scripts/run_client.py \
-              --config ${{ github.event.inputs.client_config }} \
+              --config "$CONFIG" \
               --server ${{ secrets.SERVER_ADDRESS }} \
               --client-id ${NODE_ID} \
               --manifest manifests/node${NODE_ID}_manifest.csv
 
       - name: Esperar a que el nodo termine
+        if: ${{ matrix.node_id <= fromJSON(github.event.inputs.num_nodes) }}
         run: |
           NODE_ID=${{ matrix.node_id }}
           echo "Esperando que nodo ${NODE_ID} termine..."
-          docker wait fedmammo-node${NODE_ID}
-          EXIT_CODE=$?
+          EXIT=$(docker wait fedmammo-node${NODE_ID})
+          echo "Nodo ${NODE_ID} terminó (exit=$EXIT) — $(date '+%H:%M:%S')"
           docker logs fedmammo-node${NODE_ID} --tail 20
-          exit ${EXIT_CODE}
+          exit $EXIT

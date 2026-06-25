@@ -3,11 +3,14 @@ name: Run Batch Experiments
 # Ejecuta VARIOS experimentos en SECUENCIA con un solo disparo.
 #   exp1 completo (servidor + nodos, todas las rondas) → exp2 completo → ...
 #
-# Convención de nombres de config (OBLIGATORIA):
-#   Para cada experimento "<nombre>" de la lista, deben existir:
-#     configs/<nombre>_server.yaml   (config del servidor)
-#     configs/<nombre>_client.yaml   (config de los nodos)
-#   Ejemplo: "exp07_fedavg" → configs/exp07_fedavg_server.yaml + configs/exp07_fedavg_client.yaml
+# Resolución de configs (automática, en orden):
+#   1. configs/<nombre>/server.yaml   ← estructura por subdirectorio (nueva)
+#   2. configs/<nombre>_server.yaml   ← estructura flat (legacy)
+#   Si ninguna existe, el workflow falla indicando qué rutas buscó.
+#
+# Ejemplos de input:
+#   "exp13_fedavg_resnet50"                          → configs/exp13/server.yaml
+#   "exp13_fedavg_resnet50 exp14_fedprox_resnet50"   → dos experimentos en secuencia
 #
 # Cómo sincroniza entre máquinas:
 #   - El job 'servidor' y los jobs 'nodos' corren EN PARALELO, recorriendo la
@@ -20,10 +23,10 @@ on:
   workflow_dispatch:
     inputs:
       experiments:
-        description: "Experimentos separados por espacio (ej: exp07_fedavg exp08_fedprox)"
+        description: "Experimentos separados por espacio (ej: exp13_fedavg_resnet50 exp14_fedprox_resnet50)"
         type: string
         required: true
-        default: "exp07_fedavg"
+        default: "exp13_fedavg_resnet50"
 
 jobs:
   # ── Servidor: recorre la lista, un experimento a la vez ──────────────────
@@ -33,15 +36,34 @@ jobs:
       run:
         shell: bash   # Git Bash en Windows, bash nativo en Linux/WSL2
     env:
-      EXPERIMENTS: ${{ github.event.inputs.experiments }}   # vía env evita inyección
+      EXPERIMENTS: ${{ github.event.inputs.experiments }}
     steps:
       - name: Ejecutar experimentos en secuencia (servidor)
         run: |
+          # Resuelve el path del config buscando primero la estructura nueva,
+          # luego la legacy. Falla explícitamente si ninguna existe.
+          resolve_config() {
+            local exp=$1 role=$2
+            local new_path="configs/${exp}/${role}.yaml"
+            local legacy_path="configs/${exp}_${role}.yaml"
+            if [ -f "$new_path" ]; then
+              echo "$new_path"
+            elif [ -f "$legacy_path" ]; then
+              echo "$legacy_path"
+            else
+              echo "ERROR: Config no encontrado para '$exp' (rol: $role)." >&2
+              echo "  Buscado en: $new_path" >&2
+              echo "  Buscado en: $legacy_path" >&2
+              exit 1
+            fi
+          }
+
           docker pull ayax911/federal-learning:latest || true
           for EXP in $EXPERIMENTS; do
-            CONFIG="configs/${EXP}_server.yaml"
+            CONFIG=$(resolve_config "$EXP" "server") || exit 1
             echo "══════════════════════════════════════════"
-            echo "  [servidor] Iniciando: $EXP  ($CONFIG)"
+            echo "  [servidor] Iniciando: $EXP"
+            echo "  Config: $CONFIG"
             echo "  $(date '+%Y-%m-%d %H:%M:%S')"
             echo "══════════════════════════════════════════"
 
@@ -50,7 +72,7 @@ jobs:
               --name fedmammo-server \
               --gpus all \
               -v "$HOME/fl-data/configs:/app/configs:ro" \
-              -v "$HOME/fl-data/checkpoints:/app/checkpoints:ro" \
+              -v "$HOME/fl-data/weights:/app/weights:ro" \
               -v "$HOME/fl-data/runs:/app/runs" \
               -p 8080:8080 \
               ayax911/federal-learning:latest \
@@ -91,16 +113,33 @@ jobs:
     steps:
       - name: Ejecutar experimentos en secuencia (nodo ${{ matrix.node_id }})
         run: |
+          resolve_config() {
+            local exp=$1 role=$2
+            local new_path="configs/${exp}/${role}.yaml"
+            local legacy_path="configs/${exp}_${role}.yaml"
+            if [ -f "$new_path" ]; then
+              echo "$new_path"
+            elif [ -f "$legacy_path" ]; then
+              echo "$legacy_path"
+            else
+              echo "ERROR: Config no encontrado para '$exp' (rol: $role)." >&2
+              echo "  Buscado en: $new_path" >&2
+              echo "  Buscado en: $legacy_path" >&2
+              exit 1
+            fi
+          }
+
           NODE_ID=${{ matrix.node_id }}
           docker pull ayax911/federal-learning:latest || true
           for EXP in $EXPERIMENTS; do
-            CONFIG="configs/${EXP}_client.yaml"
+            CONFIG=$(resolve_config "$EXP" "client") || exit 1
             echo "══════════════════════════════════════════"
-            echo "  [nodo $NODE_ID] Iniciando: $EXP  ($CONFIG)"
+            echo "  [nodo $NODE_ID] Iniciando: $EXP"
+            echo "  Config: $CONFIG"
             echo "  $(date '+%Y-%m-%d %H:%M:%S')"
             echo "══════════════════════════════════════════"
 
-            # Pequeño head-start para que el servidor recree su contenedor.
+            # Head-start para que el servidor recree su contenedor.
             # Flower reintenta conectar, pero esto reduce la carrera entre experimentos.
             sleep 8
 

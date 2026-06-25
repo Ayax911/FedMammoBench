@@ -1,0 +1,81 @@
+# exp14_fedprox_resnet50 — SERVIDOR CENTRAL (5 nodos, FedProx, 25 rondas)
+#
+# Configuración experimental para FedProx con fine-tuning más agresivo:
+#   - weight_source: radimagenet (sin warm-start DDSM)
+#   - freeze_backbone: false (fine-tuning completo)
+#   - local_epochs: 3 (corto para muchas rondas)
+#   - rounds: 25 (convergencia lenta requiere más rondas)
+#   - strategy: fedprox con proximal_mu: 0.1 (regularización para no-IID)
+#   - learning rates más bajos: lr_head=0.0005, lr_backbone=0.00005
+#   - scheduler.t_max: 25 (total rondas, no por-ronda)
+#
+# EVALUACIÓN: data.name=none → evaluación 100% federada.
+
+name: exp14_fedprox_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp14_fedprox_resnet50
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  strict_load: true
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false         # fine-tuning completo
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: null  # sin descongelamiento progresivo
+  unfreeze_layers: null
+
+training:
+  local_epochs: 3
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 0.0005
+    lr_backbone: 0.00005
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    t_max: 25             # total rondas (no por-ronda)
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 25
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedprox
+    params:
+      proximal_mu: 0.1
