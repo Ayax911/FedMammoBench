@@ -58,11 +58,11 @@ model:
   dropout: 0.0
   freeze_backbone: true           # backbone re-congelado al inicio de cada ronda
   unfreeze_at_epoch: null         # sin unfreeze global por ronda
-  local_unfreeze_at_epoch: 4      # descongelar layer4+fc a partir de la época local 4/8 de cada ronda (50/50)
+  local_unfreeze_at_epoch: 4      # descongelar layer4+fc a partir de la época local 4 de cada ronda
   unfreeze_layers: [layer4, fc]   # DEBE coincidir con el servidor
 
 training:
-  local_epochs: 8                 # 8 épocas locales por ronda: 4 frozen (fc) + 4 unfrozen (fc+layer4)
+  local_epochs: 15                # 4 épocas frozen (fc) + 11 épocas unfrozen (fc+layer4)
   grad_clip_norm: 1.0
   mixed_precision: true          # DEBE coincidir con el servidor
   optimizer:
@@ -73,7 +73,7 @@ training:
     weight_decay: 1.0e-4
   scheduler:
     name: cosine
-    t_max: 8                     # = local_epochs (el scheduler se reinicia y avanza por época local cada ronda)
+    t_max: 15                    # = local_epochs (el scheduler se reinicia y avanza por época local cada ronda)
   augmentation:
     horizontal_flip: true        # válido anatómicamente en mamografía
     rotate_limit: 15             # ±15°
@@ -88,7 +88,7 @@ evaluation:
   save_predictions: true
 
 federated:
-  rounds: 6          # DEBE coincidir con el servidor
+  rounds: 7          # DEBE coincidir con el servidor
   strategy:
     name: fedavg
     params: {}

@@ -38,6 +38,7 @@ from fedmammobench.federated.param_utils import (
 from fedmammobench.models import build_model
 from fedmammobench.models.weight_loaders import apply_freeze_policy
 from fedmammobench.training import Trainer, build_loss, build_optimizer, build_scheduler
+from fedmammobench.utils.csv_logger import CSVLogger
 from fedmammobench.utils.device import resolve_device
 from fedmammobench.utils.logging_utils import get_logger
 from fedmammobench.utils.seeding import set_global_seed
@@ -56,6 +57,9 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         train_dataset: This client's local training partition.
         val_dataset: This client's local validation partition.
         device: torch.device to use.
+        out_root: Directory for client-side artifacts. When set, enables
+            per-epoch CSV logging and enriched prediction CSV with manifest
+            columns. Simulation mode passes this; gRPC mode uses run_client.py.
     """
 
     def __init__(
@@ -71,6 +75,7 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         self.cfg = cfg
         self.device = device
         self.out_root = Path(out_root) if out_root is not None else None
+        self.val_dataset = val_dataset
 
         train_labels = train_dataset.labels
         if (train_labels == 1).sum() == 0:
@@ -117,6 +122,13 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         self.evaluator = Evaluator(
             self.model, device=device, threshold=cfg.evaluation.threshold
         )
+
+        # Per-epoch CSV (train + val metrics each local epoch, like centralized).
+        # Created lazily on the first fit call so the directory exists by then.
+        self._epoch_csv: CSVLogger | None = None
+        if self.out_root is not None:
+            self.out_root.mkdir(parents=True, exist_ok=True)
+            self._epoch_csv = CSVLogger(self.out_root / "epoch_metrics.csv")
 
     # ------------------------------------------------------------------
     # NumPyClient API
@@ -183,12 +195,40 @@ class FedMammoBenchClient(fl.client.NumPyClient):
                     self.client_id, current_round, ep, local_epochs,
                     layers_to_unfreeze or "all",
                 )
+            t_train = time.perf_counter()
             last = trainer.train_one_epoch(
                 self.train_loader,
                 epoch=ep,
                 proximal_mu=proximal_mu,
                 global_params=global_params,
             )
+            train_seconds = time.perf_counter() - t_train
+
+            if self._epoch_csv is not None:
+                epoch_row: dict[str, Any] = {
+                    "round": current_round,
+                    "local_epoch": ep,
+                    "train_loss": float(last.get("loss", float("nan"))),
+                    "task_loss": float(last.get("task_loss", float("nan"))),
+                    "train_seconds": round(train_seconds, 3),
+                }
+                if self.val_loader is not None:
+                    t_val = time.perf_counter()
+                    val_result = self.evaluator.evaluate(
+                        self.val_loader, criterion=self.criterion
+                    )
+                    val_seconds = time.perf_counter() - t_val
+                    epoch_row.update({
+                        "val_loss": float(val_result.get("loss", float("nan"))),
+                        "val_accuracy": float(val_result.get("accuracy", float("nan"))),
+                        "val_f1": float(val_result.get("f1", float("nan"))),
+                        "val_roc_auc": float(val_result.get("roc_auc", float("nan"))),
+                        "val_sensitivity": float(val_result.get("sensitivity", float("nan"))),
+                        "val_specificity": float(val_result.get("specificity", float("nan"))),
+                        "val_seconds": round(val_seconds, 3),
+                    })
+                self._epoch_csv.append(epoch_row)
+
         fit_seconds = time.perf_counter() - fit_start
         n_samples = int(last.get("samples", len(self.train_loader.dataset)))  # type: ignore[arg-type]
         # train_loss includes the proximal penalty for FedProx; task_loss is
@@ -269,20 +309,39 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             return
         assert self.out_root is not None
         self.out_root.mkdir(parents=True, exist_ok=True)
+
+        # val_loader uses shuffle=False, so samples are in the same order as
+        # predictions. Zip with val_dataset.samples to include manifest metadata.
+        samples = self.val_dataset.samples if self.val_dataset is not None else []
+        extra_keys: list[str] = list(samples[0].extra.keys()) if samples and samples[0].extra else []
+        fieldnames = ["round", "image_path", "patient_id"] + extra_keys + ["y_true", "y_prob", "y_pred"]
+
         pred_path = self.out_root / "predictions.csv"
         write_header = not pred_path.exists()
         threshold = float(getattr(self.cfg.evaluation, "threshold", 0.5))
         with pred_path.open("a", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=["round", "y_true", "y_prob", "y_pred"])
+            writer = csv.DictWriter(fh, fieldnames=fieldnames)
             if write_header:
                 writer.writeheader()
-            for yt, yp in zip(y_true.tolist(), y_prob.tolist()):
-                writer.writerow({
+            for i, (yt, yp) in enumerate(zip(y_true.tolist(), y_prob.tolist())):
+                row: dict[str, Any] = {
                     "round": server_round,
                     "y_true": int(yt),
                     "y_prob": round(float(yp), 6),
                     "y_pred": int(float(yp) >= threshold),
-                })
+                }
+                if i < len(samples):
+                    s = samples[i]
+                    row["image_path"] = s.image_path
+                    row["patient_id"] = s.patient_id or ""
+                    for k in extra_keys:
+                        row[k] = s.extra.get(k, "")
+                else:
+                    row["image_path"] = ""
+                    row["patient_id"] = ""
+                    for k in extra_keys:
+                        row[k] = ""
+                writer.writerow(row)
 
 
 # ----------------------------------------------------------------------
@@ -364,12 +423,20 @@ def _materialize_client_partitions(
 def client_fn_factory(
     cfg: ExperimentConfig,
     datasets: dict[str, MammographyDataset],
+    *,
+    out_root: Path | None = None,
 ) -> Callable[[Context], fl.client.Client]:
     """Return a Flower ``client_fn`` consuming a Context and yielding Clients.
 
     The function captures pre-built dataset partitions and rebuilds a fresh
     model + client object for each invocation. Flower's simulation engine
     may call this many times across rounds.
+
+    Args:
+        out_root: Base directory for client artifacts (e.g.
+            ``runs/<name>/clients``). Each client writes to
+            ``out_root/client_<cid>/``. When None, per-epoch CSV and enriched
+            predictions are disabled (simulation without artifact output).
     """
     pairs = _materialize_client_partitions(cfg, datasets)
     device = resolve_device(cfg.device)
@@ -391,6 +458,7 @@ def client_fn_factory(
                 f"client_fn received cid={cid} but only {len(pairs)} partitions exist."
             )
         train_ds, val_ds = pairs[cid]
+        client_out = (Path(out_root) / f"client_{cid}") if out_root is not None else None
         # Seed each client distinctly so dropout/data augmentation order
         # diverges across clients but reruns are reproducible.
         set_global_seed(cfg.seed + cid + 1, deterministic=True)
@@ -400,6 +468,7 @@ def client_fn_factory(
             train_dataset=train_ds,
             val_dataset=val_ds,
             device=device,
+            out_root=client_out,
         )
         return np_client.to_client()
 
