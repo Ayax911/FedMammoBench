@@ -1,0 +1,71 @@
+# exp12_pretrain_ddsm — PRE-ENTRENAMIENTO CENTRALIZADO CON DDSM
+#
+# PASO 1 del flujo warm-start para exp12_fedavg_resnet50:
+#   1. Ejecutar este config → guarda runs/exp12_pretrain_ddsm/final.pt
+#   2. El servidor FL carga ese checkpoint (weight_source: custom en server.yaml)
+#   3. Distribuye los pesos fine-tuneados a los 5 nodos como punto de arranque
+#
+# Idéntico al pretrain de exp07 salvo el nombre y output_dir.
+# Si runs/exp07_pretrain_ddsm/final.pt ya existe y quieres reutilizarlo,
+# actualiza checkpoint_path en server.yaml en lugar de ejecutar este config.
+#
+# Comando:
+#   python scripts/run_centralized.py --config configs/exp12/pretrain.yaml
+
+name: exp12_pretrain_ddsm
+mode: centralized
+seed: 42
+output_dir: runs/exp12_pretrain_ddsm
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/ddsm-split.csv     # split column: train/val/test
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1        # IGNORADO: ddsm-split.csv ya trae split explícito
+  test_fraction: 0.1       # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: true
+  unfreeze_at_epoch: 5                # descongelar en época 5/100
+  unfreeze_layers: [layer4, fc]
+
+training:
+  epochs: 100
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 100
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
