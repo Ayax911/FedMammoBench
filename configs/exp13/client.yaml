@@ -1,0 +1,90 @@
+# exp13_fedavg_resnet50 — NODOS CLIENTE (5 nodos, datasets reales Mammo-Bench)
+#
+# Mapeo nodo → dataset (igual que exp07/exp12):
+#   node1 → cmmd         (5202 imgs: 1108 benign / 4094 malignant)
+#   node2 → inbreast     ( 410 imgs: 310 benign / 100 malignant)
+#   node3 → cdd-cesm     (1003 imgs: 672 benign / 331 malignant)
+#   node4 → kau-bcmd     (2206 imgs: 2112 benign /  94 malignant)
+#   node5 → dmid         ( 510 imgs: 366 benign / 144 malignant)
+#
+# Cada nodo usa ESTE mismo YAML. Lo específico de cada nodo se pasa por CLI:
+#   --manifest manifests/node<ID>_manifest.csv
+#
+# CONFIGURACIÓN vs exp12:
+#   - freeze_backbone: false (fine-tuning completo)
+#   - Sin descongelamiento progresivo (local_unfreeze_at_epoch: null)
+#   - strict_load: true
+#
+# NUEVAS MÉTRICAS:
+#   - clients/client_<id>/epoch_metrics.csv  → train_loss + val_loss por época local
+#   - clients/client_<id>/predictions.csv   → predicciones con columnas del manifest
+#
+# COHERENCIA servidor↔cliente:
+#   model.freeze_backbone, local_unfreeze_at_epoch, unfreeze_layers,
+#   training.scheduler.t_max y federated.rounds DEBEN coincidir con server.yaml.
+
+name: exp13_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp13_fedavg_resnet50
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/node0_manifest.csv   # sobreescrito por --manifest en el workflow
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.15      # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.0      # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  strict_load: true
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false          # fine-tuning completo
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: null   # sin descongelamiento progresivo
+  unfreeze_layers: null           # DEBE coincidir con el servidor
+
+training:
+  local_epochs: 15                # 15 épocas de fine-tuning completo — DEBE coincidir con el servidor
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 15                    # = local_epochs (el scheduler se reinicia cada ronda)
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  rounds: 7          # DEBE coincidir con el servidor
+  strategy:
+    name: fedavg
+    params: {}

@@ -1,0 +1,80 @@
+# exp13_fedavg_resnet50 — SERVIDOR CENTRAL (5 nodos, RadImageNet directo + fine-tuning)
+#
+# Basado en exp12, pero corrige:
+#   - weight_source: radimagenet (en lugar de custom warm-start desde DDSM)
+#   - checkpoint_path: weights/RadImageNet-resnet50.pth (pesos iniciales)
+#   - strict_load: true (detección explícita de missing keys)
+#   - freeze_backbone: false (fine-tuning completo de toda la red)
+#   - Sin descongelamiento progresivo (local_unfreeze_at_epoch: null)
+#
+# Parámetros: 15 épocas locales, 7 rondas, FedAvg, como exp12
+#
+# EVALUACIÓN: data.name=none → evaluación 100% federada.
+
+name: exp13_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp13_fedavg_resnet50
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  strict_load: true
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false         # fine-tuning completo
+  unfreeze_at_epoch: null        # sin descongelamiento por ronda
+  local_unfreeze_at_epoch: null  # sin descongelamiento progresivo local
+  unfreeze_layers: null
+
+training:
+  local_epochs: 15
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 15             # = training.local_epochs (scheduler se reinicia cada ronda)
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 7
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedavg
+    params: {}
