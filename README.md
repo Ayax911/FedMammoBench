@@ -169,6 +169,49 @@ to `runs/<name>/config.snapshot.yaml`.
 
 ---
 
+## Research Experiments (per-experiment configs)
+
+Structured experiments live under `configs/expNN/`. Each directory contains
+`server.yaml`, `client.yaml`, and optionally `pretrain.yaml`.
+
+| Exp | Mode | Description |
+|-----|------|-------------|
+| exp07 | Federated | FedAvg + ResNet50, warm-start from DDSM pretrain, 5 nodes, 15 epochs/round, 7 rounds |
+| exp08 | Centralized | Baseline centralizado con todos los datasets (17 139 imgs) |
+| exp09 | Federated | FedAvg + ResNet50 sin warm-start (ablación desde RadImageNet) |
+| exp10 | Centralized | Variante centralizada de ablación |
+| exp12 | Federated | FedAvg + ResNet50, igual a exp07 con métricas por época por nodo y predicciones enriquecidas |
+
+### exp12 — FedAvg + warm-start + métricas extendidas
+
+exp12 replica exp07 (15 épocas locales, 7 rondas, warm-start desde DDSM) y añade:
+- **`clients/client_<id>/epoch_metrics.csv`** — train_loss, task_loss, val_loss, val_auc, val_f1, val_sensitivity, val_specificity por cada época local dentro de cada ronda (equivalente al CSV de entrenamiento centralizado).
+- **`clients/client_<id>/predictions.csv`** — predicciones enriquecidas con las columnas del manifest de cada nodo (`image_path`, `patient_id`, y columnas extra) para cada muestra del conjunto de validación.
+
+```bash
+# Paso 1: pretrain centralizado con DDSM (genera runs/exp12_pretrain_ddsm/final.pt)
+python scripts/run_centralized.py --config configs/exp12/pretrain.yaml
+
+# Paso 2: FL distribuido (gRPC)
+# En el servidor:
+python scripts/run_server.py --config configs/exp12/server.yaml
+
+# En cada nodo (N = 1..5):
+python scripts/run_client.py --config configs/exp12/client.yaml \
+    --server <SERVER_IP>:8080 \
+    --client-id <N> \
+    --manifest manifests/node<N>_manifest.csv
+```
+
+Para lanzar desde GitHub Actions (reemplaza exp07 por exp12 en el batch):
+
+```
+workflow: Run Batch Experiments
+  experiments: exp12_fedavg_resnet50
+```
+
+---
+
 ## Outputs, Per-Node Metrics & Timing
 
 Every federated run writes the following under `runs/<name>/`:

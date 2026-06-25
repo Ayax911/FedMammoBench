@@ -35,7 +35,7 @@ data:
 model:
   name: resnet50
   weight_source: custom                           # warm start desde pretrain centralizado con DDSM
-  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
+  checkpoint_path: runs/exp12_pretrain_ddsm/final.pt
   in_channels: 3
   num_classes: 1
   dropout: 0.0
