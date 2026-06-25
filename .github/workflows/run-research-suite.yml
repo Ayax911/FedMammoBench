@@ -1,47 +1,47 @@
-name: Suite Completa de Investigación (exp08 + exp07 + exp09)
+name: Suite Completa de Investigación
 
-# Pipeline de 3 experimentos en secuencia automática:
+# Pipeline configurable de experimentos en dos fases:
 #
-#   FASE 1 — Servidor solo (no requiere nodos):
-#     1a. exp08: centralizado con todas las imágenes (17 139 imgs, 6 datasets)
-#     1b. exp07_pretrain: pretrain centralizado con DDSM → final.pt
+#   FASE 1 — Centralizados (opcional, corren solos en el servidor):
+#     - Pretrain centralizado (ej. exp07/pretrain.yaml o exp12/pretrain.yaml)
+#     - Baseline centralizado (ej. exp08/centralized.yaml)
 #
-#   FASE 2 — Federado (servidor + 6 nodos, en paralelo por Flower):
-#     2a. exp07: FL con warm start desde DDSM pretrain
-#     2b. exp09: FL sin warm start (ablación — arranque desde RadImageNet)
+#   FASE 2 — Federado (servidor + 5 nodos, en paralelo por Flower):
+#     - Lista de experimentos FL separados por espacio
 #
 # Los nodos esperan a que la FASE 1 termine antes de arrancar la FASE 2.
 # Dentro de FASE 2, servidor y nodos corren en paralelo; Flower sincroniza rondas.
 #
+# Resolución de configs (automática):
+#   1. configs/<exp>/<role>.yaml      ← estructura por subdirectorio (nueva)
+#   2. configs/<exp>_<role>.yaml      ← estructura flat (legacy)
+#
 # PREREQUISITOS en la máquina servidor ($HOME/fl-data/):
-#   weights/RadImageNet-resnet50.pth   ← checkpoint RadImageNet
-#   manifests/ddsm-split.csv           ← para el pretrain
-#   manifests/mamo-bench-split.csv     ← para exp08 centralizado
-#   data/Preprocessed_Dataset/<todos los 6 datasets>/  ← imágenes para exp08 y pretrain
+#   weights/RadImageNet-resnet50.pth
+#   manifests/  ← manifests necesarios para cada experimento
+#   data/       ← imágenes de los datasets
 #
 # PREREQUISITOS en cada nodo ($HOME/fl-data/):
-#   data/Preprocessed_Dataset/<dataset del nodo>/
+#   data/<dataset del nodo>/
 #   manifests/node<ID>_manifest.csv
 
 on:
   workflow_dispatch:
     inputs:
-      skip_exp08:
-        description: "Saltar exp08 (centralizado ya ejecutado)"
+      pretrain_exp:
+        description: "Experimento de pretrain (ej: exp07, exp12). Vacío = saltar pretrain."
         required: false
-        default: "false"
-        type: choice
-        options: ["false", "true"]
-      skip_pretrain:
-        description: "Saltar pretrain DDSM (final.pt ya existe)"
+        default: ""
+        type: string
+      centralized_exp:
+        description: "Experimento centralizado (ej: exp08, exp10). Vacío = saltar."
         required: false
-        default: "false"
-        type: choice
-        options: ["false", "true"]
+        default: ""
+        type: string
       fl_experiments:
-        description: "Experimentos FL a ejecutar (separados por espacio)"
-        required: false
-        default: "exp07_fedavg_resnet50 exp09_fedavg_resnet50"
+        description: "Experimentos FL separados por espacio (ej: exp13_fedavg_resnet50 exp14_fedprox_resnet50)"
+        required: true
+        default: "exp13_fedavg_resnet50"
         type: string
 
 jobs:
@@ -54,11 +54,26 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: exp08 — baseline centralizado (17 139 imgs, todos los datasets)
-        if: ${{ github.event.inputs.skip_exp08 == 'false' }}
+      - name: Pretrain centralizado
+        if: ${{ github.event.inputs.pretrain_exp != '' }}
+        env:
+          PRETRAIN_EXP: ${{ github.event.inputs.pretrain_exp }}
         run: |
+          # Resolución de config de pretrain
+          NEW="configs/${PRETRAIN_EXP}/pretrain.yaml"
+          LEGACY="configs/${PRETRAIN_EXP}_pretrain_ddsm_centralized.yaml"
+          if [ -f "$NEW" ]; then CONFIG="$NEW"
+          elif [ -f "$LEGACY" ]; then CONFIG="$LEGACY"
+          else
+            echo "ERROR: Config de pretrain no encontrado para '$PRETRAIN_EXP'." >&2
+            echo "  Buscado en: $NEW" >&2
+            echo "  Buscado en: $LEGACY" >&2
+            exit 1
+          fi
+
           echo "══════════════════════════════════════════"
-          echo "  [servidor] exp08 centralizado — $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "  [servidor] Pretrain: $PRETRAIN_EXP ($CONFIG)"
+          echo "  $(date '+%Y-%m-%d %H:%M:%S')"
           echo "══════════════════════════════════════════"
           docker pull ayax911/federal-learning:latest || true
           docker rm -f fedmammo-central 2>/dev/null || true
@@ -71,16 +86,30 @@ jobs:
             -v "$HOME/fl-data/weights:/app/weights:ro" \
             -v "$HOME/fl-data/runs:/app/runs" \
             ayax911/federal-learning:latest \
-            python scripts/run_centralized.py \
-              --config configs/exp08_centralized_resnet50.yaml
-          echo "[servidor] exp08 completado — $(date '+%H:%M:%S')"
+            python scripts/run_centralized.py --config "$CONFIG"
+          echo "[servidor] Pretrain completado — $(date '+%H:%M:%S')"
 
-      - name: exp07_pretrain — pretrain centralizado con DDSM
-        if: ${{ github.event.inputs.skip_pretrain == 'false' }}
+      - name: Baseline centralizado
+        if: ${{ github.event.inputs.centralized_exp != '' }}
+        env:
+          CENTRAL_EXP: ${{ github.event.inputs.centralized_exp }}
         run: |
+          NEW="configs/${CENTRAL_EXP}/centralized.yaml"
+          LEGACY="configs/${CENTRAL_EXP}_centralized_resnet50.yaml"
+          if [ -f "$NEW" ]; then CONFIG="$NEW"
+          elif [ -f "$LEGACY" ]; then CONFIG="$LEGACY"
+          else
+            echo "ERROR: Config centralizado no encontrado para '$CENTRAL_EXP'." >&2
+            echo "  Buscado en: $NEW" >&2
+            echo "  Buscado en: $LEGACY" >&2
+            exit 1
+          fi
+
           echo "══════════════════════════════════════════"
-          echo "  [servidor] exp07 pretrain DDSM — $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "  [servidor] Centralizado: $CENTRAL_EXP ($CONFIG)"
+          echo "  $(date '+%Y-%m-%d %H:%M:%S')"
           echo "══════════════════════════════════════════"
+          docker pull ayax911/federal-learning:latest || true
           docker rm -f fedmammo-central 2>/dev/null || true
           docker run --rm \
             --name fedmammo-central \
@@ -91,19 +120,8 @@ jobs:
             -v "$HOME/fl-data/weights:/app/weights:ro" \
             -v "$HOME/fl-data/runs:/app/runs" \
             ayax911/federal-learning:latest \
-            python scripts/run_centralized.py \
-              --config configs/exp07_pretrain_ddsm_centralized.yaml
-          echo "[servidor] pretrain DDSM completado — $(date '+%H:%M:%S')"
-
-      - name: Verificar que final.pt existe antes de la fase FL
-        run: |
-          PRETRAIN_PT="$HOME/fl-data/runs/exp07_pretrain_ddsm/final.pt"
-          if [ ! -f "$PRETRAIN_PT" ]; then
-            echo "ERROR: No se encontró $PRETRAIN_PT"
-            echo "Ejecuta de nuevo sin skip_pretrain=true, o coloca el archivo manualmente."
-            exit 1
-          fi
-          echo "OK: $PRETRAIN_PT existe ($(du -h "$PRETRAIN_PT" | cut -f1))"
+            python scripts/run_centralized.py --config "$CONFIG"
+          echo "[servidor] Centralizado completado — $(date '+%H:%M:%S')"
 
   # ══════════════════════════════════════════════════════════════════════════
   # FASE 2 — Federado: servidor y nodos arrancan en paralelo tras FASE 1
@@ -120,11 +138,28 @@ jobs:
     steps:
       - name: Ejecutar experimentos FL en secuencia (servidor)
         run: |
+          resolve_config() {
+            local exp=$1 role=$2
+            local new_path="configs/${exp}/${role}.yaml"
+            local legacy_path="configs/${exp}_${role}.yaml"
+            if [ -f "$new_path" ]; then
+              echo "$new_path"
+            elif [ -f "$legacy_path" ]; then
+              echo "$legacy_path"
+            else
+              echo "ERROR: Config no encontrado para '$exp' (rol: $role)." >&2
+              echo "  Buscado en: $new_path" >&2
+              echo "  Buscado en: $legacy_path" >&2
+              exit 1
+            fi
+          }
+
           docker pull ayax911/federal-learning:latest || true
           for EXP in $FL_EXPERIMENTS; do
-            CONFIG="configs/${EXP}_server.yaml"
+            CONFIG=$(resolve_config "$EXP" "server") || exit 1
             echo "══════════════════════════════════════════"
             echo "  [servidor FL] Iniciando: $EXP"
+            echo "  Config: $CONFIG"
             echo "  $(date '+%Y-%m-%d %H:%M:%S')"
             echo "══════════════════════════════════════════"
 
@@ -172,12 +207,29 @@ jobs:
     steps:
       - name: Ejecutar experimentos FL en secuencia (nodo ${{ matrix.node_id }})
         run: |
+          resolve_config() {
+            local exp=$1 role=$2
+            local new_path="configs/${exp}/${role}.yaml"
+            local legacy_path="configs/${exp}_${role}.yaml"
+            if [ -f "$new_path" ]; then
+              echo "$new_path"
+            elif [ -f "$legacy_path" ]; then
+              echo "$legacy_path"
+            else
+              echo "ERROR: Config no encontrado para '$exp' (rol: $role)." >&2
+              echo "  Buscado en: $new_path" >&2
+              echo "  Buscado en: $legacy_path" >&2
+              exit 1
+            fi
+          }
+
           NODE_ID=${{ matrix.node_id }}
           docker pull ayax911/federal-learning:latest || true
           for EXP in $FL_EXPERIMENTS; do
-            CONFIG="configs/${EXP}_client.yaml"
+            CONFIG=$(resolve_config "$EXP" "client") || exit 1
             echo "══════════════════════════════════════════"
             echo "  [nodo $NODE_ID] Iniciando: $EXP"
+            echo "  Config: $CONFIG"
             echo "  $(date '+%Y-%m-%d %H:%M:%S')"
             echo "══════════════════════════════════════════"
 
