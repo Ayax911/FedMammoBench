@@ -1,0 +1,65 @@
+name: exp13_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp13_fedavg_resnet50
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/kau-bcmd-split.csv
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: custom
+  checkpoint_path: runs/exp13_fedavg_resnet50/global_model.pt
+  strict_load: true
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: null
+  unfreeze_layers: null
+
+training:
+  local_epochs: 15
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 15
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  rounds: 7
+  strategy:
+    name: fedavg
+    params: {}
