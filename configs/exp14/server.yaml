@@ -1,7 +1,7 @@
 # exp14_fedprox_resnet50 — SERVIDOR CENTRAL (5 nodos, FedProx, 25 rondas)
 #
 # Configuración experimental para FedProx con fine-tuning más agresivo:
-#   - weight_source: radimagenet (sin warm-start DDSM)
+#   - weight_source: custom (warm-start desde pretrain exp07: RadImageNet → DDSM → final.pt)
 #   - freeze_backbone: false (fine-tuning completo)
 #   - local_epochs: 3 (corto para muchas rondas)
 #   - rounds: 25 (convergencia lenta requiere más rondas)
@@ -31,8 +31,8 @@ data:
 
 model:
   name: resnet50
-  weight_source: radimagenet
-  checkpoint_path: weights/RadImageNet-resnet50.pth
+  weight_source: custom                              # warm-start desde pretrain exp07 (RadImageNet → DDSM)
+  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
   strict_load: true
   in_channels: 3
   num_classes: 1

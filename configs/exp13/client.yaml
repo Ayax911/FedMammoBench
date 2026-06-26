@@ -10,7 +10,8 @@
 # Cada nodo usa ESTE mismo YAML. Lo específico de cada nodo se pasa por CLI:
 #   --manifest manifests/node<ID>_manifest.csv
 #
-# CONFIGURACIÓN vs exp12:
+# CONFIGURACIÓN:
+#   - weight_source: custom (warm-start desde pretrain exp07: RadImageNet → DDSM → final.pt)
 #   - freeze_backbone: false (fine-tuning completo)
 #   - Sin descongelamiento progresivo (local_unfreeze_at_epoch: null)
 #   - strict_load: true
@@ -46,8 +47,8 @@ data:
 
 model:
   name: resnet50
-  weight_source: radimagenet
-  checkpoint_path: weights/RadImageNet-resnet50.pth
+  weight_source: custom                              # warm-start desde pretrain exp07 (RadImageNet → DDSM)
+  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
   strict_load: true
   in_channels: 3
   num_classes: 1

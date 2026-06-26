@@ -11,6 +11,7 @@
 #   --manifest manifests/node<ID>_manifest.csv
 #
 # CONFIGURACIÓN:
+#   - weight_source: custom (warm-start desde pretrain exp07: RadImageNet → DDSM → final.pt)
 #   - freeze_backbone: false (fine-tuning completo)
 #   - Sin descongelamiento progresivo
 #   - FedProx con proximal_mu: 0.1
@@ -44,8 +45,8 @@ data:
 
 model:
   name: resnet50
-  weight_source: radimagenet
-  checkpoint_path: weights/RadImageNet-resnet50.pth
+  weight_source: custom                              # warm-start desde pretrain exp07 (RadImageNet → DDSM)
+  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
   strict_load: true
   in_channels: 3
   num_classes: 1

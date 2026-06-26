@@ -1,13 +1,10 @@
-# exp13_fedavg_resnet50 — SERVIDOR CENTRAL (5 nodos, RadImageNet directo + fine-tuning)
+# exp13_fedavg_resnet50 — SERVIDOR CENTRAL (5 nodos, warm-start exp07 + fine-tuning completo)
 #
-# Basado en exp12, pero corrige:
-#   - weight_source: radimagenet (en lugar de custom warm-start desde DDSM)
-#   - checkpoint_path: weights/RadImageNet-resnet50.pth (pesos iniciales)
-#   - strict_load: true (detección explícita de missing keys)
-#   - freeze_backbone: false (fine-tuning completo de toda la red)
-#   - Sin descongelamiento progresivo (local_unfreeze_at_epoch: null)
+# Warm-start desde el pretrain centralizado de exp07 (RadImageNet → DDSM → final.pt).
+# Mismo punto de partida que exp07/exp12 pero con fine-tuning completo (freeze_backbone: false)
+# y sin descongelamiento progresivo.
 #
-# Parámetros: 15 épocas locales, 7 rondas, FedAvg, como exp12
+# Parámetros: 15 épocas locales, 7 rondas, FedAvg
 #
 # EVALUACIÓN: data.name=none → evaluación 100% federada.
 
@@ -31,8 +28,8 @@ data:
 
 model:
   name: resnet50
-  weight_source: radimagenet
-  checkpoint_path: weights/RadImageNet-resnet50.pth
+  weight_source: custom                              # warm-start desde pretrain exp07 (RadImageNet → DDSM)
+  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
   strict_load: true
   in_channels: 3
   num_classes: 1
