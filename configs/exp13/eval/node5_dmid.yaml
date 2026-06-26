@@ -22,8 +22,8 @@ data:
 model:
   name: resnet50
   weight_source: custom
-  checkpoint_path: runs/exp13_fedavg_resnet50/global_model.pt
-  strict_load: true
+  checkpoint_path: runs/exp13_fedavg_resnet50/exp13_fedavg_resnet50/global_model.pt
+  strict_load: false
   in_channels: 3
   num_classes: 1
   dropout: 0.0
