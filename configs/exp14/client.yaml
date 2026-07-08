@@ -1,4 +1,4 @@
-# exp14_fedprox_resnet50 — NODOS CLIENTE (5 nodos, FedProx, 25 rondas)
+# exp14_fedprox_resnet50 — NODOS CLIENTE (5 nodos, FedProx, 34 rondas)
 #
 # Mapeo nodo → dataset (igual que exp07/exp12):
 #   node1 → cmmd         (5202 imgs: 1108 benign / 4094 malignant)
@@ -15,7 +15,7 @@
 #   - freeze_backbone: false (fine-tuning completo)
 #   - Sin descongelamiento progresivo
 #   - FedProx con proximal_mu: 0.1
-#   - 25 rondas, 3 épocas locales
+#   - 34 rondas, 3 épocas locales
 #   - Learning rates bajos: lr_head=0.0005, lr_backbone=0.00005
 #
 # COHERENCIA servidor↔cliente:
@@ -68,7 +68,7 @@ training:
     weight_decay: 0.0001
   scheduler:
     name: cosine
-    t_max: 25                    # total rondas (no por-ronda)
+    t_max: 34                    # total rondas (no por-ronda)
   augmentation:
     horizontal_flip: true
     rotate_limit: 15
@@ -83,7 +83,7 @@ evaluation:
   save_predictions: true
 
 federated:
-  rounds: 25          # DEBE coincidir con el servidor
+  rounds: 34          # DEBE coincidir con el servidor
   strategy:
     name: fedprox
     params:
