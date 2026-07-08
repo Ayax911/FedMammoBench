@@ -25,6 +25,24 @@ from fedmammobench.utils.tensorboard_utils import TensorBoardWriter
 _logger = get_logger(__name__)
 
 
+def _freeze_bn_running_stats(model: nn.Module) -> None:
+    """Keep BatchNorm layers with frozen affine params in eval mode.
+
+    ``model.train()`` (called at the start of every epoch) re-enables training
+    mode on *all* modules, including BatchNorm layers in a frozen backbone. In
+    train mode BN keeps updating ``running_mean`` / ``running_var`` on each
+    batch even though ``requires_grad=False`` prevents the γ/β weights from
+    updating. In a federated run those drifted, per-client running stats then
+    get averaged, and the aggregated global model evaluates (in ``eval`` mode)
+    with corrupted stats. Re-pinning frozen BN layers to eval after each
+    ``train()`` prevents that drift. No-op when nothing is frozen.
+    """
+    for m in model.modules():
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            if m.weight is not None and not m.weight.requires_grad:
+                m.eval()
+
+
 class Trainer:
     """Reusable epoch-level trainer.
 
@@ -98,6 +116,9 @@ class Trainer:
                 GC overhead and memory fragmentation.
         """
         self.model.train()
+        # Re-pin frozen BatchNorm layers to eval so their running stats don't
+        # drift (train() above just re-enabled them). See helper docstring.
+        _freeze_bn_running_stats(self.model)
         total_task_loss = 0.0
         total_loss = 0.0
         n_samples = 0

@@ -181,6 +181,13 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             if local_unfreeze_ep is not None and ep == local_unfreeze_ep:
                 backbone = getattr(self.model, "backbone", self.model)
                 layers_to_unfreeze = self.cfg.model.unfreeze_layers or []
+                # Track which params the optimizer already owns. The optimizer
+                # was built while the backbone was frozen, so it only holds the
+                # head; params unfrozen now must be registered explicitly or
+                # optimizer.step() will never update them.
+                existing_ids = {
+                    id(p) for g in optimizer.param_groups for p in g["params"]
+                }
                 if layers_to_unfreeze:
                     for ln in layers_to_unfreeze:
                         layer = getattr(backbone, ln, None)
@@ -190,6 +197,21 @@ class FedMammoBenchClient(fl.client.NumPyClient):
                 else:
                     for p in self.model.parameters():
                         p.requires_grad = True
+                newly_trainable = [
+                    p
+                    for p in self.model.parameters()
+                    if p.requires_grad and id(p) not in existing_ids
+                ]
+                if newly_trainable:
+                    opt_cfg = self.cfg.training.optimizer
+                    lr_bb = (
+                        opt_cfg.lr_backbone
+                        if opt_cfg.lr_backbone is not None
+                        else opt_cfg.lr
+                    )
+                    optimizer.add_param_group(
+                        {"params": newly_trainable, "lr": lr_bb}
+                    )
                 _logger.info(
                     "client %d round %d: cyclic unfreeze at local epoch %d/%d — layers=%s",
                     self.client_id, current_round, ep, local_epochs,
