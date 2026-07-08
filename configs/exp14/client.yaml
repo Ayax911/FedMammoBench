@@ -1,6 +1,6 @@
-# exp14_fedprox_resnet50 — NODOS CLIENTE (5 nodos, FedProx, 34 rondas)
+# exp14_fedprox_resnet50 — NODOS CLIENTE (5 nodos, FedProx, 34 rondas, fine-tuning completo)
 #
-# Mapeo nodo → dataset (igual que exp07/exp12):
+# Mapeo nodo → dataset (igual que exp07/exp12/exp13):
 #   node1 → cmmd         (5202 imgs: 1108 benign / 4094 malignant)
 #   node2 → inbreast     ( 410 imgs: 310 benign / 100 malignant)
 #   node3 → cdd-cesm     (1003 imgs: 672 benign / 331 malignant)
@@ -13,14 +13,15 @@
 # CONFIGURACIÓN:
 #   - weight_source: custom (warm-start desde pretrain exp07: RadImageNet → DDSM → final.pt)
 #   - freeze_backbone: false (fine-tuning completo)
-#   - Sin descongelamiento progresivo
+#   - Sin descongelamiento progresivo (local_unfreeze_at_epoch: null)
+#   - strict_load: false
 #   - FedProx con proximal_mu: 0.1
 #   - 34 rondas, 3 épocas locales
 #   - Learning rates bajos: lr_head=0.0005, lr_backbone=0.00005
 #
 # COHERENCIA servidor↔cliente:
 #   model.freeze_backbone, local_unfreeze_at_epoch, unfreeze_layers,
-#   training.scheduler.t_max y federated.rounds DEBEN coincidir con server.yaml.
+#   training.scheduler.t_max, federated.rounds y federated.strategy DEBEN coincidir con server.yaml.
 
 name: exp14_fedprox_resnet50
 mode: federated
@@ -46,8 +47,8 @@ data:
 model:
   name: resnet50
   weight_source: custom                              # warm-start desde pretrain exp07 (RadImageNet → DDSM)
-  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
-  strict_load: true
+  checkpoint_path: runs/exp07_pretrain_ddsm/exp07_pretrain_ddsm/final.pt
+  strict_load: false
   in_channels: 3
   num_classes: 1
   dropout: 0.0
@@ -57,18 +58,18 @@ model:
   unfreeze_layers: null           # DEBE coincidir con el servidor
 
 training:
-  local_epochs: 3                 # corto para muchas rondas — DEBE coincidir con el servidor
+  local_epochs: 3                 # 3 épocas (corto para muchas rondas) — DEBE coincidir con el servidor
   grad_clip_norm: 1.0
   mixed_precision: true
   optimizer:
     name: adamw
     lr: 1.0e-4
-    lr_head: 0.0005
+    lr_head: 0.0005               # learning rates más bajos para FedProx
     lr_backbone: 0.00005
     weight_decay: 0.0001
   scheduler:
     name: cosine
-    t_max: 34                    # total rondas (no por-ronda)
+    t_max: 34                    # total rondas — DEBE coincidir con el servidor
   augmentation:
     horizontal_flip: true
     rotate_limit: 15
@@ -87,4 +88,4 @@ federated:
   strategy:
     name: fedprox
     params:
-      proximal_mu: 0.1
+      proximal_mu: 0.1             # DEBE coincidir con el servidor
