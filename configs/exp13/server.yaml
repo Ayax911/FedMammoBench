@@ -29,8 +29,8 @@ data:
 model:
   name: resnet50
   weight_source: custom                              # warm-start desde pretrain exp07 (RadImageNet → DDSM)
-  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
-  strict_load: true
+  checkpoint_path: runs/exp07_pretrain_ddsm/exp07_pretrain_ddsm/final.pt
+  strict_load: false
   in_channels: 3
   num_classes: 1
   dropout: 0.0

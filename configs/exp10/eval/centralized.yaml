@@ -1,12 +1,12 @@
-name: exp12_fedavg_resnet50
-mode: federated
+name: exp10_centralized_resnet50
+mode: centralized
 seed: 42
-output_dir: runs/exp12_fedavg_resnet50
+output_dir: runs/exp10_centralized_resnet50
 device: auto
 
 data:
   name: mammo_bench
-  manifest_path: manifests/dmid-split.csv
+  manifest_path: manifests/mamo-bench-split.csv
   image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench
   image_size: 224
   grayscale: false
@@ -21,18 +21,17 @@ data:
 
 model:
   name: resnet50
-  weight_source: custom
-  checkpoint_path: runs/exp07_pretrain_ddsm/exp07_pretrain_ddsm/final.pt
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
   in_channels: 3
   num_classes: 1
   dropout: 0.0
-  freeze_backbone: true
+  freeze_backbone: false
   unfreeze_at_epoch: null
-  local_unfreeze_at_epoch: 4
-  unfreeze_layers: [layer4, fc]
+  unfreeze_layers: null
 
 training:
-  local_epochs: 15
+  epochs: 100
   grad_clip_norm: 1.0
   mixed_precision: true
   optimizer:
@@ -43,7 +42,7 @@ training:
     weight_decay: 1.0e-4
   scheduler:
     name: cosine
-    t_max: 15
+    t_max: 100
   augmentation:
     horizontal_flip: true
     rotate_limit: 15
@@ -56,9 +55,3 @@ training:
 evaluation:
   threshold: 0.5
   save_predictions: true
-
-federated:
-  rounds: 7
-  strategy:
-    name: fedavg
-    params: {}

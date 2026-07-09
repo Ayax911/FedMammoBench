@@ -1,13 +1,13 @@
-# exp14_fedprox_resnet50 — SERVIDOR CENTRAL (5 nodos, FedProx, 25 rondas)
+# exp14_fedprox_resnet50 — SERVIDOR CENTRAL (5 nodos, FedProx, 34 rondas)
 #
 # Configuración experimental para FedProx con fine-tuning más agresivo:
 #   - weight_source: custom (warm-start desde pretrain exp07: RadImageNet → DDSM → final.pt)
 #   - freeze_backbone: false (fine-tuning completo)
 #   - local_epochs: 3 (corto para muchas rondas)
-#   - rounds: 25 (convergencia lenta requiere más rondas)
+#   - rounds: 34 (convergencia lenta requiere más rondas)
 #   - strategy: fedprox con proximal_mu: 0.1 (regularización para no-IID)
 #   - learning rates más bajos: lr_head=0.0005, lr_backbone=0.00005
-#   - scheduler.t_max: 25 (total rondas, no por-ronda)
+#   - scheduler.t_max: 34 (total rondas, no por-ronda)
 #
 # EVALUACIÓN: data.name=none → evaluación 100% federada.
 
@@ -32,8 +32,8 @@ data:
 model:
   name: resnet50
   weight_source: custom                              # warm-start desde pretrain exp07 (RadImageNet → DDSM)
-  checkpoint_path: runs/exp07_pretrain_ddsm/final.pt
-  strict_load: true
+  checkpoint_path: runs/exp07_pretrain_ddsm/exp07_pretrain_ddsm/final.pt
+  strict_load: false
   in_channels: 3
   num_classes: 1
   dropout: 0.0
@@ -54,7 +54,7 @@ training:
     weight_decay: 0.0001
   scheduler:
     name: cosine
-    t_max: 25             # total rondas (no por-ronda)
+    t_max: 34             # total rondas (no por-ronda)
   augmentation:
     normalize_preset: radimagenet_rgb
   loss:
@@ -67,7 +67,7 @@ evaluation:
 
 federated:
   num_clients: 5
-  rounds: 25
+  rounds: 34
   fraction_fit: 1.0
   fraction_evaluate: 1.0
   min_fit_clients: 5

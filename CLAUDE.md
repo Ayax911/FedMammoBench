@@ -29,17 +29,22 @@ fedmammobench-centralized --config configs/exp08/centralized.yaml
 # Post-hoc evaluation on a checkpoint
 fedmammobench-evaluate --config configs/<exp>/server.yaml --checkpoint runs/<name>/global_model.pt
 
-# Multi-device gRPC mode
+# Multi-device gRPC mode (manual)
 python scripts/run_server.py --config configs/exp07/server.yaml   # on the aggregation server
 python scripts/run_client.py --config configs/exp07/client.yaml \
   --server 192.168.1.10:8080 --client-id 0 \
   --manifest manifests/node0_manifest.csv --data-dir data/       # on each node
 
+# Docker federated deployment (automated, all in containers)
+scripts/docker-deploy-federated.sh exp14                          # Launch server + 5 clients
+scripts/docker-deploy-federated.sh exp14 --monitor                # Monitor until Round 1 completes
+scripts/docker-deploy-federated.sh exp14 --no-clean               # Skip cleanup of previous containers
+
 # Plot experiment metrics
 python scripts/plot_experiment.py runs/<name>/
 ```
 
-Python 3.11 is required (strict `>=3.11,<3.12`). The venv at `./venv/` is already configured.
+Python 3.11 is required (strict `>=3.11,<3.12`). The venv at `./.venv/` is already configured. Runtime deps are pinned in `requirements.txt` (not `pyproject.toml`, which carries only loose constraints); for GPU boxes install `torch`/`torchvision` from the CUDA wheel index *before* `pip install -r requirements.txt`.
 
 ## Architecture
 
@@ -102,6 +107,8 @@ Every run writes under `runs/<name>/`:
 - `radimagenet` — requires `$FEDMAMMOBENCH_RADIMAGENET_DIR` env var pointing to downloaded checkpoints
 - `custom` — `model.checkpoint_path` to a `.pt` file (used for warm-start from a pretrain run)
 - `none` — random init (ablation)
+
+**⚠️ Checkpoint key-namespace gotcha (causes federated collapse to ~chance).** `save_checkpoint` serializes the **full wrapper** model, so the project's own `.pt` files (`final.pt`, `global_model.pt`) carry keys prefixed `backbone.` (320/320 for resnet50). But the `custom` loader (`weight_loaders/custom.py`) loads into `model.backbone`, which expects **bare** keys (`conv1.weight`, …) — a total mismatch. With `strict_load: false` this fails **silently** (0 tensors loaded) and the model keeps random init, so `custom` warm-start from a pretrain checkpoint is a no-op and the federated global model trains from scratch (~0.5 AUC while centralized `radimagenet` reaches ~0.82). The misleading `LoadReport ... missing=0 unexpected=0` log line is unpopulated and hides it; the real signal is the `Missing keys ['conv1.weight'...]` / `Unexpected keys ['backbone.conv1.weight'...]` warnings just above it. **Guard:** set `strict_load: true` for `custom` warm-start (or fix `custom.py` to normalize the `backbone.` prefix and verify missing/unexpected keys). The `radimagenet`/`imagenet` loaders are unaffected — they consume backbone-only checkpoints and remap keys. Post-hoc `run_evaluation.py` is unaffected too: it re-loads via `load_checkpoint(--checkpoint, model)` into the full wrapper with `strict=True`.
 
 ### Experiment configs layout
 

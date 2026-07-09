@@ -6,7 +6,7 @@ device: auto
 
 data:
   name: mammo_bench
-  manifest_path: manifests/dmid-split.csv
+  manifest_path: manifests/mamo-bench-split.csv
   image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench
   image_size: 224
   grayscale: false
