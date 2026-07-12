@@ -38,6 +38,11 @@ if [ -z "$MAMMO_DATA" ]; then
   export MAMMO_DATA
 fi
 
+if [ -z "$WEIGHTS_DIR" ]; then
+  WEIGHTS_DIR="$REPO/weights"
+  export WEIGHTS_DIR
+fi
+
 # Check config exists
 if [ ! -f "$REPO/configs/$EXPERIMENT/server.yaml" ]; then
   echo -e "${RED}✗ Config not found: $REPO/configs/$EXPERIMENT/server.yaml${NC}"
@@ -47,6 +52,7 @@ fi
 echo -e "${YELLOW}=== Docker Deployment: $EXPERIMENT ===${NC}"
 echo "REPO: $REPO"
 echo "MAMMO_DATA: $MAMMO_DATA"
+echo "WEIGHTS_DIR: $WEIGHTS_DIR"
 echo ""
 
 # Clean previous containers
@@ -60,14 +66,14 @@ launch_server() {
   echo -e "${YELLOW}[1/6] Launching server...${NC}"
   docker run -d --name "${EXPERIMENT}_server" --gpus all --network host \
     -v "$REPO/configs:/app/configs:ro" \
-    -v "$REPO/weights:/app/weights:ro" \
+    -v "$WEIGHTS_DIR:/app/weights:ro" \
     -v "$REPO/runs:/app/runs" \
     ayax911/federal-learning:latest \
     python scripts/run_server.py \
       --config "configs/$EXPERIMENT/server.yaml" \
       --address 0.0.0.0:8080
 
-  sleep 3
+  sleep 10
   if docker logs "${EXPERIMENT}_server" 2>&1 | grep -q "gRPC server running"; then
     echo -e "${GREEN}✓ Server ready${NC}"
     return 0
@@ -89,7 +95,7 @@ launch_client() {
   docker run -d --name "${EXPERIMENT}_client$client_id" --gpus all --network host \
     -v "$REPO/configs:/app/configs:ro" \
     -v "$REPO/manifests:/app/manifests:ro" \
-    -v "$REPO/weights:/app/weights:ro" \
+    -v "$WEIGHTS_DIR:/app/weights:ro" \
     -v "$MAMMO_DATA:/app/data:ro" \
     -v "$REPO/runs:/app/runs" \
     ayax911/federal-learning:latest \
@@ -99,7 +105,7 @@ launch_client() {
       --client-id "$client_id" \
       --manifest "manifests/$manifest"
 
-  sleep 5
+  sleep 8
   if docker logs "${EXPERIMENT}_client$client_id" 2>&1 | grep -q "data loaded"; then
     local samples=$(docker logs "${EXPERIMENT}_client$client_id" 2>&1 | grep "train=" | grep -oP 'train=\K\d+' | head -1)
     echo -e "${GREEN}✓ Client $client_id ready ($samples train samples)${NC}"
