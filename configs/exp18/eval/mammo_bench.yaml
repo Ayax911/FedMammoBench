@@ -1,0 +1,60 @@
+# exp18_fedavg_resnet50 — POST-HOC EVALUATION (test)
+#
+# Evaluación de global_model.pt exp18 en el split completo de Mammo-Bench.
+#
+# Comando:
+#   fedmammobench-evaluate --config configs/exp18/test.yaml --checkpoint runs/exp18_fedavg_resnet50/exp18_fedavg_resnet50/global_model.pt
+
+name: exp18_fedavg_resnet50
+mode: evaluation
+seed: 42
+output_dir: runs/exp18_fedavg_resnet50
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/mamo-bench-split.csv   # test split completo (todos los datasets)
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.0
+  test_fraction: 0.0
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: false
+
+model:
+  weight_source: none
+  name: resnet50
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false
+  unfreeze_at_epoch: null
+  unfreeze_layers: null
+
+training:
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 1
+  augmentation:
+    horizontal_flip: false
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: false
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
