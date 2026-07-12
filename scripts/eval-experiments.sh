@@ -97,8 +97,25 @@ if [ -z "$CHECKPOINT" ] || [ ! -f "$CHECKPOINT" ]; then
   exit 1
 fi
 
+# ── Extraer nombre completo del experimento (del YAML) ──────────────────
+# Buscar en server.yaml, client.yaml o cualquier YAML en la carpeta
+EXP_NAME=""
+for yaml_file in "configs/$EXP"/server.yaml "configs/$EXP"/client.yaml "configs/$EXP"/*.yaml; do
+  if [ -f "$yaml_file" ]; then
+    EXP_NAME=$(grep "^name:" "$yaml_file" | head -1 | sed 's/^name:\s*//' | tr -d ' ')
+    if [ -n "$EXP_NAME" ]; then
+      break
+    fi
+  fi
+done
+
+if [ -z "$EXP_NAME" ]; then
+  log "${RED}✗ No se encontró 'name:' en configs/$EXP/*.yaml${NC}"
+  exit 1
+fi
+
 # ── Detectar configs de eval ─────────────────────────────────────────────
-log "${YELLOW}=== Evaluación: $EXP ===${NC}"
+log "${YELLOW}=== Evaluación: $EXP (nombre: $EXP_NAME) ===${NC}"
 log "Modo: $MODE"
 log "Dataset: $DATASET"
 log "Checkpoint: $CHECKPOINT"
@@ -159,7 +176,7 @@ declare -a RESULTS
 
 for cfg_name in "${CONFIGS_TO_RUN[@]}"; do
   cfg_file="configs/$EXP/eval/$cfg_name"
-  eval_out_dir="$OUTPUT_BASE/$EXP/eval/${cfg_name%.yaml}"
+  eval_out_dir="$OUTPUT_BASE/$EXP_NAME/eval/${cfg_name%.yaml}"
 
   log "${CYAN}Evaluando $cfg_name...${NC}"
   mkdir -p "$eval_out_dir"
@@ -203,5 +220,5 @@ for result in "${RESULTS[@]}"; do
 done
 
 log ""
-log "Outputs: $OUTPUT_BASE/$EXP/eval/"
+log "Outputs: $OUTPUT_BASE/$EXP_NAME/eval/"
 log "Master log: $EVAL_LOG"
