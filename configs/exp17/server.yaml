@@ -1,0 +1,85 @@
+# exp17_fedavg_resnet50 — SERVIDOR CENTRAL (5 nodos, warm-start exp15, freeze progresivo)
+#
+# Réplica de exp12 con warm-start desde exp15 en vez de exp07 (misma receta de
+# pretrain DDSM, corrida con el código ya corregido — ver CLAUDE.md, fixes de
+# 2026-07-08). Comparable con exp16 (centralizado) y exp18/19 (mismo checkpoint
+# de partida y mismo learning rate; solo cambia la estrategia de entrenamiento).
+#
+#   - 15 épocas locales por ronda (4 frozen fc + 11 unfrozen fc+layer4)
+#   - 7 rondas federadas
+#   - Métricas por época guardadas en clients/client_<id>/epoch_metrics.csv
+#     (train_loss, task_loss, val_loss, val_auc, val_f1, val_sensitivity, val_specificity)
+#   - Predicciones enriquecidas con columnas del manifest (image_path, patient_id, ...)
+#     en clients/client_<id>/predictions.csv
+#
+# WARM START: el servidor carga los pesos del pre-entrenamiento centralizado
+# con DDSM (configs/exp15/pretrain.yaml → runs/exp15_pretrain_ddsm/exp15_pretrain_ddsm/final.pt).
+#
+# EVALUACIÓN: data.name=none → evaluación 100% federada.
+
+name: exp17_fedavg_resnet50
+mode: federated
+seed: 42
+output_dir: runs/exp17_fedavg_resnet50
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: custom                           # warm start desde pretrain centralizado con DDSM (exp15)
+  checkpoint_path: runs/exp15_pretrain_ddsm/exp15_pretrain_ddsm/final.pt
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: true           # backbone re-congelado al inicio de cada ronda
+  unfreeze_at_epoch: null         # sin unfreeze global por ronda
+  local_unfreeze_at_epoch: 4      # descongelar layer4+fc a partir de la época local 4 de cada ronda
+  unfreeze_layers: [layer4, fc]
+
+training:
+  local_epochs: 15
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 15             # = training.local_epochs (scheduler se reinicia cada ronda)
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 7
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedavg
+    params: {}

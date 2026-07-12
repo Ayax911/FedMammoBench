@@ -1,0 +1,70 @@
+# exp15_pretrain_ddsm — BASELINE CENTRALIZADO CON DDSM
+#
+# Entrenamiento puramente centralizado sobre DDSM (no es un paso de warm-start
+# para un experimento federado; a diferencia de exp07_pretrain_ddsm, exp15 no
+# tiene server.yaml/client.yaml — comparable con exp07/10/12/13/14 como corrida
+# independiente con el código ya corregido, ver runs/exp15_pretrain_ddsm/exp15_pretrain_ddsm/
+# para el checkpoint final (output_dir/name anidado)).
+# Se entrena sobre los splits train/val del manifest (ddsm-split.csv ya trae
+# la columna split).
+#
+# Comando:
+#   fedmammobench-centralized --config configs/exp15/pretrain.yaml
+
+name: exp15_pretrain_ddsm
+mode: centralized
+seed: 42
+output_dir: runs/exp15_pretrain_ddsm
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/ddsm-split.csv     # split column: train/val/test
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1        # IGNORADO: ddsm-split.csv ya trae split explícito
+  test_fraction: 0.1       # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true    # benign 5092 vs malignant 2716 → pos_weight automático
+
+model:
+  name: resnet50
+  weight_source: radimagenet          # arrancar desde RadImageNet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1                      # logit único: BCEWithLogitsLoss
+  dropout: 0.0
+  freeze_backbone: true
+  unfreeze_at_epoch: 5                # descongelar en época 5/20 (~25% del entrenamiento)
+  unfreeze_layers: [layer4, fc]
+
+training:
+  epochs: 100
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 100                        # = training.epochs
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
