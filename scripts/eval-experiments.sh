@@ -176,7 +176,7 @@ declare -a RESULTS
 
 for cfg_name in "${CONFIGS_TO_RUN[@]}"; do
   cfg_file="configs/$EXP/eval/$cfg_name"
-  eval_out_dir="$OUTPUT_BASE/$EXP_NAME/eval/${cfg_name%.yaml}"
+  eval_out_dir="$OUTPUT_BASE/$EXP_NAME/$EXP_NAME/eval/${cfg_name%.yaml}"
 
   log "${CYAN}Evaluando $cfg_name...${NC}"
   mkdir -p "$eval_out_dir"
@@ -220,5 +220,5 @@ for result in "${RESULTS[@]}"; do
 done
 
 log ""
-log "Outputs: $OUTPUT_BASE/$EXP_NAME/eval/"
+log "Outputs: $OUTPUT_BASE/$EXP_NAME/$EXP_NAME/eval/"
 log "Master log: $EVAL_LOG"
