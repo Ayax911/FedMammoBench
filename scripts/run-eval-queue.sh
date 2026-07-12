@@ -1,5 +1,6 @@
 #!/bin/bash
 # Post-hoc evaluation for experiments 15-19 on mamo-bench-split.csv
+# Executes sequentially and logs to a single master log file in runs/_logs/eval/.
 
 set -e
 
@@ -10,19 +11,24 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 REPO="${REPO:-.}"
-LOG_DIR="${REPO}/runs"
+mkdir -p "$REPO/runs/_logs/eval"
+EVAL_LOG="$REPO/runs/_logs/eval/eval_$(date +%Y%m%d_%H%M%S).log"
 
-echo -e "${YELLOW}=== Post-hoc Test Evaluation (exp15-19) ===${NC}"
-echo "Test split: mamo-bench-split.csv (all datasets)"
-echo ""
+log() {
+  echo -e "$1" | tee -a "$EVAL_LOG"
+}
 
-# Define experiments
+log "${YELLOW}=== Post-hoc Evaluation (exp15-19) ===${NC}"
+log "Test split: mamo-bench-split.csv (all datasets)"
+log ""
+
+# Define experiments: exp_id:checkpoint_path:output_dir_parent
 experiments=(
-  "exp15:runs/exp15_pretrain_ddsm/exp15_pretrain_ddsm/final.pt"
-  "exp16:runs/exp16_centralized_resnet50/exp16_centralized_resnet50/final.pt"
-  "exp17:runs/exp17_fedavg_resnet50/exp17_fedavg_resnet50/global_model.pt"
-  "exp18:runs/exp18_fedavg_resnet50/exp18_fedavg_resnet50/global_model.pt"
-  "exp19:runs/exp19_fedprox_resnet50/exp19_fedprox_resnet50/global_model.pt"
+  "exp15:runs/exp15_pretrain_ddsm/exp15_pretrain_ddsm/final.pt:runs/exp15_pretrain_ddsm"
+  "exp16:runs/exp16_centralized_resnet50/exp16_centralized_resnet50/final.pt:runs/exp16_centralized_resnet50"
+  "exp17:runs/exp17_fedavg_resnet50/exp17_fedavg_resnet50/global_model.pt:runs/exp17_fedavg_resnet50"
+  "exp18:runs/exp18_fedavg_resnet50/exp18_fedavg_resnet50/global_model.pt:runs/exp18_fedavg_resnet50"
+  "exp19:runs/exp19_fedprox_resnet50/exp19_fedprox_resnet50/global_model.pt:runs/exp19_fedprox_resnet50"
 )
 
 # Summary tracking
@@ -31,13 +37,18 @@ i=0
 
 for exp_spec in "${experiments[@]}"; do
   exp="${exp_spec%%:*}"
-  checkpoint="${exp_spec##*:}"
+  rest="${exp_spec#*:}"
+  checkpoint="${rest%%:*}"
+  output_dir_parent="${rest##*:}"
 
-  echo -e "${YELLOW}[${i}] Evaluating $exp...${NC}"
+  eval_out_dir="$output_dir_parent/eval/mammo_bench"
+
+  log ""
+  log "${YELLOW}[${i}] Evaluating $exp...${NC}"
 
   # Check checkpoint exists
   if [ ! -f "$REPO/$checkpoint" ]; then
-    echo -e "${RED}✗ Checkpoint not found: $checkpoint${NC}"
+    log "${RED}✗ Checkpoint not found: $checkpoint${NC}"
     results+=("  [✗] $exp: missing checkpoint")
     i=$((i+1))
     continue
@@ -46,23 +57,26 @@ for exp_spec in "${experiments[@]}"; do
   # Run evaluation
   if fedmammobench-evaluate \
     --config "$REPO/configs/$exp/eval/mammo_bench.yaml" \
-    --checkpoint "$REPO/$checkpoint" > "$LOG_DIR/${exp}_test.log" 2>&1; then
+    --checkpoint "$REPO/$checkpoint" \
+    --output-dir "$REPO/$eval_out_dir" \
+    --predictions-out "$REPO/$eval_out_dir/predictions.csv" \
+    >> "$EVAL_LOG" 2>&1; then
 
-    echo -e "${GREEN}✓ $exp test complete${NC}"
+    log "${GREEN}✓ $exp eval complete${NC}"
     results+=("  [✓] $exp: OK")
   else
-    echo -e "${RED}✗ $exp test failed${NC}"
+    log "${RED}✗ $exp eval failed${NC}"
     results+=("  [✗] $exp: FAILED")
   fi
 
-  echo ""
   i=$((i+1))
 done
 
 # Summary
-echo -e "${YELLOW}=== Test Summary ===${NC}"
+log ""
+log "${YELLOW}=== Evaluation Summary ===${NC}"
 for result in "${results[@]}"; do
-  echo -e "$result"
+  log "$result"
 done
-echo ""
-echo "Logs: $LOG_DIR/<exp>_test.log"
+log ""
+log "Master log: $EVAL_LOG"

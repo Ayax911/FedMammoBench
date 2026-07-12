@@ -58,13 +58,27 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="Optional CSV path to dump per-sample predictions.",
     )
+    p.add_argument(
+        "--output-dir",
+        default=None,
+        type=str,
+        help="Optional output directory for run.log and metrics.json.",
+    )
     return p.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     cfg = load_config(args.config)
-    setup_logging()
+
+    # Setup logging to file if output_dir is provided
+    log_file = None
+    if args.output_dir:
+        output_dir = Path(args.output_dir).expanduser().resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        log_file = output_dir / "run.log"
+
+    setup_logging(log_file=log_file)
     logger = get_logger("evaluate")
     set_global_seed(cfg.seed, deterministic=True)
 
@@ -96,6 +110,12 @@ def main() -> int:
     summary = {k: v for k, v in result.items() if isinstance(v, (int, float))}
     logger.info("Metrics on %s: %s", args.split, json.dumps(summary, indent=2, default=str))
     print(json.dumps(summary, indent=2, default=str))
+
+    # Write metrics.json if output_dir is provided
+    if args.output_dir:
+        metrics_file = Path(args.output_dir) / "metrics.json"
+        metrics_file.write_text(json.dumps(summary, indent=2, default=str))
+        logger.info("Metrics written to %s", metrics_file)
 
     if args.predictions_out is not None and "y_true" in result and "y_prob" in result:
         y_true = np.asarray(result["y_true"])
