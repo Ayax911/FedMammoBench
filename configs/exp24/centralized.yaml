@@ -1,0 +1,74 @@
+# exp24_centralized_radimagenet — BASELINE CENTRALIZADO, RadImageNet init (sin DDSM pretrain)
+#
+# Réplica de exp20, re-ejecutada tras corregir la colisión de IDs entre datasets
+# (cada dataset ahora tiene sufijo propio: _CD cdd-cesm, _CM cmmd, _DM dmid, _I inbreast,
+# _K kau-bcmd, _DD ddsm — 0 IDs duplicados y 0 overlap train/val/test en el manifest).
+# Entrena centralmente sobre los 5 datasets (mammo_bench_split_no_ddsm_rsna.csv),
+# SIN usar DDSM como pretrain compartido.
+#
+# Estructura del manifest (manifests/mamo-bench-split-no-ddsm-rsna.csv):
+#   train: 7 463 imgs  val: 934 imgs  test: 934 imgs  (9 331 total, 5 datasets)
+#   (splits ya definidos en el CSV — val/test_fraction ignorados)
+#
+# Learning rate igual al de exp25/exp26 (lr=1e-4, lr_head=1e-3, lr_backbone=1e-4)
+# para que la única variable entre exp24 y exp25/exp26 sea centralizado vs. federado.
+#
+# Comando:
+#   fedmammobench-centralized --config configs/exp24/centralized.yaml
+# (o vía /docker-run exp24)
+
+name: exp24_centralized_radimagenet
+mode: centralized
+seed: 42
+output_dir: runs/exp24_centralized_radimagenet
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/mamo-bench-split-no-ddsm-rsna.csv   # 9 331 imgs, 5 datasets (sin DDSM)
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1        # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.1       # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true    # datasets desbalanceados (kau-bcmd, cmmd)
+
+model:
+  name: resnet50
+  weight_source: radimagenet          # RadImageNet directamente (no exp15 pretrain)
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1                    # logit único: BCEWithLogitsLoss
+  dropout: 0.0
+  freeze_backbone: false
+
+training:
+  epochs: 100
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 100
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
