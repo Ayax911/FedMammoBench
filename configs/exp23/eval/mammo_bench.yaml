@@ -1,5 +1,6 @@
 name: exp23_fedprox_radimagenet_cleaned_eval
 mode: centralized
+output_dir: runs/exp23_fedprox_radimagenet_cleaned
 
 data:
   name: mammo_bench

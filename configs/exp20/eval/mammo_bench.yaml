@@ -1,5 +1,6 @@
 name: exp20_centralized_radimagenet_eval
 mode: centralized
+output_dir: runs/exp20_centralized_radimagenet
 
 data:
   name: mammo_bench

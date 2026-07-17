@@ -1,5 +1,6 @@
 name: exp27_centralized_ddsm_pretrain_eval
 mode: centralized
+output_dir: runs/exp27_centralized_ddsm_pretrain
 
 data:
   name: mammo_bench
