@@ -269,7 +269,17 @@ class NodeMetricsRecorder:
         device = resolve_device(cfg.device)
         model = build_model(cfg.model).to(device)
         load_ndarrays_to_state_dict(model, ndarrays, strict=True)
-        out = Path(path) if path is not None else (self.out_root / "global_model.pt")
+        # Weights live in a "weights/" sibling of self.out_root (which is
+        # normally <output_dir>/<name>/), not inside it, so the (large)
+        # checkpoint can be excluded from a sync/upload of the rest of the
+        # run's metrics/logs by folder alone. Derived from self.out_root
+        # (not cfg.output_dir) so it stays correct even when the recorder was
+        # constructed with an explicit/overridden out_root.
+        out = (
+            Path(path)
+            if path is not None
+            else (self.out_root.parent / "weights" / "global_model.pt")
+        )
         save_checkpoint(
             out,
             model,
