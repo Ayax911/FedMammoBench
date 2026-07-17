@@ -90,9 +90,13 @@ Each federated round (simulation or gRPC):
 4. **Clients** evaluate the aggregated model on their local val split; strategy `aggregate_evaluate` weighted-averages → logged to `server_federated_metrics.csv`.
 5. **`NodeMetricsRecorder`** (wraps the strategy) captures per-node fit/eval CSVs, per-round timing, and saves `global_model.pt` at the end.
 
+Two frozen-backbone subtleties in that loop (both fixed 2026-07-08, regression tests in `tests/test_audit_fixes.py`):
+- **BatchNorm drift under freeze.** `model.train()` (called every epoch) re-enables *all* modules including frozen-backbone BN layers, which keep updating `running_mean`/`running_var` even though `requires_grad=False` stops γ/β from updating. `Trainer` re-pins BN layers with frozen affine params back to `eval()` after each `train()` call (`_freeze_bn_running_stats`) — otherwise per-client BN stats drift independently and get corrupted on aggregation.
+- **Cyclic unfreeze needs a new optimizer param group.** When `local_unfreeze_at_epoch` triggers a mid-round unfreeze, the optimizer was built while those layers were still frozen and won't otherwise receive their params — `FedMammoBenchClient.fit` (`federated/client.py`) diffs newly-`requires_grad` params against the optimizer's existing param IDs and calls `optimizer.add_param_group(...)` for the new ones (using `optimizer.lr_backbone` if set).
+
 ### Outputs
 
-Every run writes under `runs/<name>/`:
+**Training runs** write under `runs/<name>/`:
 - `server_federated_metrics.csv` — primary federated metric (weighted avg across nodes)
 - `server_metrics.csv` — centralized evaluation on server holdout (opt-in via `data.name != none`)
 - `server_timing.csv` / `timing_summary.csv` — per-round and total wall times
@@ -100,15 +104,25 @@ Every run writes under `runs/<name>/`:
 - `clients/client_<id>/fit_metrics.csv`, `eval_metrics.csv` — per-node local view
 - `tb/` — TensorBoard event files
 
+**Post-hoc evaluation** (via `scripts/run-eval-queue.sh` or `fedmammobench-evaluate --output-dir`) writes under `runs/<exp>/eval/<config_name>/`:
+- `run.log` — evaluation logs
+- `metrics.json` — summary metrics (accuracy, precision, recall, auc, etc.)
+- `predictions.csv` — per-sample predictions (if `--predictions-out` was passed)
+
+**Orchestration logs** (multi-experiment queues) live in centralized directories:
+- `runs/_logs/queue/queue_<timestamp>.log` — master log for `scripts/run-queue.sh` (training queue)
+- `runs/_logs/eval/eval_<timestamp>.log` — master log for `scripts/run-eval-queue.sh` (evaluation queue)
+
 ### Transfer learning / weight sources
 
 `model.weight_source` controls how pretrained weights are injected (in `models/weight_loaders/`):
+- `auto` (default) — infers from the legacy `model.pretrained` bool: `True` → `imagenet`, `False` → `none`. Explicit `weight_source` takes precedence.
 - `imagenet` — torchvision defaults
 - `radimagenet` — requires `$FEDMAMMOBENCH_RADIMAGENET_DIR` env var pointing to downloaded checkpoints
 - `custom` — `model.checkpoint_path` to a `.pt` file (used for warm-start from a pretrain run)
 - `none` — random init (ablation)
 
-**⚠️ Checkpoint key-namespace gotcha (causes federated collapse to ~chance).** `save_checkpoint` serializes the **full wrapper** model, so the project's own `.pt` files (`final.pt`, `global_model.pt`) carry keys prefixed `backbone.` (320/320 for resnet50). But the `custom` loader (`weight_loaders/custom.py`) loads into `model.backbone`, which expects **bare** keys (`conv1.weight`, …) — a total mismatch. With `strict_load: false` this fails **silently** (0 tensors loaded) and the model keeps random init, so `custom` warm-start from a pretrain checkpoint is a no-op and the federated global model trains from scratch (~0.5 AUC while centralized `radimagenet` reaches ~0.82). The misleading `LoadReport ... missing=0 unexpected=0` log line is unpopulated and hides it; the real signal is the `Missing keys ['conv1.weight'...]` / `Unexpected keys ['backbone.conv1.weight'...]` warnings just above it. **Guard:** set `strict_load: true` for `custom` warm-start (or fix `custom.py` to normalize the `backbone.` prefix and verify missing/unexpected keys). The `radimagenet`/`imagenet` loaders are unaffected — they consume backbone-only checkpoints and remap keys. Post-hoc `run_evaluation.py` is unaffected too: it re-loads via `load_checkpoint(--checkpoint, model)` into the full wrapper with `strict=True`.
+**Checkpoint key-namespace normalization.** `save_checkpoint` serializes the **full wrapper** model, so the project's own `.pt` files (`final.pt`, `global_model.pt`) carry keys prefixed `backbone.` (320/320 for resnet50), while a bare-backbone checkpoint doesn't. The `custom` loader (`weight_loaders/custom.py::_match_state_dict_prefix`) tries the state_dict as-is and under `module.`/`backbone.` transforms, keeping whichever maximizes key overlap with the target module, and raises `RuntimeError` if 0 tensors end up matching. Until 2026-07-08 this normalization didn't exist: the checkpoint loaded straight into `model.backbone` (bare keys expected) with no fallback, so a `backbone.`-prefixed checkpoint silently matched 0/320 tensors under `strict_load: false` and the federated global model trained from random init (~0.5 AUC vs. ~0.82 centralized) — see `tests/test_audit_fixes.py::TestCustomWarmStartLoader` for the regression coverage. The `radimagenet`/`imagenet` loaders were never affected — they consume backbone-only checkpoints and remap keys directly. Post-hoc `run_evaluation.py` was never affected either: it re-loads via `load_checkpoint(--checkpoint, model)` into the full wrapper with `strict=True`.
 
 ### Experiment configs layout
 

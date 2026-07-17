@@ -5,8 +5,10 @@ Usage::
     python scripts/run_centralized.py --config configs/radimagenet_resnet50_centralized.yaml
 
 Loads the config, builds a single train/val/test pipeline, trains for
-``training.epochs`` epochs, and saves the final checkpoint + metrics CSV +
-TensorBoard logs under ``<output_dir>/<name>/``.
+``training.epochs`` epochs, and saves metrics CSV + TensorBoard logs under
+``<output_dir>/<name>/``. The final checkpoint goes to ``<output_dir>/weights/``
+instead, a sibling of ``<name>/`` and ``eval/``, so it can be excluded from a
+sync/upload of the rest of the run by folder alone.
 """
 
 from __future__ import annotations
@@ -125,7 +127,13 @@ def main() -> int:
         epochs=cfg.training.epochs,
     )
 
-    save_checkpoint(out_root / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs)
+    # Weights live in a "weights/" sibling of out_root (normally
+    # <output_dir>/<name>/), not inside it, so the (large) checkpoint can be
+    # excluded from a sync/upload of the rest of the run's metrics/logs by
+    # folder alone. Derived from out_root (not cfg.output_dir) so it stays
+    # correct even when --output-dir overrides the default.
+    weights_dir = out_root.parent / "weights"
+    save_checkpoint(weights_dir / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs)
 
     test_metrics = evaluator.evaluate(test_loader, criterion=criterion)
     logger.info("Test metrics: %s", {k: v for k, v in test_metrics.items() if k != "y_true"})

@@ -37,7 +37,7 @@ configs/
 
 ## Variables de entorno
 
-Definir en la terminal antes de lanzar cualquier contenedor:
+Definir en la terminal antes de lanzar cualquier contenedor. `MAMMO_DATA` y `WEIGHTS_DIR` **cambian según la máquina** (dataset y pesos preentrenados suelen vivir en discos externos gitignored) — nunca hardcodear sus rutas en un `docker run`, siempre pasarlas por variable:
 
 ```bash
 # Raíz del repositorio en el host
@@ -45,6 +45,12 @@ REPO="ruta/al/proyecto/Federal-Learning"
 
 # Directorio que contiene Preprocessed_Dataset/ con las imágenes JPG
 MAMMO_DATA="/ruta/a/mammo-bench/data"
+
+# Carpeta con checkpoints preentrenados (RadImageNet, warm-starts). Default: $REPO/weights
+WEIGHTS_DIR="$REPO/weights"
+
+# Imagen Docker a usar
+IMAGE_TAG="ayax911/federal-learning:latest"
 ```
 
 ---
@@ -57,11 +63,26 @@ Todos los contenedores usan este conjunto base de mounts:
 |---|---|
 | `-v "$REPO/configs:/app/configs:ro"` | YAMLs de configuración |
 | `-v "$REPO/manifests:/app/manifests:ro"` | CSVs de splits por dataset |
-| `-v "$REPO/weights:/app/weights:ro"` | Checkpoints de pesos preentrenados |
+| `-v "$WEIGHTS_DIR:/app/weights:ro"` | Checkpoints de pesos preentrenados |
 | `-v "$MAMMO_DATA:/app/data:ro"` | Imágenes mamográficas |
 | `-v "$REPO/runs:/app/runs"` | Salida de experimentos (escritura) |
 
 El servidor FL no necesita `-v manifests` ni `-v data` (no carga dataset).
+
+---
+
+## Automatización (Claude Code)
+
+Los comandos manuales de este README (`docker run ...`) sirven para entender qué hace cada contenedor, pero para correr experimentos del día a día usa los comandos automatizados — resuelven las variables de entorno, detectan qué tipo de corrida es cada experimento (centralizado, federado, evaluación) leyendo `configs/<exp>/`, y piden confirmación antes de lanzar nada:
+
+| Comando | Qué hace |
+|---|---|
+| `/docker-run <exp>` | Corre un solo experimento (autodetecta pretrain/centralizado, federado o evaluación) |
+| `/docker-queue <exp1> <exp2> ...` | Corre varios experimentos **en secuencia** en background — si uno falla, sigue con el siguiente |
+| `scripts/docker-deploy-federated.sh <exp>` | Script bash directo para el patrón federado estándar de 5 nodos (server + cmmd/inbreast/cdd-cesm/kau-bcmd/dmid) |
+| `scripts/run-queue.sh <exp1> <exp2> ...` | Script bash directo detrás de `/docker-queue` |
+
+Todos respetan `REPO`/`MAMMO_DATA`/`WEIGHTS_DIR`/`IMAGE_TAG` de la tabla anterior. El `.env`/`.env.example`/`run.sh` (docker-compose) en la raíz del repo son un flujo **legacy** distinto (exp01, 2 nodos, variables `NODE_DATA_DIR`/`SERVER_ADDRESS`) — no mezclar sus variables con las de esta tabla.
 
 ---
 

@@ -44,7 +44,7 @@ Antes de crear los archivos, muestra un resumen de los cambios:
 Creando configs/exp13_fedavg_resnet50/ desde configs/exp12_fedavg_resnet50/
   server.yaml:
     name: exp12_fedavg_resnet50 → exp13_fedavg_resnet50
-    output_dir: runs/exp12 → runs/exp13
+    output_dir: runs/exp12_fedavg_resnet50 → runs/exp13_fedavg_resnet50
     training.local_epochs: 15 → 20
   client.yaml:
     (mismos campos)
@@ -54,7 +54,7 @@ Y pregunta confirmación.
 ### 6. Verificación final
 Después de crear, ejecuta:
 ```bash
-venv/bin/python -c "
+.venv/bin/python -c "
 import sys; sys.path.insert(0, 'src')
 from fedmammobench.configs import load_config
 cfg = load_config('configs/exp<NN>/server.yaml')
@@ -64,4 +64,6 @@ print('OK:', cfg.name)
 ```
 Si `validate()` lanza error, muéstralo y corrige.
 
-**Contexto del proyecto:** Los YAMLs del servidor tienen `data.name: none` (sin datos en el servidor). Los YAMLs del cliente apuntan a `manifests/node0_manifest.csv` como default. No modifiques estas rutas de datos salvo que el usuario lo pida explícitamente. El campo `checkpoint_path` en warm-start apunta a `runs/exp07_pretrain_ddsm/final.pt` — si el nuevo experimento también lo necesita, mantenerlo; si cambias `weight_source`, elimina o comenta `checkpoint_path`.
+**Contexto del proyecto:** Los YAMLs del servidor tienen `data.name: none` (sin datos en el servidor). Los YAMLs del cliente apuntan a `manifests/node0_manifest.csv` como default. No modifiques estas rutas de datos salvo que el usuario lo pida explícitamente. El campo `checkpoint_path` en warm-start apunta a `runs/exp07_pretrain_ddsm/exp07_pretrain_ddsm/final.pt` — si el nuevo experimento también lo necesita, mantenerlo; si cambias `weight_source`, elimina o comenta `checkpoint_path`.
+
+**Nota sobre `output_dir` anidado:** el código resuelve la ruta de salida como `<output_dir>/<name>`, y la convención del proyecto es fijar `output_dir: runs/<name_completo>` (idéntico a `name:`), así que las carpetas reales quedan anidadas — `runs/exp13_fedavg_resnet50/exp13_fedavg_resnet50/`, no `runs/exp13_fedavg_resnet50/` — como ya ocurre en todos los runs existentes (`exp07_pretrain_ddsm`, `exp12_fedavg_resnet50`, etc.). Es el comportamiento esperado, no un bug a corregir: al copiar el patrón del base y solo reemplazar el número/sufijo, el nuevo experimento queda anidado igual. Ten esto en cuenta al construir o verificar rutas de `checkpoint_path` que apunten a runs previos (siempre con el nombre duplicado al final).

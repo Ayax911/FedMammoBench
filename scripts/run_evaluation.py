@@ -56,7 +56,23 @@ def parse_args() -> argparse.Namespace:
         "--predictions-out",
         default=None,
         type=str,
-        help="Optional CSV path to dump per-sample predictions.",
+        help=(
+            "Optional CSV path to dump per-sample predictions. Defaults to "
+            "<output-dir>/predictions.csv when the config sets "
+            "evaluation.save_predictions: true."
+        ),
+    )
+    p.add_argument(
+        "--output-dir",
+        default=None,
+        type=str,
+        help=(
+            "Output directory for run.log and metrics.json. Defaults to "
+            "<config.output_dir>/eval/<config-file-stem>, e.g. a config at "
+            "configs/exp24/eval/mammo_bench.yaml with output_dir: "
+            "runs/exp24_centralized_radimagenet writes to "
+            "runs/exp24_centralized_radimagenet/eval/mammo_bench."
+        ),
     )
     return p.parse_args()
 
@@ -64,7 +80,19 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     cfg = load_config(args.config)
-    setup_logging()
+
+    # Output location always derives from the config unless explicitly overridden,
+    # so every eval run lands under the same runs/<exp>/eval/<config>/ convention
+    # without each caller having to reconstruct the path by hand.
+    output_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else Path(cfg.output_dir) / "eval" / Path(args.config).stem
+    ).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_file = output_dir / "run.log"
+
+    setup_logging(log_file=log_file)
     logger = get_logger("evaluate")
     set_global_seed(cfg.seed, deterministic=True)
 
@@ -88,16 +116,27 @@ def main() -> int:
         train_labels=datasets["train"].labels,
         num_classes=cfg.model.num_classes,
     ).to(device)
+
+    # predictions.csv location: explicit --predictions-out wins; otherwise fall
+    # back to the config's own evaluation.save_predictions flag.
+    predictions_out = args.predictions_out
+    if predictions_out is None and cfg.evaluation.save_predictions:
+        predictions_out = str(output_dir / "predictions.csv")
+
     evaluator = Evaluator(model, device=device, threshold=cfg.evaluation.threshold)
     result = evaluator.evaluate(
-        loader, criterion=criterion, return_predictions=args.predictions_out is not None
+        loader, criterion=criterion, return_predictions=predictions_out is not None
     )
 
     summary = {k: v for k, v in result.items() if isinstance(v, (int, float))}
     logger.info("Metrics on %s: %s", args.split, json.dumps(summary, indent=2, default=str))
     print(json.dumps(summary, indent=2, default=str))
 
-    if args.predictions_out is not None and "y_true" in result and "y_prob" in result:
+    metrics_file = output_dir / "metrics.json"
+    metrics_file.write_text(json.dumps(summary, indent=2, default=str))
+    logger.info("Metrics written to %s", metrics_file)
+
+    if predictions_out is not None and "y_true" in result and "y_prob" in result:
         y_true = np.asarray(result["y_true"])
         y_prob = np.asarray(result["y_prob"])
         y_pred = (y_prob >= cfg.evaluation.threshold).astype(int)
@@ -146,7 +185,7 @@ def main() -> int:
                         key_col,
                     )
                     df = preds
-        out_path = Path(args.predictions_out).expanduser().resolve()
+        out_path = Path(predictions_out).expanduser().resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
         logger.info(
