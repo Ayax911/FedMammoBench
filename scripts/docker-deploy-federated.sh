@@ -144,10 +144,31 @@ if [ "$MONITOR_ROUNDS" = true ]; then
 fi
 
 echo ""
+echo -e "${YELLOW}Waiting for training to complete (server runs all rounds)...${NC}"
+echo ""
+
+# Wait for server to complete all rounds by monitoring its exit
+docker wait "${EXPERIMENT}_server"
+server_exit=$?
+
+echo ""
+if [ $server_exit -eq 0 ]; then
+  echo -e "${GREEN}✓ Training completed successfully${NC}"
+else
+  echo -e "${RED}✗ Server exited with code $server_exit${NC}"
+fi
+
+# Show final metrics from server logs
+echo ""
+echo "Final round metrics:"
+docker logs "${EXPERIMENT}_server" 2>&1 | grep -E "\[ROUND" | tail -3
+
+# Clean up
+echo ""
+echo -e "${YELLOW}Cleaning up containers...${NC}"
+docker stop "${EXPERIMENT}_server" "${EXPERIMENT}_client"{1..5} 2>/dev/null || true
+docker rm "${EXPERIMENT}_server" "${EXPERIMENT}_client"{1..5} 2>/dev/null || true
+
 echo -e "${GREEN}=== Deployment Complete ===${NC}"
-echo ""
-echo "Monitor logs:"
-echo "  docker logs -f ${EXPERIMENT}_server"
-echo ""
-echo "Stop all containers:"
-echo "  docker stop ${EXPERIMENT}_server ${EXPERIMENT}_client{1..5}"
+
+exit $server_exit
