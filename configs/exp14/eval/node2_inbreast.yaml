@@ -22,7 +22,7 @@ data:
 model:
   name: resnet50
   weight_source: custom
-  checkpoint_path: runs/exp14_fedprox_resnet50/exp14_fedprox_resnet50/global_model.pt
+  checkpoint_path: runs/exp14_fedprox_resnet50/weights/global_model.pt
   strict_load: false
   in_channels: 3
   num_classes: 1

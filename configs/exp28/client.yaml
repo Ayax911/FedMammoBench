@@ -1,0 +1,81 @@
+# exp28_fedavg_radimagenet — NODOS CLIENTE (5 nodos, RadImageNet init, sin DDSM pretrain)
+#
+# Mapeo nodo → dataset (igual que exp07/exp12/exp17/exp21/exp25, vía docker-deploy-federated.sh):
+#   node1 → cmmd         (manifests/cmmd-split.csv,     ~5202 imgs)
+#   node2 → inbreast     (manifests/inbreast-split.csv,  ~410 imgs)
+#   node3 → cdd-cesm     (manifests/cdd-cesm-split.csv, ~1003 imgs)
+#   node4 → kau-bcmd     (manifests/kau-bcmd-split.csv, ~2206 imgs)
+#   node5 → dmid         (manifests/dmid-split.csv,      ~510 imgs)
+#
+# Cada nodo usa ESTE mismo YAML. Lo específico de cada nodo se pasa por CLI:
+#   --manifest manifests/<dataset>-split.csv   (ver scripts/docker-deploy-federated.sh)
+#
+# COHERENCIA servidor↔cliente:
+#   model.freeze_backbone, local_unfreeze_at_epoch, unfreeze_layers,
+#   training.scheduler.t_max y federated.rounds DEBEN coincidir con server.yaml.
+
+name: exp28_fedavg_radimagenet
+mode: federated
+seed: 42
+output_dir: runs/exp28_fedavg_radimagenet
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/cmmd-split.csv   # sobreescrito por --manifest en el workflow
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.15      # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.0      # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet                     # RadImageNet directamente
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  strict_load: false
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false                         # permitir adaptación completa
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: null                  # sin descongelación progresiva
+  unfreeze_layers: null
+
+training:
+  local_epochs: 5                 # 5 épocas locales por ronda — DEBE coincidir con el servidor
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 5                      # = local_epochs (el scheduler se reinicia cada ronda)
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  rounds: 20                       # DEBE coincidir con el servidor
+  strategy:
+    name: fedavg
+    params: {}

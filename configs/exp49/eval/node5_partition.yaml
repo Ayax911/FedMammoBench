@@ -1,0 +1,34 @@
+name: exp49_fedadam_r5e100_radimagenet_node5_eval
+mode: centralized
+output_dir: runs/exp49_fedadam_r5e100_radimagenet
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/dmid-split.csv
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  pretrained: false
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  weight_source: none
+
+training:
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true

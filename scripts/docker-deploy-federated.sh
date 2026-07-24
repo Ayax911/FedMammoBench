@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 EXPERIMENT="${1:-exp14}"
 CLEAN_FIRST=true
 MONITOR_ROUNDS=false
+PORT=8080   # gRPC port (server bind + client connect); override for parallel tracks
 
 # Parse arguments
 for arg in "$@"; do
@@ -23,6 +24,9 @@ for arg in "$@"; do
       ;;
     --monitor)
       MONITOR_ROUNDS=true
+      ;;
+    --port=*)
+      PORT="${arg#*=}"
       ;;
   esac
 done
@@ -49,7 +53,7 @@ if [ ! -f "$REPO/configs/$EXPERIMENT/server.yaml" ]; then
   exit 1
 fi
 
-echo -e "${YELLOW}=== Docker Deployment: $EXPERIMENT ===${NC}"
+echo -e "${YELLOW}=== Docker Deployment: $EXPERIMENT (port $PORT) ===${NC}"
 echo "REPO: $REPO"
 echo "MAMMO_DATA: $MAMMO_DATA"
 echo "WEIGHTS_DIR: $WEIGHTS_DIR"
@@ -71,7 +75,7 @@ launch_server() {
     ayax911/federal-learning:latest \
     python scripts/run_server.py \
       --config "configs/$EXPERIMENT/server.yaml" \
-      --address 0.0.0.0:8080
+      --address "0.0.0.0:$PORT"
 
   sleep 10
   if docker logs "${EXPERIMENT}_server" 2>&1 | grep -q "gRPC server running"; then
@@ -101,7 +105,7 @@ launch_client() {
     ayax911/federal-learning:latest \
     python scripts/run_client.py \
       --config "configs/$EXPERIMENT/client.yaml" \
-      --server 127.0.0.1:8080 \
+      --server "127.0.0.1:$PORT" \
       --client-id "$client_id" \
       --manifest "manifests/$manifest"
 

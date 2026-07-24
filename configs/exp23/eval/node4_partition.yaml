@@ -23,6 +23,8 @@ model:
   weight_source: none
 
 training:
+  augmentation:
+    normalize_preset: radimagenet_rgb
   loss:
     name: bce
     auto_class_weights: true
