@@ -7,6 +7,7 @@ from torch import nn
 
 from fedmammobench.configs.schema import ModelConfig
 from fedmammobench.models._adapt import adapt_first_conv
+from fedmammobench.models._head import build_head
 from fedmammobench.models.factory import register_model
 
 
@@ -41,10 +42,7 @@ class EfficientNetB0Classifier(nn.Module):
                 "Unexpected EfficientNet-B0 classifier layout."
             )
         in_features = backbone.classifier[-1].in_features
-        backbone.classifier = nn.Sequential(
-            nn.Dropout(p=cfg.dropout, inplace=True),
-            nn.Linear(in_features, cfg.num_classes),
-        )
+        backbone.classifier = build_head(in_features, cfg)
         self.backbone = backbone
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

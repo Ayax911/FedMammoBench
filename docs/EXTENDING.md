@@ -92,13 +92,25 @@ pretrained weights and the freeze policy automatically.
    ```python
    from torch import nn
    from fedmammobench.configs.schema import ModelConfig
+   from fedmammobench.models._head import build_head
    from fedmammobench.models.factory import register_model
 
    @register_model("my_arch")
    def _build_my_arch(cfg: ModelConfig) -> nn.Module:
-       model = ...  # build with cfg.in_channels, cfg.num_classes, cfg.dropout
-       return model
+       backbone = ...  # build with cfg.in_channels
+       in_features = backbone.<classifier_attr>.in_features
+       backbone.<classifier_attr> = build_head(in_features, cfg)  # respects cfg.head
+       return backbone
    ```
+
+   Replace the final classification layer with `build_head(in_features, cfg)`
+   instead of a bare `nn.Linear` — this is what makes `model.head.hidden_dims`
+   (a configurable multi-layer MLP head) work for every architecture uniformly.
+   The head must keep living on the same attribute all the other freeze/loader
+   code expects: `backbone.fc` (ResNet, Inception) or `backbone.classifier`
+   (DenseNet, EfficientNet). `apply_freeze_policy` and the weight loaders treat
+   whatever's there as one block (`head.parameters()`, prefix `fc.`/`classifier.`),
+   so they don't care whether it's a single `Linear` or a deep MLP.
 
    You do **not** load weights or freeze here — `build_model()` calls
    `load_weights()` then `apply_freeze_policy()` for you afterwards.

@@ -26,7 +26,7 @@ from fedmammobench.configs.federated_config import (
     ServerTrainingConfig,
     StrategyConfig,
 )
-from fedmammobench.configs.model_config import NORMALIZE_PRESETS, ModelConfig
+from fedmammobench.configs.model_config import NORMALIZE_PRESETS, HeadConfig, ModelConfig
 from fedmammobench.configs.training_config import (
     AugmentationConfig,
     LossConfig,
@@ -42,6 +42,7 @@ __all__ = [
     "EvaluationConfig",
     "ExperimentConfig",
     "FederatedConfig",
+    "HeadConfig",
     "LossConfig",
     "ModelConfig",
     "NORMALIZE_PRESETS",

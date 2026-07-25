@@ -14,6 +14,7 @@ from torch import nn
 
 from fedmammobench.configs.schema import ModelConfig
 from fedmammobench.models._adapt import adapt_first_conv
+from fedmammobench.models._head import build_head
 from fedmammobench.models.factory import register_model
 
 
@@ -54,10 +55,7 @@ class InceptionV3Classifier(nn.Module):
             backbone.Conv2d_1a_3x3.conv = adapt_first_conv(first_conv, cfg.in_channels)
 
         in_features = backbone.fc.in_features
-        backbone.fc = nn.Sequential(
-            nn.Dropout(p=cfg.dropout),
-            nn.Linear(in_features, cfg.num_classes),
-        )
+        backbone.fc = build_head(in_features, cfg)
         self.backbone = backbone
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

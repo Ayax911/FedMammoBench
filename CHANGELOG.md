@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0] — 2026-07-25
+
+### Features
+
+- **Configurable multi-layer classification head** for all five architectures
+  (resnet18/50, efficientnet_b0, densenet121, inception_v3), via
+  `model.head` (`HeadConfig`): `hidden_dims`, `activation`
+  (`relu`/`gelu`/`tanh`/`leaky_relu`), `batch_norm`. Built by the new shared
+  `fedmammobench.models._head.build_head()`, used by every model builder
+  instead of a hand-rolled `Linear`/`Sequential(Dropout, Linear)`. The final
+  output layer always produces raw logits — no activation follows it, since
+  softmax/sigmoid is applied by the loss (`CrossEntropyLoss`/
+  `BCEWithLogitsLoss`), not the model.
+  Default (`hidden_dims: []`) reproduces the previous head exactly — same
+  module structure and state_dict keys — so existing configs and checkpoints
+  are unaffected. `ModelConfig.config_hash_fields()` now includes the head
+  shape so the server↔client consistency check in gRPC mode catches a
+  mismatched head config. See `docs/EXTENDING.md` §2 and
+  `configs/reference.yaml`.
+
 ## [0.3.0] — 2026-06-11
 
 ### Breaking Changes
