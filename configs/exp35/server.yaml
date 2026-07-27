@@ -1,0 +1,75 @@
+# exp35_fedavg_r10e20_radimagenet — SERVIDOR CENTRAL (5 nodos, fedavg, RadImageNet init directo)
+#
+# Grid estrategia × régimen (exp32–49). Bloque B: 10 rondas × 20 épocas locales
+# = 200 épocas-equivalentes. Trío comparable del bloque (fedavg/fedprox/fedadam,
+# mismo régimen). Warm-start RadImageNet, manifest, LR y regularización idénticos en todo el grid;
+# solo varían rounds, local_epochs (= scheduler.t_max) y la estrategia de agregación.
+#
+# WARM START: RadImageNet directo.  EVALUACIÓN: data.name=none → 100% federada.
+
+name: exp35_fedavg_r10e20_radimagenet
+mode: federated
+seed: 42
+output_dir: runs/exp35_fedavg_r10e20_radimagenet
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: null
+  unfreeze_layers: null
+
+training:
+  local_epochs: 20         # DEBE coincidir con el cliente y con scheduler.t_max
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 20              # = local_epochs (el scheduler se reinicia cada ronda)
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 10
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedavg
+    params: {}

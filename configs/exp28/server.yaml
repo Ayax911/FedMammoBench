@@ -1,0 +1,87 @@
+# exp28_fedavg_radimagenet — SERVIDOR CENTRAL (5 nodos, RadImageNet init, sin DDSM pretrain)
+#
+# Idéntico a exp25 (misma configuración, mismo manifest corregido sin colisión de
+# IDs entre datasets: sufijos _CD cdd-cesm, _CM cmmd, _DM dmid, _I inbreast,
+# _K kau-bcmd, _DD ddsm). Renumerado para formar un trío consecutivo y comparable
+# junto con exp29 (FedYogi) y exp30 (FedProx).
+#
+# Comparable con exp29 (FedYogi) y exp30 (FedProx): aisla el impacto de la
+# estrategia de agregación federada cuando el pretrain es de alta calidad
+# (RadImageNet, no exp15 DDSM-only).
+#
+# Configuración:
+#   - 5 épocas locales por ronda (sin congelación)
+#   - 20 rondas federadas → 20 × 5 = 100 épocas equivalentes
+#   - Métricas por época guardadas en clients/client_<id>/epoch_metrics.csv
+#   - Predicciones enriquecidas en clients/client_<id>/predictions.csv
+#
+# WARM START: RadImageNet directo (sin pretrain DDSM compartido)
+#
+# EVALUACIÓN: data.name=none → evaluación 100% federada.
+
+name: exp28_fedavg_radimagenet
+mode: federated
+seed: 42
+output_dir: runs/exp28_fedavg_radimagenet
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: radimagenet          # RadImageNet directamente
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false              # permitir adaptación completa
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: null       # sin descongelación progresiva
+  unfreeze_layers: null
+
+training:
+  local_epochs: 5         # 5 épocas locales por ronda (totales: 20 rondas × 5 = 100)
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 5              # = training.local_epochs (scheduler se reinicia cada ronda)
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 20              # 20 rondas × 5 épocas = 100 equivalentes a exp29 y exp30
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedavg
+    params: {}

@@ -7,26 +7,21 @@ from torch import nn
 
 from fedmammobench.configs.schema import ModelConfig
 from fedmammobench.models._adapt import adapt_first_conv
+from fedmammobench.models._head import build_head
 from fedmammobench.models.factory import register_model
 
 
 def _build_resnet_classifier(backbone: nn.Module, cfg: ModelConfig) -> nn.Module:
     """Shared setup: adapt first conv + replace FC head.
 
-    When ``cfg.dropout == 0.0`` the head is a plain ``nn.Linear`` (matching
-    the centralized model exactly).  A non-zero dropout wraps it in
-    ``nn.Sequential(Dropout, Linear)``.
+    The head is built by :func:`build_head` — a plain ``nn.Linear`` (or
+    ``Sequential(Dropout, Linear)`` with dropout) when ``cfg.head.hidden_dims``
+    is empty, or a multi-layer MLP otherwise.
     """
     if cfg.in_channels != 3:
         backbone.conv1 = adapt_first_conv(backbone.conv1, cfg.in_channels)
     in_features = backbone.fc.in_features
-    if cfg.dropout > 0.0:
-        backbone.fc = nn.Sequential(
-            nn.Dropout(p=cfg.dropout),
-            nn.Linear(in_features, cfg.num_classes),
-        )
-    else:
-        backbone.fc = nn.Linear(in_features, cfg.num_classes)
+    backbone.fc = build_head(in_features, cfg)
     return backbone
 
 

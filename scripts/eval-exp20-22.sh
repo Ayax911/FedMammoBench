@@ -18,9 +18,9 @@ EVAL_LOG="$REPO/runs/_logs/eval/eval_$(date +%Y%m%d_%H%M%S).log"
   
   # Experiments to evaluate
   experiments=(
-    "exp20:exp20_centralized_radimagenet:runs/exp20_centralized_radimagenet/exp20_centralized_radimagenet/final.pt"
-    "exp21:exp21_fedavg_radimagenet:runs/exp21_fedavg_radimagenet/exp21_fedavg_radimagenet/global_model.pt"
-    "exp22:exp22_fedprox_radimagenet:runs/exp22_fedprox_radimagenet/exp22_fedprox_radimagenet/global_model.pt"
+    "exp20:exp20_centralized_radimagenet:runs/exp20_centralized_radimagenet/weights/final.pt"
+    "exp21:exp21_fedavg_radimagenet:runs/exp21_fedavg_radimagenet/weights/global_model.pt"
+    "exp22:exp22_fedprox_radimagenet:runs/exp22_fedprox_radimagenet/weights/global_model.pt"
   )
   
   for exp_spec in "${experiments[@]}"; do

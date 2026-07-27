@@ -5,9 +5,9 @@
 #   scripts/eval-experiments.sh <exp> <checkpoint> [--mode nodes|mammobench] [--dataset ddsm|no-ddsm|all] [--predictions]
 #
 # Ejemplos:
-#   scripts/eval-experiments.sh exp17 runs/exp17_fedavg/exp17_fedavg/global_model.pt
-#   scripts/eval-experiments.sh exp17 runs/exp17_fedavg/exp17_fedavg/global_model.pt --mode nodes
-#   scripts/eval-experiments.sh exp16 runs/exp16_centralized/exp16_centralized/final.pt --dataset no-ddsm --predictions
+#   scripts/eval-experiments.sh exp17 runs/exp17_fedavg/weights/global_model.pt
+#   scripts/eval-experiments.sh exp17 runs/exp17_fedavg/weights/global_model.pt --mode nodes
+#   scripts/eval-experiments.sh exp16 runs/exp16_centralized/weights/final.pt --dataset no-ddsm --predictions
 
 set -uo pipefail
 

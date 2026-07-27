@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
@@ -34,6 +34,35 @@ _RGB_PRESETS = frozenset({"imagenet_rgb", "radimagenet_rgb"})
 
 
 @dataclass
+class HeadConfig:
+    """Configuration for a multi-layer classification head.
+
+    Attributes:
+        hidden_dims: Sizes of the hidden layers, applied in order between the
+            backbone features and the final ``Linear(*, num_classes)``. An
+            empty list (default) reproduces the original single-``Linear``
+            head exactly — this is the retrocompatible default.
+        activation: Activation applied after each hidden layer. Never applied
+            after the final output layer, which always produces raw logits
+            (softmax/sigmoid is applied by the loss function, not the model).
+        batch_norm: If True, insert a ``BatchNorm1d`` after each hidden
+            ``Linear`` (before the activation).
+    """
+
+    hidden_dims: list[int] = field(default_factory=list)
+    activation: Literal["relu", "gelu", "tanh", "leaky_relu"] = "relu"
+    batch_norm: bool = False
+
+    def validate(self) -> None:
+        """Raise ValueError for invalid head configurations."""
+        for dim in self.hidden_dims:
+            if dim < 1:
+                raise ValueError(
+                    f"head.hidden_dims entries must be >= 1, got {dim} in {self.hidden_dims}"
+                )
+
+
+@dataclass
 class ModelConfig:
     """Model architecture and head settings.
 
@@ -61,6 +90,8 @@ class ModelConfig:
             checkpoint loading are logged as warnings rather than errors.
             ``True`` makes ``load_state_dict`` strict.
         dropout: Dropout probability applied at the classification head.
+        head: Multi-layer head configuration. Empty ``hidden_dims`` (default)
+            reproduces the original single-``Linear`` head.
         num_classes: Should match :attr:`DataConfig.num_classes`.
         in_channels: 1 if grayscale; 3 otherwise. The model factory adapts
             the first conv layer accordingly.
@@ -82,6 +113,7 @@ class ModelConfig:
     strict_load: bool = False
 
     dropout: float = 0.2
+    head: HeadConfig = field(default_factory=HeadConfig)
     num_classes: int = 2
     in_channels: int = 1
 
@@ -137,6 +169,8 @@ class ModelConfig:
         if self.dropout < 0.0 or self.dropout >= 1.0:
             raise ValueError(f"dropout must be in [0, 1), got {self.dropout}")
 
+        self.head.validate()
+
         if self.num_classes < 1:
             raise ValueError(f"num_classes must be >= 1, got {self.num_classes}")
 
@@ -156,10 +190,14 @@ class ModelConfig:
             "num_classes": self.num_classes,
             "in_channels": self.in_channels,
             "dropout": self.dropout,
+            "head_hidden_dims": tuple(self.head.hidden_dims),
+            "head_activation": self.head.activation,
+            "head_batch_norm": self.head.batch_norm,
         }
 
 
 __all__ = [
+    "HeadConfig",
     "ModelConfig",
     "NORMALIZE_PRESETS",
 ]

@@ -1,0 +1,75 @@
+# exp33_fedprox_r5e20_radimagenet — NODOS CLIENTE (5 nodos, fedprox, RadImageNet init directo)
+#
+# Mapeo nodo → dataset (vía scripts/docker-deploy-federated.sh):
+#   node1 → cmmd, node2 → inbreast, node3 → cdd-cesm, node4 → kau-bcmd, node5 → dmid
+# Cada nodo usa ESTE YAML; el manifest se pasa por --manifest en el workflow.
+#
+# COHERENCIA servidor↔cliente: freeze_backbone, scheduler.t_max, rounds y strategy
+# DEBEN coincidir con server.yaml. Bloque A: 5 rondas × 20 épocas.
+
+name: exp33_fedprox_r5e20_radimagenet
+mode: federated
+seed: 42
+output_dir: runs/exp33_fedprox_r5e20_radimagenet
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/cmmd-split.csv   # sobreescrito por --manifest en el workflow
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.15      # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.0      # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  strict_load: false
+  in_channels: 3
+  num_classes: 1
+  dropout: 0.0
+  freeze_backbone: false
+  unfreeze_at_epoch: null
+  local_unfreeze_at_epoch: null
+  unfreeze_layers: null
+
+training:
+  local_epochs: 20         # DEBE coincidir con el servidor
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 20              # = local_epochs (el scheduler se reinicia cada ronda)
+  augmentation:
+    horizontal_flip: true
+    rotate_limit: 15
+    brightness_contrast: true
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: bce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  rounds: 5                 # DEBE coincidir con el servidor
+  strategy:
+    name: fedprox
+    params:
+      proximal_mu: 0.1

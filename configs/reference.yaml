@@ -168,6 +168,24 @@ model:
   # Dropout en el head de clasificación. Rango: [0, 1).
   dropout: 0.2
 
+  # Head de clasificación multicapa (MLP) opcional, insertado entre las
+  # features del backbone y la capa final Linear(*, num_classes).
+  # hidden_dims vacío (default) → head original: Linear simple, o
+  # Sequential(Dropout, Linear) si dropout > 0. 100% retrocompatible.
+  head:
+    # Neuronas por capa oculta, en orden. [] → sin capas ocultas (default).
+    hidden_dims: []   # ej: [512, 128]
+    # Activación tras cada capa oculta. NUNCA se aplica tras la capa final:
+    # la salida es siempre logits crudos (softmax/sigmoid los aplica la loss,
+    # no el modelo — ver training.loss.name más abajo).
+    activation: relu  # relu | gelu | tanh | leaky_relu
+    # true → inserta BatchNorm1d tras cada Linear oculto (antes de la activación).
+    batch_norm: false
+
+  # Número de neuronas en la capa de salida — y por tanto cómo se combinan
+  # las probabilidades de la predicción:
+  #   2 → dos logits [benigno, maligno], softmax (vía CrossEntropyLoss).
+  #   1 → un logit, sigmoid (vía BCEWithLogitsLoss). Ver training.loss.name.
   # Debe coincidir con data.num_classes.
   num_classes: 2
 

@@ -4,7 +4,7 @@ output_dir: runs/exp21_fedavg_radimagenet
 
 data:
   name: mammo_bench
-  manifest_path: manifests/node2_manifest.csv
+  manifest_path: manifests/cdd-cesm-split.csv
   image_root: data/
   image_size: 224
   grayscale: false
@@ -23,6 +23,8 @@ model:
   weight_source: none
 
 training:
+  augmentation:
+    normalize_preset: radimagenet_rgb
   loss:
     name: bce
     auto_class_weights: true

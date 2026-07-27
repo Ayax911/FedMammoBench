@@ -25,10 +25,10 @@ log ""
 # Define experiments: exp_id:checkpoint_path:output_dir_parent
 experiments=(
   "exp15:runs/exp15_pretrain_ddsm/exp15_pretrain_ddsm/final.pt:runs/exp15_pretrain_ddsm"
-  "exp16:runs/exp16_centralized_resnet50/exp16_centralized_resnet50/final.pt:runs/exp16_centralized_resnet50"
-  "exp17:runs/exp17_fedavg_resnet50/exp17_fedavg_resnet50/global_model.pt:runs/exp17_fedavg_resnet50"
-  "exp18:runs/exp18_fedavg_resnet50/exp18_fedavg_resnet50/global_model.pt:runs/exp18_fedavg_resnet50"
-  "exp19:runs/exp19_fedprox_resnet50/exp19_fedprox_resnet50/global_model.pt:runs/exp19_fedprox_resnet50"
+  "exp16:runs/exp16_centralized_resnet50/weights/final.pt:runs/exp16_centralized_resnet50"
+  "exp17:runs/exp17_fedavg_resnet50/weights/global_model.pt:runs/exp17_fedavg_resnet50"
+  "exp18:runs/exp18_fedavg_resnet50/weights/global_model.pt:runs/exp18_fedavg_resnet50"
+  "exp19:runs/exp19_fedprox_resnet50/weights/global_model.pt:runs/exp19_fedprox_resnet50"
 )
 
 # Summary tracking
