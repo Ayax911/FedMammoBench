@@ -422,6 +422,52 @@ Notas:
 
 ---
 
+## Resume tras un crash
+
+Desde la v0.8.0, el flag `--resume` (en `run_centralized.py`, `run_federated.py` y `run_server.py`)
+permite continuar un entrenamiento interrumpido en vez de perder todo el progreso. No hay ningún campo
+nuevo en el YAML — el comportamiento se controla solo con el flag, exactamente igual en la corrida
+original y en el relanzamiento:
+
+```bash
+python scripts/run_centralized.py --config configs/x.yaml --resume
+python scripts/run_federated.py   --config configs/x.yaml --resume
+python scripts/run_server.py      --config configs/x.yaml --resume
+```
+
+- **Sin checkpoint todavía** (primera vez que se pasa `--resume`): corre normal, pero además empieza a
+  escribir un checkpoint de seguridad cada época/ronda (reutiliza `weights/final.pt` /
+  `weights/global_model.pt` — no crea archivos nuevos), por si crashea más adelante.
+- **Con checkpoint existente**: recarga modelo (+ optimizer + scheduler en centralizado) y continúa
+  hasta `training.epochs`/`federated.rounds` — se interpreta como el presupuesto **total** acumulado,
+  no "cuánto más". Si el checkpoint ya alcanzó (o superó, por ejemplo si bajaste `epochs` a mano) ese
+  total, no hace nada y lo informa por log — es seguro pasar `--resume` de más.
+- **Sin `--resume`**: comportamiento idéntico al actual, sin cambios.
+
+**Por qué no basta con el `try/finally` que ya guarda `global_model.pt`/`final.pt` al terminar:** un
+crash real en esta máquina compartida (segfault, OOM-killer, reset de driver CUDA) salta por completo la
+maquinaria de excepciones de Python — el `finally` nunca corre. Por eso el checkpoint de seguridad se
+sobrescribe cada época/ronda, no solo al final.
+
+Notas y limitaciones aceptadas:
+
+- Recuperación por **época/ronda completa** — el trabajo parcial de una época/ronda a medio terminar se
+  pierde y se re-corre desde el último punto completo.
+- El YAML debe quedar igual entre el crash y el resume, salvo `training.epochs`/`federated.rounds`.
+  Cambiar `model.name` falla ruidosamente (carga estricta). Cambiar `federated.num_clients` o
+  `partitioning.*` **no** falla ruidosamente — el particionado es determinista solo por `cfg.seed`, así
+  que reasignaría en silencio qué datos ve cada cliente.
+- En federado, Flower no tiene forma de "empezar a contar en la ronda N" — su contador interno siempre
+  reinicia en 1 para un proceso nuevo. El resume compensa aplicando un offset a todo lo que se loguea
+  (CSVs, TensorBoard, checkpoints, y la config que reciben los clientes para el descongelamiento
+  progresivo) — la estrategia real de Flower nunca ve el offset, solo lo nuestro.
+- Estado del `GradScaler` (mixed precision) no se persiste — se readapta solo en pocas iteraciones.
+- El tiempo acumulado por nodo (`per_node_timing.csv`) no se combina entre resumes (es por proceso).
+- Fuera de alcance por ahora: no está integrado en `scripts/docker-deploy-federated.sh` ni
+  `scripts/run-queue.sh` — si crashea, hay que relanzar a mano el mismo comando con `--resume`.
+
+---
+
 ## Weights & Biases (monitoreo en tiempo real)
 
 Desde la v0.6.0, tanto `fedmammobench-centralized` como el servidor federado

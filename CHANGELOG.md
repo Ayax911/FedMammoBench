@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.8.0] — 2026-07-28
+
+### Features
+
+- **Resume training after a crash, for both centralized and federated runs.**
+  New `--resume` flag on `scripts/run_centralized.py`, `scripts/run_federated.py`,
+  and `scripts/run_server.py` — no new `ExperimentConfig`/YAML fields. Why not a
+  `finally`-block save: a hard crash on this shared workstation (segfault,
+  OOM-killer, CUDA driver reset — the actual failure mode this targets) skips
+  Python's exception machinery entirely, so the existing `save_global_model`/
+  post-`fit()` `finally` writes never run. The only real protection is a
+  progressive, per-epoch/per-round safety-net checkpoint.
+  - `--resume` + no existing checkpoint → runs normally, but now also writes
+    the safety-net checkpoint every epoch/round (reusing the existing
+    `weights/final.pt` / `weights/global_model.pt` files — no new filenames)
+    so a later crash can be recovered from.
+  - `--resume` + an existing checkpoint → reloads model (+ optimizer +
+    scheduler, centralized) and continues until `training.epochs`/
+    `federated.rounds` (interpreted as the TOTAL budget across the original
+    run + resumes, not "how many more").
+  - Without `--resume`: byte-identical to today.
+  - Centralized: `Trainer.fit` gained `resume_checkpoint_path`/`resume_state`
+    (both optional, default `None` — no signature-compatibility break) and
+    `save_checkpoint`/`load_checkpoint` gained a `scheduler=` parameter
+    mirroring the existing `optimizer=`. `best_value`/`best_epoch`/
+    `rounds_no_improve` are seeded from `resume_state` so a resumed run
+    doesn't forget the best epoch seen before a crash or reset the
+    early-stopping patience counter.
+  - Federated: Flower's round loop has no way to "start counting from round
+    N" (its internal counter always restarts at 1 for a new process), so
+    resume loads the last checkpoint's weights as the new
+    `initial_parameters`, runs only the REMAINING rounds, and applies a
+    `round_offset` at every point a round number reaches a log file, a
+    checkpoint, or a client (`NodeMetricsRecorder.wrap()`,
+    `_make_on_fit_config_fn`/`_make_on_evaluate_config_fn`,
+    `_build_evaluate_fn`, `_attach_federated_logging`) — never to the calls
+    Flower's own strategy makes/receives, which keep seeing Flower's raw
+    round numbers. Without the client-config-fn offset, a resumed run's
+    progressive-unfreeze schedule (`model.unfreeze_at_epoch`) would desync
+    from what was configured.
+  - Known limitations, accepted rather than solved: mixed-precision
+    `GradScaler` state isn't persisted (re-adapts within a few iterations,
+    same spirit as the already-undocumented-as-guaranteed RNG state);
+    per-node cumulative timing (`per_node_timing.csv`) doesn't merge across
+    resumes; only whole epochs/rounds are checkpointed, so a crash mid-epoch/
+    mid-round loses that partial work; changing `federated.num_clients` or
+    `partitioning.*` between crash and resume silently reassigns which data
+    each client sees (partitioning is deterministic from `cfg.seed` alone) —
+    the YAML should stay otherwise unchanged except `training.epochs`/
+    `federated.rounds`.
+
+### Fixes
+
+- The centralized safety-net checkpoint stores the epoch as an **absolute
+  0-based index** (matching `best.pt`'s existing convention), not the
+  `epochs_run` count `final.pt`'s post-`fit()` save used pre-resume — the two
+  only ever coincided because `start_epoch` was always 0 before this feature;
+  a resumed run makes them diverge, and using the count would have silently
+  miscomputed the next resume point on a second, chained resume.
+- `NodeMetricsRecorder.write_timing_summary` now distinguishes "rounds
+  completed this session" from "final absolute round reached" when resumed
+  (`round_offset > 0`) — previously these would have looked contradictory in
+  `final_summary.txt` (e.g. "6 rounds completed" next to "round #20"). Gated
+  so the default (non-resumed) case stays byte-identical.
+
 ## [0.7.0] — 2026-07-28
 
 ### Features

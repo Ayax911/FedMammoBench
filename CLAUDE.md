@@ -35,6 +35,11 @@ python scripts/run_client.py --config configs/exp07/client.yaml \
   --server 192.168.1.10:8080 --client-id 0 \
   --manifest manifests/node0_manifest.csv --data-dir data/       # on each node
 
+# Resume a crashed run (re-run the SAME command with --resume added)
+python scripts/run_centralized.py --config configs/exp08/centralized.yaml --resume
+python scripts/run_federated.py --config configs/exp07/server.yaml --resume
+python scripts/run_server.py --config configs/exp07/server.yaml --resume
+
 # Docker federated deployment (automated, all in containers)
 scripts/docker-deploy-federated.sh exp14                          # Launch server + 5 clients
 scripts/docker-deploy-federated.sh exp14 --monitor                # Monitor until Round 1 completes
@@ -90,6 +95,19 @@ Each federated round (simulation or gRPC):
 3. **Strategy** (`aggregate_fit`) averages weights. If `server_training.enabled`, `attach_server_training` wraps `aggregate_fit` to run a server-side training step afterwards (`new_global = (1-w)*aggregated + w*server_trained`).
 4. **Clients** evaluate the aggregated model on their local val split; strategy `aggregate_evaluate` weighted-averages → logged to `server_federated_metrics.csv`.
 5. **`NodeMetricsRecorder`** (wraps the strategy) captures per-node fit/eval CSVs, per-round timing, and saves `global_model.pt` at the end; if `federated.save_best_checkpoint` is set, it also overwrites `weights/global_best.pt` whenever the tracked weighted-average eval metric improves round-over-round. If `federated.early_stopping_patience` is also set, it raises an internal exception (`EarlyStoppingTriggered`) once that many rounds pass with no improvement — Flower has no native "stop early" hook, so `server.py` catches it around `fl.simulation.start_simulation`/`fl.server.start_server` as a clean, expected stop rather than a crash. Same mechanism centrally via `Trainer.fit(early_stopping_patience=...)`, which just `break`s its own loop. Both require `save_best_checkpoint=True` in the same section (config-level validation enforces this).
+
+### Resume after a crash
+
+`--resume` on `run_centralized.py`/`run_federated.py`/`run_server.py` (v0.8.0) — no new config fields.
+On a shared workstation, a hard crash (segfault, OOM-killer, CUDA driver reset) skips Python's
+`finally` blocks entirely, so the existing end-of-run checkpoint saves don't help; `--resume` instead
+overwrites `weights/final.pt` (centralized, + optimizer/scheduler state) or `weights/global_model.pt`
+(federated) every epoch/round as a safety net, and reloads from it on the next invocation. `training.epochs`/
+`federated.rounds` are the TOTAL budget across the original run + resumes. Federated resume can't ask
+Flower to start its round counter above 1, so it runs only the remaining rounds and applies a
+`round_offset` everywhere a round number is logged or sent to clients (never to Flower's own strategy
+calls). See `configs/README.md`'s "Resume tras un crash" section for the full mechanism and limitations
+(GradScaler state, mid-epoch/round crashes, `num_clients`/`partitioning` drift between resumes).
 
 Two frozen-backbone subtleties in that loop (both fixed 2026-07-08, regression tests in `tests/test_audit_fixes.py`):
 - **BatchNorm drift under freeze.** `model.train()` (called every epoch) re-enables *all* modules including frozen-backbone BN layers, which keep updating `running_mean`/`running_var` even though `requires_grad=False` stops γ/β from updating. `Trainer` re-pins BN layers with frozen affine params back to `eval()` after each `train()` call (`_freeze_bn_running_stats`) — otherwise per-client BN stats drift independently and get corrupted on aggregation.

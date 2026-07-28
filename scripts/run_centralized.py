@@ -52,7 +52,44 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Centralized training entrypoint.")
     p.add_argument("--config", "-c", required=True, type=str, help="Path to a YAML config.")
     p.add_argument("--output-dir", type=str, default=None, help="Override cfg.output_dir.")
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume from weights/final.pt if present (recovers model+optimizer+"
+            "scheduler state and continues until training.epochs total). If no "
+            "checkpoint exists yet, starts fresh but writes a per-epoch safety-net "
+            "checkpoint to weights/final.pt so a later crash can be recovered from "
+            "by re-running the same command with --resume again."
+        ),
+    )
     return p.parse_args()
+
+
+def _resolve_centralized_resume(
+    cfg, final_ckpt_path: Path, *, resume: bool, model, optimizer, scheduler
+) -> tuple[int, int, dict | None]:
+    """Returns ``(start_epoch, remaining_epochs, resume_state)``.
+
+    When a checkpoint is found, loads model/optimizer/scheduler state into
+    the given objects IN PLACE via ``load_checkpoint``. ``cfg.training.epochs``
+    is treated as the TOTAL budget across the original run + any resumes, not
+    "how many more" — so ``remaining_epochs`` can be <= 0 if the checkpoint
+    already reached (or exceeds, e.g. after shrinking the config) that total.
+    """
+    if not resume or not final_ckpt_path.is_file():
+        return 0, cfg.training.epochs, None
+    payload = load_checkpoint(
+        final_ckpt_path, model, optimizer=optimizer, scheduler=scheduler, strict=True
+    )
+    # Absolute 0-based index of the last epoch that fully completed — NOT a
+    # count (see Trainer.fit's resume_checkpoint_path docstring: the in-loop
+    # safety net always stores the raw loop variable `epoch`, matching
+    # best.pt's existing convention, not the epochs_run count final.pt used
+    # to store pre-resume).
+    resumed_epoch = int(payload.get("epoch", -1))
+    start_epoch = resumed_epoch + 1
+    return start_epoch, cfg.training.epochs - start_epoch, payload.get("extra", {}).get("resume_state")
 
 
 def main() -> int:
@@ -135,6 +172,18 @@ def main() -> int:
     # correct even when --output-dir overrides the default.
     weights_dir = out_root.parent / "weights"
     best_ckpt_path = weights_dir / "best.pt"
+    final_ckpt_path = weights_dir / "final.pt"
+
+    start_epoch, remaining_epochs, resume_state = _resolve_centralized_resume(
+        cfg, final_ckpt_path, resume=args.resume, model=model, optimizer=optimizer, scheduler=scheduler
+    )
+    if args.resume:
+        logger.info(
+            "Resume: start_epoch=%d remaining_epochs=%d (checkpoint %s)",
+            start_epoch,
+            remaining_epochs,
+            "found" if final_ckpt_path.is_file() else "not found — starting fresh",
+        )
 
     # Wrapped in try/finally so sink.close() always runs — previously
     # tb_writer.close() was unconditional at the end of main(), which meant
@@ -145,24 +194,47 @@ def main() -> int:
     # in the same finally, after the sink is closed so metrics.csv/
     # test_metrics.csv are fully flushed to disk.
     try:
-        fit_result = trainer.fit(
-            train_loader,
-            val_loader=val_loader,
-            evaluator=evaluator,
-            epochs=cfg.training.epochs,
-            best_checkpoint_metric=(
-                cfg.training.best_checkpoint_metric if cfg.training.save_best_checkpoint else None
-            ),
-            best_checkpoint_path=(best_ckpt_path if cfg.training.save_best_checkpoint else None),
-            early_stopping_patience=cfg.training.early_stopping_patience,
-        )
+        if remaining_epochs > 0:
+            fit_result = trainer.fit(
+                train_loader,
+                val_loader=val_loader,
+                evaluator=evaluator,
+                epochs=remaining_epochs,
+                start_epoch=start_epoch,
+                best_checkpoint_metric=(
+                    cfg.training.best_checkpoint_metric if cfg.training.save_best_checkpoint else None
+                ),
+                best_checkpoint_path=(best_ckpt_path if cfg.training.save_best_checkpoint else None),
+                early_stopping_patience=cfg.training.early_stopping_patience,
+                resume_checkpoint_path=(final_ckpt_path if args.resume else None),
+                resume_state=resume_state,
+            )
+        else:
+            logger.info(
+                "training.epochs (%d) already reached by checkpoint (next epoch would "
+                "be %d) — skipping fit().",
+                cfg.training.epochs,
+                start_epoch,
+            )
+            fit_result = {"epochs_run": 0, "early_stopped": False}
+            if cfg.training.save_best_checkpoint and resume_state is not None:
+                fit_result["best_epoch"] = resume_state.get("best_epoch")
+                fit_result[f"best_val_{cfg.training.best_checkpoint_metric}"] = resume_state.get(
+                    "best_value"
+                )
 
-        save_checkpoint(
-            weights_dir / "final.pt",
-            model,
-            optimizer=optimizer,
-            epoch=fit_result.get("epochs_run", cfg.training.epochs),
-        )
+        if not args.resume:
+            save_checkpoint(
+                final_ckpt_path,
+                model,
+                optimizer=optimizer,
+                epoch=fit_result.get("epochs_run", cfg.training.epochs),
+            )
+        # else: Trainer.fit's in-loop safety net (resume_checkpoint_path) already
+        # wrote final_ckpt_path with strictly more information (scheduler state +
+        # resume_state) whenever it ran; re-saving here would regress it back to a
+        # weaker checkpoint. If it didn't run (remaining_epochs <= 0), the existing
+        # checkpoint on disk is already exactly what we just loaded from.
 
         # Trainer.fit() left `model` at its last-epoch weights. If best-checkpoint
         # tracking was enabled, reload the checkpoint that scored highest on
