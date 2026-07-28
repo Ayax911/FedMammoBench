@@ -154,10 +154,14 @@ def main() -> int:
                 cfg.training.best_checkpoint_metric if cfg.training.save_best_checkpoint else None
             ),
             best_checkpoint_path=(best_ckpt_path if cfg.training.save_best_checkpoint else None),
+            early_stopping_patience=cfg.training.early_stopping_patience,
         )
 
         save_checkpoint(
-            weights_dir / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs
+            weights_dir / "final.pt",
+            model,
+            optimizer=optimizer,
+            epoch=fit_result.get("epochs_run", cfg.training.epochs),
         )
 
         # Trainer.fit() left `model` at its last-epoch weights. If best-checkpoint
@@ -187,6 +191,7 @@ def main() -> int:
                 "epoch": -1,
                 "phase": "test",
                 "checkpoint": checkpoint_used,
+                "early_stopped": fit_result.get("early_stopped", False),
                 **{f"test_{k}": v for k, v in scalar_test.items()},
             }
         )

@@ -65,8 +65,8 @@ All YAML configs inherit from `configs/base.yaml` via a `defaults:` key resolved
 |---------|--------|-----------|
 | `data` / `partitioning` | `data_config.py` | `manifest_path`, `val_fraction`, `scheme` (iid/dirichlet/quantity_skew) |
 | `model` | `model_config.py` | `name`, `weight_source`, `freeze_backbone`, `unfreeze_at_epoch`, `local_unfreeze_at_epoch` |
-| `training` | `training_config.py` | `local_epochs`, `optimizer`, `scheduler`, `loss`, `save_best_checkpoint`, `best_checkpoint_metric` |
-| `federated` | `federated_config.py` | `num_clients`, `rounds`, `strategy`, `server_training`, `server_address`, `save_best_checkpoint`, `best_checkpoint_metric` |
+| `training` | `training_config.py` | `local_epochs`, `optimizer`, `scheduler`, `loss`, `save_best_checkpoint`, `best_checkpoint_metric`, `early_stopping_patience` |
+| `federated` | `federated_config.py` | `num_clients`, `rounds`, `strategy`, `server_training`, `server_address`, `save_best_checkpoint`, `best_checkpoint_metric`, `early_stopping_patience` |
 | `wandb` | `wandb_config.py` | `enabled` (default `true`), `project`, `mode` (online/offline/disabled) — one run per experiment, server/centralized side only |
 | experiment + evaluation | `experiment.py` | cross-section validation (freeze reachability, preset↔channels) |
 
@@ -89,7 +89,7 @@ Each federated round (simulation or gRPC):
 2. **Client** (`FedMammoBenchClient.fit`): loads server parameters (strict), runs `apply_freeze_policy`, optionally applies cyclic within-round unfreeze at `local_unfreeze_at_epoch`, trains for `local_epochs`, returns updated weights + metrics.
 3. **Strategy** (`aggregate_fit`) averages weights. If `server_training.enabled`, `attach_server_training` wraps `aggregate_fit` to run a server-side training step afterwards (`new_global = (1-w)*aggregated + w*server_trained`).
 4. **Clients** evaluate the aggregated model on their local val split; strategy `aggregate_evaluate` weighted-averages → logged to `server_federated_metrics.csv`.
-5. **`NodeMetricsRecorder`** (wraps the strategy) captures per-node fit/eval CSVs, per-round timing, and saves `global_model.pt` at the end; if `federated.save_best_checkpoint` is set, it also overwrites `weights/global_best.pt` whenever the tracked weighted-average eval metric improves round-over-round.
+5. **`NodeMetricsRecorder`** (wraps the strategy) captures per-node fit/eval CSVs, per-round timing, and saves `global_model.pt` at the end; if `federated.save_best_checkpoint` is set, it also overwrites `weights/global_best.pt` whenever the tracked weighted-average eval metric improves round-over-round. If `federated.early_stopping_patience` is also set, it raises an internal exception (`EarlyStoppingTriggered`) once that many rounds pass with no improvement — Flower has no native "stop early" hook, so `server.py` catches it around `fl.simulation.start_simulation`/`fl.server.start_server` as a clean, expected stop rather than a crash. Same mechanism centrally via `Trainer.fit(early_stopping_patience=...)`, which just `break`s its own loop. Both require `save_best_checkpoint=True` in the same section (config-level validation enforces this).
 
 Two frozen-backbone subtleties in that loop (both fixed 2026-07-08, regression tests in `tests/test_audit_fixes.py`):
 - **BatchNorm drift under freeze.** `model.train()` (called every epoch) re-enables *all* modules including frozen-backbone BN layers, which keep updating `running_mean`/`running_var` even though `requires_grad=False` stops γ/β from updating. `Trainer` re-pins BN layers with frozen affine params back to `eval()` after each `train()` call (`_freeze_bn_running_stats`) — otherwise per-client BN stats drift independently and get corrupted on aggregation.

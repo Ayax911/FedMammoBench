@@ -130,6 +130,14 @@ class FederatedConfig:
             ``FEDERATED_BEST_CHECKPOINT_METRICS`` (a subset of
             ``TrainingConfig.BEST_CHECKPOINT_METRICS`` — ``auc_pr`` is excluded
             because federated clients never report it).
+        early_stopping_patience: When > 0, stop the round loop after this many
+            consecutive rounds with no improvement in the weighted-average
+            federated ``best_checkpoint_metric``. Requires
+            ``save_best_checkpoint=True``. Implemented by raising an internal
+            exception from the wrapped strategy (Flower has no native
+            "stop early" hook); the server's existing finally-block cleanup
+            (save global_model.pt, write summaries, close sinks, autoplot)
+            still runs normally. 0 (default) disables early stopping.
     """
 
     num_clients: int = 4
@@ -151,6 +159,7 @@ class FederatedConfig:
     server_training: ServerTrainingConfig = field(default_factory=ServerTrainingConfig)
     save_best_checkpoint: bool = False
     best_checkpoint_metric: str = "roc_auc"
+    early_stopping_patience: int = 0  # 0 -> disabled
 
     def validate(self) -> None:
         """Raise ValueError for invalid federated settings."""
@@ -186,6 +195,16 @@ class FederatedConfig:
                 f"{FEDERATED_BEST_CHECKPOINT_METRICS}, got {self.best_checkpoint_metric!r}. "
                 "(auc_pr is valid for training.best_checkpoint_metric centrally, but is "
                 "never reported by federated clients, so it is excluded here.)"
+            )
+        if self.early_stopping_patience < 0:
+            raise ValueError(
+                f"early_stopping_patience must be >= 0, got {self.early_stopping_patience}"
+            )
+        if self.early_stopping_patience > 0 and not self.save_best_checkpoint:
+            raise ValueError(
+                "federated.early_stopping_patience > 0 requires save_best_checkpoint: true "
+                "— early stopping needs to know which round was best in order to know when "
+                "to stop and which checkpoint to keep."
             )
         self.server_training.validate()
 

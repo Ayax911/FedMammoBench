@@ -242,6 +242,13 @@ training:
   # roc_auc | f1 | accuracy | auc_pr | precision | recall
   best_checkpoint_metric: roc_auc
 
+  # > 0 -> detiene el entrenamiento tras N épocas consecutivas sin mejorar
+  # val_<best_checkpoint_metric>. Requiere save_best_checkpoint: true (así
+  # siempre se recargan los pesos del mejor punto, no los de la época donde
+  # se agotó la paciencia). 0 (default) -> deshabilitado, corre las
+  # `epochs` completas igual que antes.
+  early_stopping_patience: 0
+
   optimizer:
     # "sgd" | "adam" | "adamw"
     name: adamw
@@ -396,6 +403,15 @@ federated:
   # y estar entre las que aggregate_evaluate agrega: roc_auc | f1 | accuracy |
   # precision | recall (NO incluye auc_pr — el cliente federado no lo reporta).
   best_checkpoint_metric: roc_auc
+
+  # > 0 -> detiene las rondas tras N rondas consecutivas sin mejorar el
+  # promedio ponderado de val_<best_checkpoint_metric>. Requiere
+  # save_best_checkpoint: true. Implementado lanzando una excepción interna
+  # desde la estrategia envuelta (Flower no ofrece ningún hook nativo de
+  # parada); el finally del servidor sigue guardando global_model.pt,
+  # escribiendo el resumen y generando las gráficas igual. 0 (default) ->
+  # deshabilitado, corre las `rounds` completas igual que antes.
+  early_stopping_patience: 0
 
   strategy:
     # "fedavg"   → promedio ponderado estándar.

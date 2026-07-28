@@ -354,7 +354,9 @@ congelado, fine-tuning corto).
 
 Sin selección de mejor checkpoint (el resto de experimentos, exp01-55), no hay early stopping real: si
 `training.epochs` es mucho mayor que el punto de convergencia, revisa `metrics.csv` para confirmar que
-`val_roc_auc`/`val_loss` no se degradaron antes de confiar en el AUC de test final.
+`val_roc_auc`/`val_loss` no se degradaron antes de confiar en el AUC de test final. Desde la v0.7.0
+existe `early_stopping_patience` para detener el entrenamiento en vez de solo diagnosticarlo — ver la
+sección "Early stopping (paciencia)" más abajo.
 
 Desde la v0.6.0 existe el equivalente en federado, con los **mismos nombres de campo** pero bajo
 `federated:` en vez de `training:`:
@@ -380,6 +382,43 @@ Diferencias con el centralizado:
   no tiene un paso de test terminal que recargar (`evaluate_fn` ya corre cada ronda). Evalúa
   `global_best.pt` después con `fedmammobench-evaluate --checkpoint runs/<exp>/weights/global_best.pt`.
 - `timing_summary.csv` reporta la ronda y el valor del mejor checkpoint cuando el tracking está activo.
+
+### Early stopping (paciencia)
+
+Desde la v0.7.0, `early_stopping_patience` detiene el entrenamiento/las rondas cuando
+`val_<best_checkpoint_metric>` lleva N épocas/rondas consecutivas sin mejorar — cierra la carencia que
+el párrafo anterior admitía ("no hay early stopping real"). **Mismo nombre de campo en ambos modos**,
+y **requiere `save_best_checkpoint: true`** en la misma sección (el error de validación lo explica si
+falta): sin eso no habría forma de saber cuál fue la mejor época/ronda para saber cuándo parar ni qué
+pesos conservar.
+
+```yaml
+training:                          # o federated: — mismo campo, misma semántica
+  save_best_checkpoint: true
+  best_checkpoint_metric: roc_auc
+  early_stopping_patience: 3       # default: 0 (deshabilitado)
+```
+
+Ejemplo concreto: con `best_checkpoint_metric: roc_auc` y `early_stopping_patience: 3`, si la mejor
+`val_roc_auc` ocurrió en la época/ronda 4 y las épocas/rondas 5, 6 y 7 no la superan, el entrenamiento
+para al terminar la época/ronda 7 (3 sin mejora = patience) — `epochs`/`rounds` configuradas de sobra
+nunca se ejecutan. El checkpoint recargado para test (centralizado) o para evaluación post-hoc
+(federado, `global_best.pt`) sigue siendo el de la época/ronda 4, nunca el de la 7.
+
+Notas:
+
+- En centralizado, `metrics.csv`/`test_metrics.csv` registran la fila de la época que dispara la
+  parada con normalidad; `test_metrics.csv` añade una columna `early_stopped` (bool).
+- En federado, no existe ningún hook nativo de Flower para detener el bucle de rondas a mitad de
+  camino — se implementa lanzando una excepción interna desde la estrategia envuelta, capturada en
+  `server.py` como una parada limpia (log INFO), no un crash. El `finally` del servidor sigue
+  guardando `global_model.pt`, escribiendo `final_summary.txt` (que añade una línea "Parada temprana"
+  cuando aplica) y generando las gráficas exactamente igual que un run completo.
+- Si usas `model.unfreeze_at_epoch`/`local_unfreeze_at_epoch`, ten en cuenta que la parada temprana
+  puede ocurrir antes de ese punto — el backbone nunca llegaría a descongelarse, igual que si hubieras
+  configurado menos épocas/rondas directamente.
+- `0` (default) mantiene el comportamiento anterior sin cambios: corre siempre el presupuesto
+  configurado completo.
 
 ---
 

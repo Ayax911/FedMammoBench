@@ -33,7 +33,7 @@ from fedmammobench.configs.schema import ExperimentConfig
 from fedmammobench.datasets import MammographyDataset, build_dataloader, build_dataset
 from fedmammobench.evaluation import Evaluator
 from fedmammobench.federated.client import client_fn_factory
-from fedmammobench.federated.node_logging import NodeMetricsRecorder
+from fedmammobench.federated.node_logging import EarlyStoppingTriggered, NodeMetricsRecorder
 from fedmammobench.federated.param_utils import (
     load_ndarrays_to_state_dict,
     state_dict_to_ndarrays,
@@ -235,7 +235,9 @@ def run_simulation(
             ``<cfg.output_dir>/<cfg.name>``.
 
     Returns:
-        The :class:`flwr.server.History` produced by ``start_simulation``.
+        The :class:`flwr.server.History` produced by ``start_simulation``, or
+        ``None`` if the run stopped early via
+        ``cfg.federated.early_stopping_patience``.
     """
     out_root = Path(output_dir or Path(cfg.output_dir) / cfg.name).expanduser().resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -305,6 +307,7 @@ def run_simulation(
     )
     recorder.start()
     t0 = time.perf_counter()
+    history = None
     try:
         history = fl.simulation.start_simulation(
             client_fn=client_fn,
@@ -314,6 +317,17 @@ def run_simulation(
             client_resources=cfg.federated.client_resources,
             ray_init_args=cfg.federated.ray_init_args or None,
         )
+    except RuntimeError as e:
+        # fl.simulation.start_simulation catches any Exception raised inside
+        # the strategy (e.g. from our wrapped aggregate_evaluate) and
+        # re-raises it as RuntimeError("Simulation crashed.") from ex — so an
+        # intentional EarlyStoppingTriggered arrives here already rewrapped,
+        # not as its own type. Unwrap via __cause__ to tell a clean, expected
+        # stop from a real crash; a genuine crash still propagates.
+        if isinstance(e.__cause__, EarlyStoppingTriggered):
+            _logger.info("Simulation stopped by early stopping: %s", e.__cause__)
+        else:
+            raise
     finally:
         total_seconds = time.perf_counter() - t0
         recorder.save_global_model(cfg)
@@ -473,6 +487,11 @@ def run_grpc_server(
             strategy=strategy,
             grpc_max_message_length=cfg.federated.grpc_max_message_length,
         )
+    except EarlyStoppingTriggered as e:
+        # Unlike fl.simulation.start_simulation, fl.server.start_server has no
+        # internal try/except of its own — the exception from our wrapped
+        # aggregate_evaluate propagates here raw, not rewrapped.
+        _logger.info("gRPC server stopped by early stopping: %s", e)
     finally:
         _grpc.server = _orig_grpc_server  # restore original
         total_seconds = time.perf_counter() - t0

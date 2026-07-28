@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.7.0] — 2026-07-28
+
+### Features
+
+- **Early stopping (patience) for both centralized and federated training.**
+  New `training.early_stopping_patience` / `federated.early_stopping_patience`
+  (default `0`, disabled — existing configs run unchanged). When > 0, stops
+  after that many consecutive epochs/rounds with no improvement in
+  `best_checkpoint_metric`. Requires `save_best_checkpoint: true` in the same
+  section (config-level `validate()` rejects the combination otherwise) —
+  early stopping needs to know which epoch/round was best both to decide when
+  to stop and which weights to keep.
+  - Centralized: `Trainer.fit` gained the `early_stopping_patience` parameter
+    (new, optional, default `0` — no signature-compatibility break) and now
+    `break`s its own epoch loop; returns `epochs_run` (actual epoch count)
+    and `early_stopped` (bool) in the result dict unconditionally.
+  - Federated: Flower's round loop has no native "stop early" hook, so
+    `NodeMetricsRecorder.record_eval` raises a new `EarlyStoppingTriggered`
+    exception from the wrapped strategy once patience is exhausted.
+    `federated/server.py` catches it around `fl.simulation.start_simulation`
+    (which Flower internally re-wraps as `RuntimeError(...) from ex` — caught
+    via `isinstance(e.__cause__, EarlyStoppingTriggered)`) and around
+    `fl.server.start_server` (propagates raw, no Flower-side wrapping) as a
+    clean, expected stop (INFO log), not a crash. The existing `finally`
+    blocks still save `global_model.pt`, write the summary, close sinks, and
+    autoplot regardless of how the round loop ends.
+  - `ExperimentConfig.validate()` warns (doesn't error) if the configured
+    patience is `>=` the epoch/round budget, since it could then never fire.
+
+### Fixes
+
+- **`weights/final.pt` (centralized) and `weights/global_model.pt`
+  (federated) now record the actual last epoch/round trained in their
+  `epoch=` checkpoint metadata, not the configured budget
+  (`training.epochs`/`federated.rounds`).** Previously harmless because the
+  two always coincided (nothing could stop training early); early stopping
+  makes them diverge. `NodeMetricsRecorder.write_timing_summary`'s "Rondas
+  completadas" / `avg_seconds_per_round` / `timing_summary.csv`'s
+  `num_rounds` have the same fix, derived from the actual number of
+  completed rounds (`len(self._round_agg_metrics)`) instead of
+  `federated.rounds`. Byte-identical output for any run that isn't
+  early-stopped (the actual and configured counts always match there).
+- `NodeMetricsRecorder.record_eval`'s best-checkpoint hook now treats a round
+  where the tracked metric is entirely absent from the aggregated metrics
+  (e.g. an all-NaN round) the same as "no improvement" for early-stopping
+  purposes — previously such rounds were silently skipped, which would have
+  let a NaN streak freeze the patience counter and defeat early stopping.
+  `Trainer.fit`'s centralized equivalent already covered this case similarly.
+
 ## [0.6.0] — 2026-07-28
 
 ### Features
