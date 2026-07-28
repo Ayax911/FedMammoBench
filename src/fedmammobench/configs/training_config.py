@@ -57,6 +57,11 @@ class LossConfig:
     focal_gamma: float = 2.0
 
 
+#: Validation metrics Evaluator.evaluate() always returns, for which "higher is
+#: better" — the only direction TrainingConfig.save_best_checkpoint supports.
+BEST_CHECKPOINT_METRICS = ("roc_auc", "f1", "accuracy", "auc_pr", "precision", "recall")
+
+
 @dataclass
 class TrainingConfig:
     """Centralized / per-client local training hyperparameters.
@@ -69,6 +74,17 @@ class TrainingConfig:
             Note: FedProx with mixed_precision=True can cause the proximal term
             to underflow in FP16. This is handled automatically in Trainer, but
             be aware when comparing FedProx vs FedAvg convergence curves.
+        save_best_checkpoint: When True (centralized only), track
+            ``best_checkpoint_metric`` on the validation set each epoch and
+            save a ``best.pt`` checkpoint whenever it improves. Trainer.fit
+            then reports which epoch was picked in the returned metrics dict,
+            and run_centralized.py reloads that checkpoint before test
+            evaluation instead of using the last epoch's (possibly overfit)
+            weights. Off by default so existing runs keep their current
+            behavior (final-epoch weights).
+        best_checkpoint_metric: Which validation metric to maximize when
+            ``save_best_checkpoint`` is True. Must be one of
+            ``BEST_CHECKPOINT_METRICS`` — all "higher is better".
     """
 
     epochs: int = 20
@@ -79,6 +95,8 @@ class TrainingConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     augmentation: AugmentationConfig = field(default_factory=AugmentationConfig)
     loss: LossConfig = field(default_factory=LossConfig)
+    save_best_checkpoint: bool = False
+    best_checkpoint_metric: str = "roc_auc"
 
     def validate(self, strategy_name: str = "fedavg", proximal_mu: float = 0.0) -> None:
         """Raise ValueError or emit warnings for invalid training settings.
@@ -99,6 +117,11 @@ class TrainingConfig:
             raise ValueError(f"optimizer.lr_head must be > 0, got {self.optimizer.lr_head}")
         if self.optimizer.lr_backbone is not None and self.optimizer.lr_backbone <= 0.0:
             raise ValueError(f"optimizer.lr_backbone must be > 0, got {self.optimizer.lr_backbone}")
+        if self.save_best_checkpoint and self.best_checkpoint_metric not in BEST_CHECKPOINT_METRICS:
+            raise ValueError(
+                f"best_checkpoint_metric must be one of {BEST_CHECKPOINT_METRICS}, "
+                f"got {self.best_checkpoint_metric!r}"
+            )
 
         # Warn about FedProx + AMP: the proximal term is computed in FP32 inside
         # Trainer.train_one_epoch so underflow is prevented, but AMP reduces
@@ -115,6 +138,7 @@ class TrainingConfig:
 
 __all__ = [
     "AugmentationConfig",
+    "BEST_CHECKPOINT_METRICS",
     "LossConfig",
     "OptimizerConfig",
     "SchedulerConfig",

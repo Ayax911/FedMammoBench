@@ -234,6 +234,24 @@ class TestTrainingConfig:
             cfg.validate(strategy_name="fedprox", proximal_mu=0.01)
         assert not any("FedProx" in str(warning.message) for warning in w)
 
+    def test_save_best_checkpoint_valid_metric_ok(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, save_best_checkpoint=True, best_checkpoint_metric="roc_auc")
+        cfg.validate()
+
+    def test_save_best_checkpoint_invalid_metric_raises(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, save_best_checkpoint=True, best_checkpoint_metric="loss")
+        with pytest.raises(ValueError, match="best_checkpoint_metric"):
+            cfg.validate()
+
+    def test_invalid_metric_ignored_when_save_best_checkpoint_off(self):
+        # best_checkpoint_metric is only validated when save_best_checkpoint is
+        # True — an unused/invalid value sitting in the default shouldn't block.
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, save_best_checkpoint=False, best_checkpoint_metric="loss")
+        cfg.validate()
+
 
 # ---------------------------------------------------------------------------
 # ExperimentConfig.validate() cross-section checks

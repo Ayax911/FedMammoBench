@@ -6,9 +6,12 @@ Usage::
 
 Loads the config, builds a single train/val/test pipeline, trains for
 ``training.epochs`` epochs, and saves metrics CSV + TensorBoard logs under
-``<output_dir>/<name>/``. The final checkpoint goes to ``<output_dir>/weights/``
-instead, a sibling of ``<name>/`` and ``eval/``, so it can be excluded from a
-sync/upload of the rest of the run by folder alone.
+``<output_dir>/<name>/``. Checkpoints go to ``<output_dir>/weights/`` instead,
+a sibling of ``<name>/`` and ``eval/``, so they can be excluded from a
+sync/upload of the rest of the run by folder alone: always ``final.pt`` (last
+epoch), plus ``best.pt`` (best ``val_<training.best_checkpoint_metric>``) when
+``training.save_best_checkpoint`` is set — in which case test evaluation uses
+``best.pt``, not the last epoch's weights.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from fedmammobench.utils import (  # noqa: E402
     CSVLogger,
     TensorBoardWriter,
     get_logger,
+    load_checkpoint,
     resolve_device,
     save_checkpoint,
     set_global_seed,
@@ -120,26 +124,57 @@ def main() -> int:
     )
     evaluator = Evaluator(model, device=device, threshold=cfg.evaluation.threshold)
 
-    trainer.fit(
-        train_loader,
-        val_loader=val_loader,
-        evaluator=evaluator,
-        epochs=cfg.training.epochs,
-    )
-
     # Weights live in a "weights/" sibling of out_root (normally
     # <output_dir>/<name>/), not inside it, so the (large) checkpoint can be
     # excluded from a sync/upload of the rest of the run's metrics/logs by
     # folder alone. Derived from out_root (not cfg.output_dir) so it stays
     # correct even when --output-dir overrides the default.
     weights_dir = out_root.parent / "weights"
+    best_ckpt_path = weights_dir / "best.pt"
+
+    fit_result = trainer.fit(
+        train_loader,
+        val_loader=val_loader,
+        evaluator=evaluator,
+        epochs=cfg.training.epochs,
+        best_checkpoint_metric=(
+            cfg.training.best_checkpoint_metric if cfg.training.save_best_checkpoint else None
+        ),
+        best_checkpoint_path=(best_ckpt_path if cfg.training.save_best_checkpoint else None),
+    )
+
     save_checkpoint(weights_dir / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs)
+
+    # Trainer.fit() left `model` at its last-epoch weights. If best-checkpoint
+    # tracking was enabled, reload the checkpoint that scored highest on
+    # val_{best_checkpoint_metric} before evaluating on test — otherwise a run
+    # that overfits past its optimum (common for small/frozen-backbone heads)
+    # would report test metrics for a model worse than one seen mid-training.
+    checkpoint_used = "final"
+    if cfg.training.save_best_checkpoint and best_ckpt_path.is_file():
+        load_checkpoint(best_ckpt_path, model, strict=True)
+        best_epoch = fit_result.get("best_epoch")
+        best_value = fit_result.get(f"best_val_{cfg.training.best_checkpoint_metric}")
+        checkpoint_used = f"best_epoch_{best_epoch}"
+        logger.info(
+            "Loaded best checkpoint for test evaluation: epoch=%s %s=%s",
+            best_epoch,
+            cfg.training.best_checkpoint_metric,
+            best_value,
+        )
 
     test_metrics = evaluator.evaluate(test_loader, criterion=criterion)
     logger.info("Test metrics: %s", {k: v for k, v in test_metrics.items() if k != "y_true"})
     scalar_test = {k: v for k, v in test_metrics.items() if isinstance(v, (int, float))}
     test_csv = CSVLogger(out_root / "test_metrics.csv")
-    test_csv.append({"epoch": -1, "phase": "test", **{f"test_{k}": v for k, v in scalar_test.items()}})
+    test_csv.append(
+        {
+            "epoch": -1,
+            "phase": "test",
+            "checkpoint": checkpoint_used,
+            **{f"test_{k}": v for k, v in scalar_test.items()},
+        }
+    )
 
     tb_writer.close()
     logger.info("Run complete. Artifacts at %s", out_root)

@@ -28,6 +28,7 @@ from fedmammobench.configs.federated_config import (
 )
 from fedmammobench.configs.model_config import NORMALIZE_PRESETS, HeadConfig, ModelConfig
 from fedmammobench.configs.training_config import (
+    BEST_CHECKPOINT_METRICS,
     AugmentationConfig,
     LossConfig,
     OptimizerConfig,
@@ -37,6 +38,7 @@ from fedmammobench.configs.training_config import (
 
 __all__ = [
     "AugmentationConfig",
+    "BEST_CHECKPOINT_METRICS",
     "DataColumnMapping",
     "DataConfig",
     "EvaluationConfig",

@@ -9,6 +9,7 @@ epoch per round).
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -18,6 +19,7 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 from fedmammobench.evaluation.evaluator import Evaluator
+from fedmammobench.utils.checkpoint import save_checkpoint
 from fedmammobench.utils.csv_logger import CSVLogger
 from fedmammobench.utils.logging_utils import get_logger
 from fedmammobench.utils.tensorboard_utils import TensorBoardWriter
@@ -203,9 +205,24 @@ class Trainer:
         val_loader: DataLoader | None = None,
         evaluator: Evaluator | None = None,
         start_epoch: int = 0,
+        best_checkpoint_metric: str | None = None,
+        best_checkpoint_path: str | Path | None = None,
     ) -> dict[str, Any]:
-        """Train for ``epochs`` epochs. Returns the last epoch's metrics."""
+        """Train for ``epochs`` epochs. Returns the last epoch's metrics.
+
+        Args:
+            best_checkpoint_metric: When set (together with
+                ``best_checkpoint_path``), track this key from the per-epoch
+                validation metrics dict and overwrite the checkpoint at
+                ``best_checkpoint_path`` whenever it improves (higher is
+                better — see ``TrainingConfig.BEST_CHECKPOINT_METRICS``).
+                Requires ``val_loader``/``evaluator``. The returned dict then
+                includes ``best_epoch`` and ``best_val_<metric>``.
+        """
         last_metrics: dict[str, Any] = {}
+        track_best = best_checkpoint_metric is not None and best_checkpoint_path is not None
+        best_value: float | None = None
+        best_epoch: int | None = None
         for epoch in range(start_epoch, start_epoch + epochs):
             t0 = time.perf_counter()
             train_stats = self.train_one_epoch(train_loader, epoch=epoch)
@@ -243,9 +260,32 @@ class Trainer:
                 if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     self.scheduler.step(val_metrics.get("roc_auc", val_metrics.get("f1", 0.0)))
 
+                if track_best:
+                    current = val_metrics.get(best_checkpoint_metric)
+                    if current is not None and (best_value is None or current > best_value):
+                        best_value, best_epoch = current, epoch
+                        save_checkpoint(
+                            best_checkpoint_path,
+                            self.model,
+                            epoch=epoch,
+                            extra={"metric": best_checkpoint_metric, "value": current},
+                        )
+                        _logger.info(
+                            "[%s] epoch %d: new best %s=%.4f -> saved %s",
+                            self.log_tag,
+                            epoch,
+                            best_checkpoint_metric,
+                            current,
+                            best_checkpoint_path,
+                        )
+
             if self.csv_logger is not None:
                 row = {k: v for k, v in last_metrics.items() if isinstance(v, (int, float, str))}
                 self.csv_logger.append(row)
+
+        if track_best:
+            last_metrics["best_epoch"] = best_epoch
+            last_metrics[f"best_val_{best_checkpoint_metric}"] = best_value
 
         return last_metrics
 
