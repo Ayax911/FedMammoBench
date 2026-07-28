@@ -85,6 +85,15 @@ class TrainingConfig:
         best_checkpoint_metric: Which validation metric to maximize when
             ``save_best_checkpoint`` is True. Must be one of
             ``BEST_CHECKPOINT_METRICS`` — all "higher is better".
+        early_stopping_patience: When > 0, stop training after this many
+            consecutive epochs with no improvement in
+            ``best_checkpoint_metric`` on the validation set. Requires
+            ``save_best_checkpoint=True`` — early stopping needs to know
+            which epoch was best both to know when to stop and to know
+            which weights to keep (the reloaded ``best.pt``, not the
+            degraded weights at the epoch where patience ran out). 0
+            (default) disables early stopping; training always runs the
+            full ``epochs`` budget, matching prior behavior.
     """
 
     epochs: int = 20
@@ -97,6 +106,7 @@ class TrainingConfig:
     loss: LossConfig = field(default_factory=LossConfig)
     save_best_checkpoint: bool = False
     best_checkpoint_metric: str = "roc_auc"
+    early_stopping_patience: int = 0  # 0 -> disabled
 
     def validate(self, strategy_name: str = "fedavg", proximal_mu: float = 0.0) -> None:
         """Raise ValueError or emit warnings for invalid training settings.
@@ -121,6 +131,16 @@ class TrainingConfig:
             raise ValueError(
                 f"best_checkpoint_metric must be one of {BEST_CHECKPOINT_METRICS}, "
                 f"got {self.best_checkpoint_metric!r}"
+            )
+        if self.early_stopping_patience < 0:
+            raise ValueError(
+                f"early_stopping_patience must be >= 0, got {self.early_stopping_patience}"
+            )
+        if self.early_stopping_patience > 0 and not self.save_best_checkpoint:
+            raise ValueError(
+                "early_stopping_patience > 0 requires save_best_checkpoint: true — early "
+                "stopping needs to know which epoch was best in order to know when to stop "
+                "and which weights to keep."
             )
 
         # Warn about FedProx + AMP: the proximal term is computed in FP32 inside

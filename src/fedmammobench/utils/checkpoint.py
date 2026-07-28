@@ -8,6 +8,7 @@ from typing import Any
 import torch
 from torch import nn
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 
 from fedmammobench.utils.logging_utils import get_logger
 
@@ -19,19 +20,22 @@ def save_checkpoint(
     model: nn.Module,
     *,
     optimizer: Optimizer | None = None,
+    scheduler: LRScheduler | None = None,
     epoch: int | None = None,
     extra: dict[str, Any] | None = None,
 ) -> None:
     """Save a checkpoint.
 
     The checkpoint dict has stable keys: ``state_dict``, optionally
-    ``optimizer``, ``epoch``, ``extra``.
+    ``optimizer``, ``scheduler``, ``epoch``, ``extra``.
     """
     out_path = Path(path).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {"state_dict": model.state_dict()}
     if optimizer is not None:
         payload["optimizer"] = optimizer.state_dict()
+    if scheduler is not None:
+        payload["scheduler"] = scheduler.state_dict()
     if epoch is not None:
         payload["epoch"] = epoch
     if extra:
@@ -45,10 +49,12 @@ def load_checkpoint(
     model: nn.Module,
     *,
     optimizer: Optimizer | None = None,
+    scheduler: LRScheduler | None = None,
     map_location: str | torch.device = "cpu",
     strict: bool = True,
 ) -> dict[str, Any]:
-    """Load weights (and optionally optimizer state) into ``model`` in place.
+    """Load weights (and optionally optimizer/scheduler state) into ``model``
+    (and ``optimizer``/``scheduler``) in place.
 
     Returns the full checkpoint payload so callers can inspect ``epoch`` /
     ``extra``.
@@ -66,6 +72,8 @@ def load_checkpoint(
         _logger.warning("Unexpected keys when loading %s: %s", src, unexpected)
     if optimizer is not None and "optimizer" in payload:
         optimizer.load_state_dict(payload["optimizer"])
+    if scheduler is not None and "scheduler" in payload:
+        scheduler.load_state_dict(payload["scheduler"])
     _logger.info("Loaded checkpoint from %s", src)
     return payload
 

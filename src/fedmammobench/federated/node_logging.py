@@ -56,6 +56,39 @@ _EVAL_KEYS: tuple[str, ...] = (
 )
 
 
+class EarlyStoppingTriggered(Exception):
+    """Raised from ``record_eval`` when ``federated.early_stopping_patience``
+    rounds pass with no improvement in the tracked metric.
+
+    Flower's ``Server.fit`` round loop has no native "stop early" hook — the
+    only lever a wrapped strategy has is raising an exception. ``server.py``
+    catches this specific type around ``fl.simulation.start_simulation`` /
+    ``fl.server.start_server`` and treats it as a clean, expected stop (an
+    INFO log line) rather than a crash; the existing ``finally`` blocks there
+    still save ``global_model.pt``, write the summary, close sinks, and
+    autoplot regardless of how the round loop ends.
+    """
+
+    def __init__(
+        self,
+        server_round: int,
+        metric: str,
+        patience: int,
+        best_round: int | None,
+        best_value: float | None,
+    ) -> None:
+        self.server_round = server_round
+        self.metric = metric
+        self.patience = patience
+        self.best_round = best_round
+        self.best_value = best_value
+        best_value_str = f"{best_value:.4f}" if best_value is not None else "n/a"
+        super().__init__(
+            f"Early stopping at round {server_round}: no improvement in {metric} "
+            f"for {patience} rounds (best={best_value_str} at round {best_round})"
+        )
+
+
 class NodeMetricsRecorder:
     """Owns per-node CSV/TB sinks, timing, and the latest global parameters."""
 
@@ -64,6 +97,10 @@ class NodeMetricsRecorder:
         out_root: str | Path,
         tb_writer: TensorBoardWriter | None = None,
         cfg: ExperimentConfig | None = None,
+        *,
+        round_offset: int = 0,
+        resume_state: dict[str, Any] | None = None,
+        save_every_round: bool = False,
     ) -> None:
         self.out_root = Path(out_root).expanduser().resolve()
         self.clients_dir = self.out_root / "clients"
@@ -93,9 +130,27 @@ class NodeMetricsRecorder:
         _fed = getattr(cfg, "federated", None)
         self._track_best: bool = bool(_fed is not None and _fed.save_best_checkpoint)
         self._best_metric: str | None = _fed.best_checkpoint_metric if self._track_best else None
-        self._best_value: float | None = None
-        self._best_round: int | None = None
+        self._best_value: float | None = resume_state.get("best_value") if resume_state else None
+        self._best_round: int | None = resume_state.get("best_round") if resume_state else None
         self._best_path: Path | None = None
+
+        # Early stopping (federated.early_stopping_patience). Reuses the same
+        # best-value tracking as above; see EarlyStoppingTriggered.
+        self._patience: int = int(_fed.early_stopping_patience) if _fed is not None else 0
+        self._rounds_no_improve: int = (
+            int(resume_state.get("rounds_no_improve", 0)) if resume_state else 0
+        )
+        self._stopped_early_round: int | None = None
+
+        # Resume support (see server.py's run_simulation/run_grpc_server).
+        # round_offset shifts every round number this recorder logs (CSVs,
+        # TB, checkpoint `epoch=`/extra["round"]) so a resumed run continues
+        # absolute round numbering instead of restarting at 1 — Flower's own
+        # internal round counter always restarts at 1 for a new process, no
+        # way around that. Applied once, at wrap()'s boundary; nothing below
+        # this point needs to know about it.
+        self._round_offset: int = int(round_offset)
+        self._save_every_round: bool = bool(save_every_round)
 
     # -- lazy per-client sinks --------------------------------------------
 
@@ -257,13 +312,47 @@ class NodeMetricsRecorder:
             # to clients and calling aggregate_evaluate(R) -> record_eval(R).
             # So at this point _latest_parameters IS the checkpoint `agg`
             # describes, with no extra state needed to prove it.
-            if self._track_best and self._best_metric in agg:
-                current = float(agg[self._best_metric])
-                if current == current and (  # current == current -> not NaN
+            #
+            # The else branch below (no improvement, INCLUDING the metric
+            # being absent from `agg` entirely — e.g. an all-NaN round) feeds
+            # early_stopping_patience. Treating an absent metric as
+            # "no improvement" matters: otherwise a NaN streak would freeze
+            # _rounds_no_improve and silently defeat early stopping.
+            if self._track_best:
+                current = agg.get(self._best_metric)
+                if current is not None and current == current and (  # not NaN
                     self._best_value is None or current > self._best_value
                 ):
                     self._best_value, self._best_round = current, server_round
+                    self._rounds_no_improve = 0
                     self._save_best_global_model(server_round, current)
+                else:
+                    self._rounds_no_improve += 1
+
+            # Resume safety net: overwrite weights/global_model.pt EVERY round
+            # (not just on improvement, unlike _save_best_global_model above),
+            # so a hard process kill leaves a checkpoint at most one round
+            # stale. Runs regardless of federated.save_best_checkpoint. Placed
+            # AFTER the best-tracking update above (so extra["resume_state"]
+            # reflects THIS round's contribution, not a stale one-round-behind
+            # snapshot) but BEFORE the early-stop raise below (so the round
+            # that triggers the stop is still captured, not skipped).
+            if self._save_every_round:
+                self._save_progressive_global_model(server_round)
+
+            if (
+                self._track_best
+                and self._patience > 0
+                and self._rounds_no_improve >= self._patience
+            ):
+                self._stopped_early_round = server_round
+                raise EarlyStoppingTriggered(
+                    server_round,
+                    self._best_metric,
+                    self._patience,
+                    self._best_round,
+                    self._best_value,
+                )
 
     # -- strategy wrapping ------------------------------------------------
 
@@ -278,15 +367,18 @@ class NodeMetricsRecorder:
         orig_eval = strategy.aggregate_evaluate
 
         def fit_wrapped(server_round, results, failures):  # noqa: ANN001, ANN202
+            # Flower's own strategy always sees its own raw round number —
+            # the offset is applied only to what WE log, never to what we
+            # pass to/receive from Flower's real aggregate_fit.
             aggregated, metrics = orig_fit(server_round, results, failures)
             if aggregated is not None:
                 self._latest_parameters = aggregated
-            self.record_fit(server_round, results)
+            self.record_fit(server_round + self._round_offset, results)
             return aggregated, metrics
 
         def eval_wrapped(server_round, results, failures):  # noqa: ANN001, ANN202
             out = orig_eval(server_round, results, failures)
-            self.record_eval(server_round, results)
+            self.record_eval(server_round + self._round_offset, results)
             return out
 
         strategy.aggregate_fit = fit_wrapped  # type: ignore[method-assign]
@@ -341,11 +433,31 @@ class NodeMetricsRecorder:
             if path is not None
             else (self.out_root.parent / "weights" / "global_model.pt")
         )
+        # epoch= is the actual last round that ran, not the configured budget
+        # (cfg.federated.rounds) — they coincide unless the run stopped early
+        # (early_stopping_patience) or crashed after at least one round. The
+        # `self._round_offset or ...` fallback covers the narrow case of a
+        # resumed run that crashes again before any new round completes: the
+        # last known-good absolute round is the offset itself, not the full
+        # target — metadata-only, never affects the model weights themselves.
+        last_round = (
+            self._round_agg_metrics[-1]["round"]
+            if self._round_agg_metrics
+            else (self._round_offset or cfg.federated.rounds)
+        )
         self._materialize_and_save(
             cfg,
             out,
-            epoch=cfg.federated.rounds,
-            extra={"source": "federated_global", "rounds": cfg.federated.rounds},
+            epoch=last_round,
+            extra={
+                "source": "federated_global",
+                "rounds": cfg.federated.rounds,
+                "resume_state": {
+                    "best_value": self._best_value,
+                    "best_round": self._best_round,
+                    "rounds_no_improve": self._rounds_no_improve,
+                },
+            },
         )
         _logger.info(
             "Saved final global model to %s — verify it with "
@@ -354,6 +466,44 @@ class NodeMetricsRecorder:
             out,
         )
         return out
+
+    def _save_progressive_global_model(self, server_round: int) -> None:
+        """Overwrite weights/global_model.pt after every round — the actual
+        resume safety net (federated.enable via server.py's ``resume=True``
+        -> ``save_every_round``).
+
+        Unlike save_global_model (only called once, in the caller's
+        ``finally`` block — which a hard process kill bypasses entirely,
+        since it skips Python's exception machinery), this runs every round,
+        wrapped in try/except so a transient disk error never takes down
+        round N+1. Shares the same path/extra shape as save_global_model so
+        either one can be the "last" write.
+        """
+        cfg = self.cfg
+        if cfg is None or self._latest_parameters is None:
+            return
+        out = self.out_root.parent / "weights" / "global_model.pt"
+        try:
+            self._materialize_and_save(
+                cfg,
+                out,
+                epoch=server_round,
+                extra={
+                    "source": "federated_global",
+                    "rounds": cfg.federated.rounds,
+                    "resume_state": {
+                        "best_value": self._best_value,
+                        "best_round": self._best_round,
+                        "rounds_no_improve": self._rounds_no_improve,
+                    },
+                },
+            )
+        except Exception:
+            _logger.warning(
+                "Failed to save progressive global checkpoint at round %d",
+                server_round,
+                exc_info=True,
+            )
 
     def _save_best_global_model(self, server_round: int, value: float) -> None:
         """Save weights/global_best.pt when the tracked metric improves mid-run.
@@ -397,7 +547,11 @@ class NodeMetricsRecorder:
 
     def write_timing_summary(self, cfg: ExperimentConfig, total_seconds: float) -> None:
         """Write timing summary CSVs and a human-readable final_summary.txt."""
-        rounds = max(int(cfg.federated.rounds), 1)
+        # Actual rounds completed, not the configured budget — they coincide
+        # unless the run stopped early (early_stopping_patience) or crashed
+        # after at least one round completed.
+        rounds_completed = len(self._round_agg_metrics) or int(cfg.federated.rounds)
+        rounds = max(rounds_completed, 1)
 
         # 1. Overall timing CSV
         summary = CSVLogger(self.out_root / "timing_summary.csv")
@@ -405,7 +559,7 @@ class NodeMetricsRecorder:
             {
                 "total_seconds": round(total_seconds, 3),
                 "total_minutes": round(total_seconds / 60, 2),
-                "num_rounds": cfg.federated.rounds,
+                "num_rounds": rounds,
                 "num_clients": cfg.federated.num_clients,
                 "avg_seconds_per_round": round(float(total_seconds) / rounds, 3),
             }
@@ -437,12 +591,27 @@ class NodeMetricsRecorder:
                 return f"{val:.{decimals}f}"
             return str(val)
 
+        # When resumed (round_offset > 0), `rounds` only counts THIS process's
+        # rounds — the wall-time/avg-per-round math below is correctly scoped
+        # to this session, but "Rondas completadas" needs a distinct label so
+        # it doesn't read as contradicting the absolute round number shown
+        # further down (e.g. "Última ronda (#20)"). Gated so the default
+        # (round_offset=0, i.e. every non-resumed run) stays byte-identical.
+        session_label = (
+            "Rondas completadas (sesión)" if self._round_offset > 0 else "Rondas completadas"
+        )
         lines: list[str] = [
             "=" * 62,
             f"  RESUMEN FINAL — {cfg.name}",
             "=" * 62,
             f"  Estrategia         : {cfg.federated.strategy.name}",
-            f"  Rondas completadas : {cfg.federated.rounds}",
+            f"  {session_label} : {rounds}",
+        ]
+        if self._round_offset > 0 and self._round_agg_metrics:
+            lines.append(
+                f"  Ronda absoluta final : #{self._round_agg_metrics[-1]['round']}"
+            )
+        lines += [
             f"  Clientes           : {cfg.federated.num_clients}",
             f"  Tiempo total       : {total_seconds:.2f}s  ({total_seconds / 60:.1f} min)",
             f"  Promedio por ronda : {total_seconds / rounds:.2f}s",
@@ -484,6 +653,11 @@ class NodeMetricsRecorder:
                     f"(ronda {self._best_round}, {self._best_metric}="
                     f"{_fmt(self._best_value)})"
                 )
+            if self._stopped_early_round is not None:
+                lines.append(
+                    f"    Parada temprana    : ronda {self._stopped_early_round} "
+                    f"(paciencia={self._patience} rondas sin mejorar {self._best_metric})"
+                )
             lines += [
                 "",
                 "  MÉTRICAS COMPLETAS POR RONDA:",
@@ -514,4 +688,4 @@ class NodeMetricsRecorder:
             tb.close()
 
 
-__all__ = ["NodeMetricsRecorder"]
+__all__ = ["EarlyStoppingTriggered", "NodeMetricsRecorder"]

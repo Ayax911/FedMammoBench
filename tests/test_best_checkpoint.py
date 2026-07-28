@@ -130,6 +130,69 @@ class TestBestCheckpointTracking:
         assert "best_epoch" not in result
         assert not (tmp_path / "best.pt").exists()
 
+    def test_early_stopping_stops_before_configured_epochs(self, tmp_path):
+        """Best at epoch 1; epochs 2 and 3 don't improve -> stop after epoch 3."""
+        torch = pytest.importorskip("torch")
+        trainer, model, loader = _trainer_and_loader(torch)
+        evaluator = _ScriptedEvaluator(model, [0.5, 0.9, 0.7, 0.65, 0.6])
+        best_path = tmp_path / "best.pt"
+
+        result = trainer.fit(
+            loader,
+            epochs=5,
+            val_loader=loader,
+            evaluator=evaluator,
+            best_checkpoint_metric="roc_auc",
+            best_checkpoint_path=best_path,
+            early_stopping_patience=2,
+        )
+
+        assert evaluator._call == 4
+        assert result["epochs_run"] == 4
+        assert result["early_stopped"] is True
+        assert result["best_epoch"] == 1
+
+    def test_no_early_stopping_when_patience_zero(self, tmp_path):
+        """patience=0 (default) must run every configured epoch, unchanged."""
+        torch = pytest.importorskip("torch")
+        trainer, model, loader = _trainer_and_loader(torch)
+        evaluator = _ScriptedEvaluator(model, [0.5, 0.9, 0.7, 0.65, 0.6])
+        best_path = tmp_path / "best.pt"
+
+        result = trainer.fit(
+            loader,
+            epochs=5,
+            val_loader=loader,
+            evaluator=evaluator,
+            best_checkpoint_metric="roc_auc",
+            best_checkpoint_path=best_path,
+            early_stopping_patience=0,
+        )
+
+        assert evaluator._call == 5
+        assert result["epochs_run"] == 5
+        assert result["early_stopped"] is False
+
+    def test_early_stopping_ignored_without_best_checkpoint_tracking(self, tmp_path):
+        """patience>0 with no best-checkpoint tracking is a no-op at this level
+        (config-level validate() rejects the combination outright; this
+        lower-level method just stays permissive)."""
+        torch = pytest.importorskip("torch")
+        trainer, model, loader = _trainer_and_loader(torch)
+        evaluator = _ScriptedEvaluator(model, [0.5, 0.9, 0.7, 0.65, 0.6])
+
+        result = trainer.fit(
+            loader,
+            epochs=5,
+            val_loader=loader,
+            evaluator=evaluator,
+            early_stopping_patience=3,
+        )
+
+        assert evaluator._call == 5
+        assert result["epochs_run"] == 5
+        assert result["early_stopped"] is False
+
     def test_metric_absent_from_val_dict_is_skipped_safely(self, tmp_path):
         """An evaluator that never returns the tracked key must not crash fit()."""
         torch = pytest.importorskip("torch")

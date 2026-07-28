@@ -1,5 +1,227 @@
 # Changelog
 
+## [0.8.0] — 2026-07-28
+
+### Features
+
+- **Resume training after a crash, for both centralized and federated runs.**
+  New `--resume` flag on `scripts/run_centralized.py`, `scripts/run_federated.py`,
+  and `scripts/run_server.py` — no new `ExperimentConfig`/YAML fields. Why not a
+  `finally`-block save: a hard crash on this shared workstation (segfault,
+  OOM-killer, CUDA driver reset — the actual failure mode this targets) skips
+  Python's exception machinery entirely, so the existing `save_global_model`/
+  post-`fit()` `finally` writes never run. The only real protection is a
+  progressive, per-epoch/per-round safety-net checkpoint.
+  - `--resume` + no existing checkpoint → runs normally, but now also writes
+    the safety-net checkpoint every epoch/round (reusing the existing
+    `weights/final.pt` / `weights/global_model.pt` files — no new filenames)
+    so a later crash can be recovered from.
+  - `--resume` + an existing checkpoint → reloads model (+ optimizer +
+    scheduler, centralized) and continues until `training.epochs`/
+    `federated.rounds` (interpreted as the TOTAL budget across the original
+    run + resumes, not "how many more").
+  - Without `--resume`: byte-identical to today.
+  - Centralized: `Trainer.fit` gained `resume_checkpoint_path`/`resume_state`
+    (both optional, default `None` — no signature-compatibility break) and
+    `save_checkpoint`/`load_checkpoint` gained a `scheduler=` parameter
+    mirroring the existing `optimizer=`. `best_value`/`best_epoch`/
+    `rounds_no_improve` are seeded from `resume_state` so a resumed run
+    doesn't forget the best epoch seen before a crash or reset the
+    early-stopping patience counter.
+  - Federated: Flower's round loop has no way to "start counting from round
+    N" (its internal counter always restarts at 1 for a new process), so
+    resume loads the last checkpoint's weights as the new
+    `initial_parameters`, runs only the REMAINING rounds, and applies a
+    `round_offset` at every point a round number reaches a log file, a
+    checkpoint, or a client (`NodeMetricsRecorder.wrap()`,
+    `_make_on_fit_config_fn`/`_make_on_evaluate_config_fn`,
+    `_build_evaluate_fn`, `_attach_federated_logging`) — never to the calls
+    Flower's own strategy makes/receives, which keep seeing Flower's raw
+    round numbers. Without the client-config-fn offset, a resumed run's
+    progressive-unfreeze schedule (`model.unfreeze_at_epoch`) would desync
+    from what was configured.
+  - Known limitations, accepted rather than solved: mixed-precision
+    `GradScaler` state isn't persisted (re-adapts within a few iterations,
+    same spirit as the already-undocumented-as-guaranteed RNG state);
+    per-node cumulative timing (`per_node_timing.csv`) doesn't merge across
+    resumes; only whole epochs/rounds are checkpointed, so a crash mid-epoch/
+    mid-round loses that partial work; changing `federated.num_clients` or
+    `partitioning.*` between crash and resume silently reassigns which data
+    each client sees (partitioning is deterministic from `cfg.seed` alone) —
+    the YAML should stay otherwise unchanged except `training.epochs`/
+    `federated.rounds`.
+
+### Fixes
+
+- The centralized safety-net checkpoint stores the epoch as an **absolute
+  0-based index** (matching `best.pt`'s existing convention), not the
+  `epochs_run` count `final.pt`'s post-`fit()` save used pre-resume — the two
+  only ever coincided because `start_epoch` was always 0 before this feature;
+  a resumed run makes them diverge, and using the count would have silently
+  miscomputed the next resume point on a second, chained resume.
+- `NodeMetricsRecorder.write_timing_summary` now distinguishes "rounds
+  completed this session" from "final absolute round reached" when resumed
+  (`round_offset > 0`) — previously these would have looked contradictory in
+  `final_summary.txt` (e.g. "6 rounds completed" next to "round #20"). Gated
+  so the default (non-resumed) case stays byte-identical.
+
+## [0.7.0] — 2026-07-28
+
+### Features
+
+- **Early stopping (patience) for both centralized and federated training.**
+  New `training.early_stopping_patience` / `federated.early_stopping_patience`
+  (default `0`, disabled — existing configs run unchanged). When > 0, stops
+  after that many consecutive epochs/rounds with no improvement in
+  `best_checkpoint_metric`. Requires `save_best_checkpoint: true` in the same
+  section (config-level `validate()` rejects the combination otherwise) —
+  early stopping needs to know which epoch/round was best both to decide when
+  to stop and which weights to keep.
+  - Centralized: `Trainer.fit` gained the `early_stopping_patience` parameter
+    (new, optional, default `0` — no signature-compatibility break) and now
+    `break`s its own epoch loop; returns `epochs_run` (actual epoch count)
+    and `early_stopped` (bool) in the result dict unconditionally.
+  - Federated: Flower's round loop has no native "stop early" hook, so
+    `NodeMetricsRecorder.record_eval` raises a new `EarlyStoppingTriggered`
+    exception from the wrapped strategy once patience is exhausted.
+    `federated/server.py` catches it around `fl.simulation.start_simulation`
+    (which Flower internally re-wraps as `RuntimeError(...) from ex` — caught
+    via `isinstance(e.__cause__, EarlyStoppingTriggered)`) and around
+    `fl.server.start_server` (propagates raw, no Flower-side wrapping) as a
+    clean, expected stop (INFO log), not a crash. The existing `finally`
+    blocks still save `global_model.pt`, write the summary, close sinks, and
+    autoplot regardless of how the round loop ends.
+  - `ExperimentConfig.validate()` warns (doesn't error) if the configured
+    patience is `>=` the epoch/round budget, since it could then never fire.
+
+### Fixes
+
+- **`weights/final.pt` (centralized) and `weights/global_model.pt`
+  (federated) now record the actual last epoch/round trained in their
+  `epoch=` checkpoint metadata, not the configured budget
+  (`training.epochs`/`federated.rounds`).** Previously harmless because the
+  two always coincided (nothing could stop training early); early stopping
+  makes them diverge. `NodeMetricsRecorder.write_timing_summary`'s "Rondas
+  completadas" / `avg_seconds_per_round` / `timing_summary.csv`'s
+  `num_rounds` have the same fix, derived from the actual number of
+  completed rounds (`len(self._round_agg_metrics)`) instead of
+  `federated.rounds`. Byte-identical output for any run that isn't
+  early-stopped (the actual and configured counts always match there).
+- `NodeMetricsRecorder.record_eval`'s best-checkpoint hook now treats a round
+  where the tracked metric is entirely absent from the aggregated metrics
+  (e.g. an all-NaN round) the same as "no improvement" for early-stopping
+  purposes — previously such rounds were silently skipped, which would have
+  let a NaN streak freeze the patience counter and defeat early stopping.
+  `Trainer.fit`'s centralized equivalent already covered this case similarly.
+
+## [0.6.0] — 2026-07-28
+
+### Features
+
+- **Best-checkpoint selection for federated training**, mirroring 0.5.0's
+  centralized version. New `federated.save_best_checkpoint` (default `false`,
+  off) and `federated.best_checkpoint_metric` (default `"roc_auc"`, must be
+  one of `FederatedConfig.FEDERATED_BEST_CHECKPOINT_METRICS` — same list as
+  `TrainingConfig.BEST_CHECKPOINT_METRICS` minus `auc_pr`, which
+  `FedMammoBenchClient.evaluate` never reports so it could never trigger a
+  save). When enabled, `NodeMetricsRecorder.record_eval` writes
+  `weights/global_best.pt` every time the tracked weighted-average validation
+  metric improves round-over-round — the aggregated parameters from that
+  round's `aggregate_fit`, not a later round's. `weights/global_model.pt`
+  (last round) is still always written, unchanged. `write_timing_summary()`
+  now reports the tracked metric generically (was hardcoded to `roc_auc`) and
+  prints the best-checkpoint path/round when tracking is on. Unlike the
+  centralized path, the server does **not** reload `global_best.pt` before
+  anything — federated has no terminal test pass to reload for, since
+  `evaluate_fn` already runs every round; evaluate `global_best.pt` post-hoc
+  with `fedmammobench-evaluate`. Off by default so existing configs/runs are
+  unaffected. See `tests/test_federated_best_checkpoint.py`.
+
+- **Weights & Biases integration**, one run per experiment, server-side only
+  (federated clients — in-process Ray workers or gRPC nodes — never call
+  `wandb.init`). New `wandb:` config section (`WandbConfig`, defaults
+  `enabled: true`, `mode: "online"`, `project: "fedmammobench"`) wired into
+  every entry point through `fedmammobench.utils.metrics_sink.MetricSink`, a
+  fan-out writer that always logs to TensorBoard and additionally to W&B when
+  `wandb.enabled`. `Trainer`, `federated/server.py`, and
+  `federated/server_training.py` now type their `tb_writer` parameter as the
+  `MetricWriter` protocol instead of the concrete `TensorBoardWriter` class —
+  **no constructor signature changed**, so this is not a version-triggering
+  break by the letter of the rule, but is called out here because it changes
+  what `config.snapshot.yaml` records (see Risks). Federated per-node metrics
+  are now also pushed to the shared server-run sink under `node_<id>/…` keys
+  (`record_fit`/`record_eval` in `node_logging.py`), so per-client curves show
+  up as panels inside the one W&B run instead of requiring per-node
+  TensorBoard digging.
+  `enabled: true` **by default**, so W&B degradation had to be safe with zero
+  configuration on every existing Docker deployment, including keyless ones:
+  `WandbWriter` (`fedmammobench.utils.wandb_utils`) never raises, never
+  blocks past `init_timeout=30`, and never prompts (`WANDB_SILENT`/
+  `WANDB_CONSOLE=off` are forced via `setdefault` *before* `import wandb`, so
+  it can't hijack the stdout that `docker-deploy-federated.sh`'s readiness
+  `grep` depends on). Missing package → offline degrade to online without a
+  `WANDB_API_KEY` (checked via `.strip()`, so the empty string from
+  `-e WANDB_API_KEY="${WANDB_API_KEY:-}"` counts as absent) → offline;
+  `wandb.init` failure → one offline retry, then disabled; a run that fails
+  to log 10 times auto-disables itself. Offline runs are not lost — they land
+  in `<out_root>/wandb/wandb/offline-run-*/` (inside the `runs/` bind mount)
+  and sync later with `wandb sync`. `docker-deploy-federated.sh`,
+  `run-queue.sh`, `run-exp{20-22,24-26,28-31,50-55}.sh`, and the
+  `run-experiment`/`run-batch`/`run-research-suite` GitHub Actions workflows
+  now pass `WANDB_API_KEY` through to server/centralized containers only
+  (never to client/node containers). See `tests/test_wandb_writer.py` and the
+  "Weights & Biases" section of `configs/README.md` for host/CI setup.
+
+- **Automatic plotting after every run, and a fixed federated per-node plotting
+  bug.** `scripts/plot_experiment.py`'s plotting logic moved into
+  `fedmammobench.plotting` (importable, testable, no longer re-executed as a
+  script via `_load_script_main`); `plot_experiment.py` is now a thin CLI
+  wrapper with unchanged flags. Fixed: `_collect_node_dfs` parsed client
+  directory names with `.replace("cid_", "").replace("node_", "")` and then
+  `int(...)`, but `NodeMetricsRecorder` has only ever created
+  `clients/client_<id>/` — `int("client_0")` raised `ValueError`, the
+  `except` swallowed it, and **every** federated run silently produced zero
+  `nodes_*.png` files (confirmed: none existed anywhere under `runs/` before
+  this fix). Directory names are now parsed with a trailing-digits regex, so
+  `client_<N>`, `cid_<N>`, and `node_<N>` all work. Two new plots use data
+  that already existed but was never charted: `nodes_loss_train_val.png`
+  (train loss and val loss side by side, one line per node) and
+  `node_<N>_loss.png` per node (train solid + val dashed on the same axes,
+  making per-node overfitting visible at a glance — the pattern that
+  motivated this whole release, see 0.5.0 and exp50-55). `autoplot(run_dir)`
+  now runs automatically at the end of centralized (`run_centralized.py`) and
+  federated (`server.py`, both simulation and gRPC `finally` blocks) training,
+  wrapped so a plotting failure (including `matplotlib` not being installed)
+  never fails the run — only logs a warning. `matplotlib` moved from
+  `requirements.txt`-only to also being a declared `pyproject.toml`
+  dependency (the two manifests had diverged). See `tests/test_plotting.py`.
+
+### Fixes
+
+- `scripts/run_centralized.py` now closes its metric sink (`TensorBoardWriter`
+  previously, `MetricSink` now) inside a `finally` block. Previously, an
+  exception during `trainer.fit()` or evaluation would leak the writer —
+  harmless for TensorBoard, but would leave a W&B run stuck in the "running"
+  state in the UI forever since `run.finish()` was never called.
+
+### Risks / Notes
+
+- `wandb: {...}` now appears in every future `config.snapshot.yaml` (the
+  full resolved `ExperimentConfig` is passed to `wandb.init(config=...)` and
+  is also what gets snapshotted to disk by `save_config`). `WandbConfig` is
+  deliberately kept free of any credential field — see its docstring — so
+  this is not a secrets leak, but it will show up in config diffs between
+  0.5.x and 0.6.x runs.
+- Old `configs/*.yaml` do not set `wandb:` and get the dataclass default
+  (`enabled: true`). Anyone re-running a pre-0.6.0 config against a rebuilt
+  Docker image will start emitting W&B data (offline, if no
+  `WANDB_API_KEY`) unless `wandb.enabled: false` is added explicitly.
+- Requires a Docker image rebuild to take effect: `Dockerfile` installs from
+  `requirements.txt` (now pinned `wandb>=0.17,<0.22`), and every deploy
+  script pulls `ayax911/federal-learning:latest`. Until the image is rebuilt
+  and republished, containers fall back to the "wandb not installed" path
+  (one INFO log line, no data), which does not affect training.
+
 ## [0.5.0] — 2026-07-28
 
 ### Features

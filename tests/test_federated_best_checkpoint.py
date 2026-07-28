@@ -27,7 +27,13 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 
-def _cfg(*, save_best_checkpoint: bool = True, best_checkpoint_metric: str = "roc_auc"):
+def _cfg(
+    *,
+    save_best_checkpoint: bool = True,
+    best_checkpoint_metric: str = "roc_auc",
+    rounds: int = 3,
+    early_stopping_patience: int = 0,
+):
     from fedmammobench.configs.schema import (
         DataConfig,
         ExperimentConfig,
@@ -44,9 +50,10 @@ def _cfg(*, save_best_checkpoint: bool = True, best_checkpoint_metric: str = "ro
         model=ModelConfig(name="resnet18", pretrained=False, in_channels=1),
         federated=FederatedConfig(
             num_clients=2,
-            rounds=3,
+            rounds=rounds,
             save_best_checkpoint=save_best_checkpoint,
             best_checkpoint_metric=best_checkpoint_metric,
+            early_stopping_patience=early_stopping_patience,
         ),
     )
 
@@ -244,7 +251,90 @@ class TestBestGlobalCheckpointSaved:
         assert recorder._best_path is None
 
 
+class TestEarlyStopping:
+    def test_raises_after_patience_rounds_no_improvement(self, tmp_path) -> None:
+        pytest.importorskip("torch")
+        from fedmammobench.federated.node_logging import (
+            EarlyStoppingTriggered,
+            NodeMetricsRecorder,
+        )
+        from fedmammobench.federated.param_utils import state_dict_to_ndarrays
+        from fedmammobench.models import build_model
+
+        cfg = _cfg(rounds=10, early_stopping_patience=2)
+        model = build_model(cfg.model)
+        strategy = _DummyStrategy(state_dict_to_ndarrays(model))
+        recorder = NodeMetricsRecorder(tmp_path, cfg=cfg)
+        recorder.wrap(strategy)
+        recorder.start()
+
+        # best = round 2; round 3 = no-improve #1; round 4 = no-improve #2 == patience
+        with pytest.raises(EarlyStoppingTriggered) as excinfo:
+            _run_rounds(strategy, recorder, [0.60, 0.85, 0.80, 0.75])
+
+        assert excinfo.value.server_round == 4
+        assert excinfo.value.best_round == 2
+        assert excinfo.value.best_value == pytest.approx(0.85)
+        assert recorder._stopped_early_round == 4
+
+    def test_no_raise_when_patience_zero(self, setup) -> None:
+        """Default patience=0 must never raise, even on a long plateau."""
+        _, strategy, recorder, _, _ = setup
+        _run_rounds(strategy, recorder, [0.60, 0.85, 0.80, 0.75, 0.70])  # no raise expected
+        assert recorder._stopped_early_round is None
+
+    def test_global_model_epoch_metadata_is_last_completed_round(self, tmp_path) -> None:
+        """global_model.pt's epoch= must be the last round that actually ran,
+        not the configured budget, when the run stops before completing it."""
+        pytest.importorskip("torch")
+        from fedmammobench.federated.node_logging import (
+            EarlyStoppingTriggered,
+            NodeMetricsRecorder,
+        )
+        from fedmammobench.federated.param_utils import state_dict_to_ndarrays
+        from fedmammobench.models import build_model
+        from fedmammobench.utils.checkpoint import load_checkpoint
+
+        cfg = _cfg(rounds=10, early_stopping_patience=2)
+        model = build_model(cfg.model)
+        strategy = _DummyStrategy(state_dict_to_ndarrays(model))
+        recorder = NodeMetricsRecorder(tmp_path, cfg=cfg)
+        recorder.wrap(strategy)
+        recorder.start()
+
+        with pytest.raises(EarlyStoppingTriggered):
+            _run_rounds(strategy, recorder, [0.60, 0.85, 0.80, 0.75])
+
+        out = recorder.save_global_model(cfg)
+        reloaded = build_model(cfg.model)
+        payload = load_checkpoint(out, reloaded, strict=True)
+        assert payload["epoch"] == 4  # last round completed, not cfg.federated.rounds (10)
+
+
 class TestFederatedBestCheckpointConfig:
+    def test_validate_rejects_negative_patience(self) -> None:
+        from fedmammobench.configs.federated_config import FederatedConfig
+
+        cfg = FederatedConfig(early_stopping_patience=-1)
+        with pytest.raises(ValueError, match="early_stopping_patience"):
+            cfg.validate()
+
+    def test_validate_rejects_patience_without_save_best_checkpoint(self) -> None:
+        from fedmammobench.configs.federated_config import FederatedConfig
+
+        cfg = FederatedConfig(early_stopping_patience=3, save_best_checkpoint=False)
+        with pytest.raises(ValueError, match="early_stopping_patience"):
+            cfg.validate()
+
+    def test_validate_accepts_patience_with_save_best_checkpoint(self) -> None:
+        from fedmammobench.configs.federated_config import FederatedConfig
+
+        FederatedConfig(
+            early_stopping_patience=3,
+            save_best_checkpoint=True,
+            best_checkpoint_metric="roc_auc",
+        ).validate()
+
     def test_validate_rejects_auc_pr(self) -> None:
         from fedmammobench.configs.federated_config import FederatedConfig
 

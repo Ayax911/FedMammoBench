@@ -201,6 +201,29 @@ class TestFederatedConfig:
         fields_b = {"name": "resnet18", "num_classes": 2, "in_channels": 1, "dropout": 0.2}
         assert fed.model_config_hash(fields_a) != fed.model_config_hash(fields_b)
 
+    def test_early_stopping_patience_defaults_to_zero(self):
+        from fedmammobench.configs.federated_config import FederatedConfig
+        assert FederatedConfig().early_stopping_patience == 0
+
+    def test_early_stopping_patience_negative_raises(self):
+        from fedmammobench.configs.federated_config import FederatedConfig
+        cfg = FederatedConfig(early_stopping_patience=-1)
+        with pytest.raises(ValueError, match="early_stopping_patience"):
+            cfg.validate()
+
+    def test_early_stopping_patience_requires_save_best_checkpoint(self):
+        from fedmammobench.configs.federated_config import FederatedConfig
+        cfg = FederatedConfig(early_stopping_patience=3, save_best_checkpoint=False)
+        with pytest.raises(ValueError, match="early_stopping_patience"):
+            cfg.validate()
+
+    def test_early_stopping_patience_ok_with_save_best_checkpoint(self):
+        from fedmammobench.configs.federated_config import FederatedConfig
+        cfg = FederatedConfig(
+            early_stopping_patience=3, save_best_checkpoint=True, best_checkpoint_metric="roc_auc"
+        )
+        cfg.validate()
+
 
 # ---------------------------------------------------------------------------
 # TrainingConfig validation
@@ -252,6 +275,32 @@ class TestTrainingConfig:
         cfg = TrainingConfig(epochs=5, save_best_checkpoint=False, best_checkpoint_metric="loss")
         cfg.validate()
 
+    def test_early_stopping_patience_defaults_to_zero(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        assert TrainingConfig().early_stopping_patience == 0
+
+    def test_early_stopping_patience_negative_raises(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, early_stopping_patience=-1)
+        with pytest.raises(ValueError, match="early_stopping_patience"):
+            cfg.validate()
+
+    def test_early_stopping_patience_requires_save_best_checkpoint(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, early_stopping_patience=3, save_best_checkpoint=False)
+        with pytest.raises(ValueError, match="early_stopping_patience"):
+            cfg.validate()
+
+    def test_early_stopping_patience_ok_with_save_best_checkpoint(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(
+            epochs=5,
+            early_stopping_patience=3,
+            save_best_checkpoint=True,
+            best_checkpoint_metric="roc_auc",
+        )
+        cfg.validate()
+
 
 # ---------------------------------------------------------------------------
 # ExperimentConfig.validate() cross-section checks
@@ -285,6 +334,36 @@ class TestExperimentConfigValidate:
             warnings.simplefilter("always")
             cfg.validate()
         assert any("unfreeze_at_epoch" in str(warning.message) for warning in w)
+
+    def test_early_stopping_patience_beyond_rounds_warns(self):
+        from fedmammobench.configs.experiment import ExperimentConfig
+        from fedmammobench.configs.federated_config import FederatedConfig
+        cfg = ExperimentConfig(mode="federated")
+        cfg.federated = FederatedConfig(
+            rounds=5,
+            save_best_checkpoint=True,
+            best_checkpoint_metric="roc_auc",
+            early_stopping_patience=10,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            cfg.validate()
+        assert any("early_stopping_patience" in str(warning.message) for warning in w)
+
+    def test_early_stopping_patience_within_epochs_no_warn(self):
+        from fedmammobench.configs.experiment import ExperimentConfig
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = ExperimentConfig(mode="centralized")
+        cfg.training = TrainingConfig(
+            epochs=20,
+            save_best_checkpoint=True,
+            best_checkpoint_metric="roc_auc",
+            early_stopping_patience=5,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            cfg.validate()
+        assert not any("early_stopping_patience" in str(warning.message) for warning in w)
 
 
 # ---------------------------------------------------------------------------

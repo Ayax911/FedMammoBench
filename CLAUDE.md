@@ -27,13 +27,18 @@ fedmammobench-federated --config configs/exp07/server.yaml
 fedmammobench-centralized --config configs/exp08/centralized.yaml
 
 # Post-hoc evaluation on a checkpoint
-fedmammobench-evaluate --config configs/<exp>/server.yaml --checkpoint runs/<name>/global_model.pt
+fedmammobench-evaluate --config configs/<exp>/server.yaml --checkpoint runs/<name>/weights/global_model.pt
 
 # Multi-device gRPC mode (manual)
 python scripts/run_server.py --config configs/exp07/server.yaml   # on the aggregation server
 python scripts/run_client.py --config configs/exp07/client.yaml \
   --server 192.168.1.10:8080 --client-id 0 \
   --manifest manifests/node0_manifest.csv --data-dir data/       # on each node
+
+# Resume a crashed run (re-run the SAME command with --resume added)
+python scripts/run_centralized.py --config configs/exp08/centralized.yaml --resume
+python scripts/run_federated.py --config configs/exp07/server.yaml --resume
+python scripts/run_server.py --config configs/exp07/server.yaml --resume
 
 # Docker federated deployment (automated, all in containers)
 scripts/docker-deploy-federated.sh exp14                          # Launch server + 5 clients
@@ -59,14 +64,15 @@ The `federated/server.py` also exposes `run_grpc_server` for real multi-device d
 
 ### Config system
 
-All YAML configs inherit from `configs/base.yaml` via a `defaults:` key resolved in `configs/loader.py`. The loaded dict is deserialized into typed dataclasses in `configs/schema.py` (which re-exports everything from five sub-modules):
+All YAML configs inherit from `configs/base.yaml` via a `defaults:` key resolved in `configs/loader.py`. The loaded dict is deserialized into typed dataclasses in `configs/schema.py` (which re-exports everything from six sub-modules):
 
 | Section | Module | Key fields |
 |---------|--------|-----------|
 | `data` / `partitioning` | `data_config.py` | `manifest_path`, `val_fraction`, `scheme` (iid/dirichlet/quantity_skew) |
 | `model` | `model_config.py` | `name`, `weight_source`, `freeze_backbone`, `unfreeze_at_epoch`, `local_unfreeze_at_epoch` |
-| `training` | `training_config.py` | `local_epochs`, `optimizer`, `scheduler`, `loss` |
-| `federated` | `federated_config.py` | `num_clients`, `rounds`, `strategy`, `server_training`, `server_address` |
+| `training` | `training_config.py` | `local_epochs`, `optimizer`, `scheduler`, `loss`, `save_best_checkpoint`, `best_checkpoint_metric`, `early_stopping_patience` |
+| `federated` | `federated_config.py` | `num_clients`, `rounds`, `strategy`, `server_training`, `server_address`, `save_best_checkpoint`, `best_checkpoint_metric`, `early_stopping_patience` |
+| `wandb` | `wandb_config.py` | `enabled` (default `true`), `project`, `mode` (online/offline/disabled) — one run per experiment, server/centralized side only |
 | experiment + evaluation | `experiment.py` | cross-section validation (freeze reachability, preset↔channels) |
 
 Call `cfg.validate()` after loading to catch bad combinations early. Each section has its own `validate()`; cross-section rules live in `ExperimentConfig.validate()`.
@@ -88,7 +94,20 @@ Each federated round (simulation or gRPC):
 2. **Client** (`FedMammoBenchClient.fit`): loads server parameters (strict), runs `apply_freeze_policy`, optionally applies cyclic within-round unfreeze at `local_unfreeze_at_epoch`, trains for `local_epochs`, returns updated weights + metrics.
 3. **Strategy** (`aggregate_fit`) averages weights. If `server_training.enabled`, `attach_server_training` wraps `aggregate_fit` to run a server-side training step afterwards (`new_global = (1-w)*aggregated + w*server_trained`).
 4. **Clients** evaluate the aggregated model on their local val split; strategy `aggregate_evaluate` weighted-averages → logged to `server_federated_metrics.csv`.
-5. **`NodeMetricsRecorder`** (wraps the strategy) captures per-node fit/eval CSVs, per-round timing, and saves `global_model.pt` at the end.
+5. **`NodeMetricsRecorder`** (wraps the strategy) captures per-node fit/eval CSVs, per-round timing, and saves `global_model.pt` at the end; if `federated.save_best_checkpoint` is set, it also overwrites `weights/global_best.pt` whenever the tracked weighted-average eval metric improves round-over-round. If `federated.early_stopping_patience` is also set, it raises an internal exception (`EarlyStoppingTriggered`) once that many rounds pass with no improvement — Flower has no native "stop early" hook, so `server.py` catches it around `fl.simulation.start_simulation`/`fl.server.start_server` as a clean, expected stop rather than a crash. Same mechanism centrally via `Trainer.fit(early_stopping_patience=...)`, which just `break`s its own loop. Both require `save_best_checkpoint=True` in the same section (config-level validation enforces this).
+
+### Resume after a crash
+
+`--resume` on `run_centralized.py`/`run_federated.py`/`run_server.py` (v0.8.0) — no new config fields.
+On a shared workstation, a hard crash (segfault, OOM-killer, CUDA driver reset) skips Python's
+`finally` blocks entirely, so the existing end-of-run checkpoint saves don't help; `--resume` instead
+overwrites `weights/final.pt` (centralized, + optimizer/scheduler state) or `weights/global_model.pt`
+(federated) every epoch/round as a safety net, and reloads from it on the next invocation. `training.epochs`/
+`federated.rounds` are the TOTAL budget across the original run + resumes. Federated resume can't ask
+Flower to start its round counter above 1, so it runs only the remaining rounds and applies a
+`round_offset` everywhere a round number is logged or sent to clients (never to Flower's own strategy
+calls). See `configs/README.md`'s "Resume tras un crash" section for the full mechanism and limitations
+(GradScaler state, mid-epoch/round crashes, `num_clients`/`partitioning` drift between resumes).
 
 Two frozen-backbone subtleties in that loop (both fixed 2026-07-08, regression tests in `tests/test_audit_fixes.py`):
 - **BatchNorm drift under freeze.** `model.train()` (called every epoch) re-enables *all* modules including frozen-backbone BN layers, which keep updating `running_mean`/`running_var` even though `requires_grad=False` stops γ/β from updating. `Trainer` re-pins BN layers with frozen affine params back to `eval()` after each `train()` call (`_freeze_bn_running_stats`) — otherwise per-client BN stats drift independently and get corrupted on aggregation.
@@ -100,9 +119,13 @@ Two frozen-backbone subtleties in that loop (both fixed 2026-07-08, regression t
 - `server_federated_metrics.csv` — primary federated metric (weighted avg across nodes)
 - `server_metrics.csv` — centralized evaluation on server holdout (opt-in via `data.name != none`)
 - `server_timing.csv` / `timing_summary.csv` — per-round and total wall times
-- `global_model.pt` — final aggregated checkpoint
+- `weights/global_model.pt` — final aggregated checkpoint (federated, always written)
+- `weights/global_best.pt` — best-round checkpoint (federated, opt-in via `federated.save_best_checkpoint`; server never reloads this itself, evaluate it post-hoc)
+- `weights/final.pt` / `weights/best.pt` — last-epoch / best-epoch checkpoint (centralized, `best.pt` opt-in via `training.save_best_checkpoint`; `scripts/run_centralized.py` reloads `best.pt` before test-set evaluation when enabled)
 - `clients/client_<id>/fit_metrics.csv`, `eval_metrics.csv` — per-node local view
 - `tb/` — TensorBoard event files
+- `wandb/` — local W&B run data, only if `wandb.enabled` (default `true`); populated even offline, sync later with `wandb sync`
+- `plots/` — PNGs auto-generated at the end of every run via `fedmammobench.plotting.autoplot` (never fails the run; see `scripts/plot_experiment.py` to regenerate by hand)
 
 **Post-hoc evaluation** (via `scripts/run-eval-queue.sh` or `fedmammobench-evaluate --output-dir`) writes under `runs/<exp>/eval/<config_name>/`:
 - `run.log` — evaluation logs

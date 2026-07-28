@@ -30,6 +30,17 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Federated simulation entrypoint.")
     p.add_argument("--config", "-c", required=True, type=str, help="Path to a YAML config.")
     p.add_argument("--output-dir", type=str, default=None, help="Override cfg.output_dir.")
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume from weights/global_model.pt if present (continues until "
+            "federated.rounds total, absolute round numbers preserved in logs). "
+            "If no checkpoint exists yet, starts fresh but writes a per-round "
+            "safety-net checkpoint there so a later crash can be recovered from "
+            "by re-running the same command with --resume again."
+        ),
+    )
     return p.parse_args()
 
 
@@ -51,7 +62,7 @@ def main() -> int:
     set_global_seed(cfg.seed, deterministic=True)
     save_config(cfg, out_root / "config.snapshot.yaml")
 
-    history = run_simulation(cfg, output_dir=out_root)
+    history = run_simulation(cfg, output_dir=out_root, resume=args.resume)
     logger.info("History summary: %s", history)
     return 0
 

@@ -92,6 +92,27 @@ class ExperimentConfig:
                     stacklevel=2,
                 )
 
+        # Cross-section: early_stopping_patience should be reachable within
+        # training epochs / federated rounds, else it can never trigger.
+        if self.mode == "federated" and self.federated.early_stopping_patience >= self.federated.rounds:
+            import warnings
+            warnings.warn(
+                f"federated.early_stopping_patience={self.federated.early_stopping_patience} "
+                f"is >= federated.rounds={self.federated.rounds}. Early stopping will never "
+                "trigger.",
+                UserWarning,
+                stacklevel=2,
+            )
+        elif self.mode == "centralized" and self.training.early_stopping_patience >= self.training.epochs:
+            import warnings
+            warnings.warn(
+                f"training.early_stopping_patience={self.training.early_stopping_patience} "
+                f"is >= training.epochs={self.training.epochs}. Early stopping will never "
+                "trigger.",
+                UserWarning,
+                stacklevel=2,
+            )
+
 
 __all__ = [
     "EvaluationConfig",

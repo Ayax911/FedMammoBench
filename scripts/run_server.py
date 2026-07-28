@@ -61,6 +61,17 @@ def parse_args() -> argparse.Namespace:
             "Clients must use the server's LAN IP (e.g. 192.168.1.10:8080)."
         ),
     )
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume from weights/global_model.pt if present (continues until "
+            "federated.rounds total, absolute round numbers preserved in logs). "
+            "If no checkpoint exists yet, starts fresh but writes a per-round "
+            "safety-net checkpoint there so a later crash can be recovered from "
+            "by re-running the same command with --resume again."
+        ),
+    )
     return p.parse_args()
 
 
@@ -101,7 +112,7 @@ def main() -> int:
         out_root,
     )
 
-    run_grpc_server(cfg, output_dir=out_root)
+    run_grpc_server(cfg, output_dir=out_root, resume=args.resume)
     return 0
 
 

@@ -209,6 +209,9 @@ class Trainer:
         start_epoch: int = 0,
         best_checkpoint_metric: str | None = None,
         best_checkpoint_path: str | Path | None = None,
+        early_stopping_patience: int = 0,
+        resume_checkpoint_path: str | Path | None = None,
+        resume_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Train for ``epochs`` epochs. Returns the last epoch's metrics.
 
@@ -220,11 +223,46 @@ class Trainer:
                 better — see ``TrainingConfig.BEST_CHECKPOINT_METRICS``).
                 Requires ``val_loader``/``evaluator``. The returned dict then
                 includes ``best_epoch`` and ``best_val_<metric>``.
+            early_stopping_patience: When > 0, stop after this many
+                consecutive epochs with no improvement in
+                ``best_checkpoint_metric``. No-op unless best-checkpoint
+                tracking is active (i.e. both ``best_checkpoint_metric`` and
+                ``best_checkpoint_path`` are set) — config-level validation
+                (``TrainingConfig.validate``) enforces this more strictly by
+                rejecting the combination outright; this lower-level method
+                just stays permissive and ignores patience if there is no
+                "best" to compare against. The returned dict always includes
+                ``epochs_run`` (actual epochs executed, <= ``epochs``) and
+                ``early_stopped`` (bool).
+            resume_checkpoint_path: When set, overwrite a full-state
+                checkpoint (model + optimizer + scheduler + the epoch just
+                completed, absolute index) at this path after EVERY epoch —
+                a crash-safety net distinct from ``best_checkpoint_path``
+                (which only saves on improvement, model-only). Also embeds
+                ``extra["resume_state"]`` so a later resumed call can pass it
+                back via ``resume_state`` below and continue the
+                best-checkpoint/early-stopping bookkeeping without resetting
+                it.
+            resume_state: When set (typically read from a previous
+                ``resume_checkpoint_path`` save's ``extra["resume_state"]``),
+                seeds ``best_value``/``best_epoch``/``rounds_no_improve`` from
+                it instead of starting fresh — required for a resumed run to
+                not "forget" the best epoch seen before a crash, or reset the
+                early-stopping patience counter.
         """
         last_metrics: dict[str, Any] = {}
         track_best = best_checkpoint_metric is not None and best_checkpoint_path is not None
-        best_value: float | None = None
-        best_epoch: int | None = None
+        best_value: float | None = resume_state.get("best_value") if resume_state else None
+        best_epoch: int | None = resume_state.get("best_epoch") if resume_state else None
+        rounds_no_improve = int(resume_state.get("rounds_no_improve", 0)) if resume_state else 0
+
+        if epochs <= 0:
+            result: dict[str, Any] = {"epochs_run": 0, "early_stopped": False}
+            if track_best:
+                result["best_epoch"] = best_epoch
+                result[f"best_val_{best_checkpoint_metric}"] = best_value
+            return result
+
         for epoch in range(start_epoch, start_epoch + epochs):
             t0 = time.perf_counter()
             train_stats = self.train_one_epoch(train_loader, epoch=epoch)
@@ -266,6 +304,7 @@ class Trainer:
                     current = val_metrics.get(best_checkpoint_metric)
                     if current is not None and (best_value is None or current > best_value):
                         best_value, best_epoch = current, epoch
+                        rounds_no_improve = 0
                         save_checkpoint(
                             best_checkpoint_path,
                             self.model,
@@ -280,14 +319,55 @@ class Trainer:
                             current,
                             best_checkpoint_path,
                         )
+                    else:
+                        rounds_no_improve += 1
 
             if self.csv_logger is not None:
                 row = {k: v for k, v in last_metrics.items() if isinstance(v, (int, float, str))}
                 self.csv_logger.append(row)
 
+            if resume_checkpoint_path is not None:
+                # Crash-safety net: overwritten every epoch (not just on
+                # improvement), with optimizer+scheduler state, so a hard
+                # process kill (segfault/OOM-killer/driver reset — which
+                # skips Python's finally blocks entirely) still leaves a
+                # checkpoint at most one epoch stale. Placed before the
+                # early-stop break so the triggering epoch is captured too.
+                save_checkpoint(
+                    resume_checkpoint_path,
+                    self.model,
+                    optimizer=self.optimizer,
+                    scheduler=self.scheduler,
+                    epoch=epoch,
+                    extra={
+                        "resume_state": {
+                            "best_value": best_value,
+                            "best_epoch": best_epoch,
+                            "rounds_no_improve": rounds_no_improve,
+                        }
+                    },
+                )
+
+            if (
+                early_stopping_patience > 0
+                and track_best
+                and rounds_no_improve >= early_stopping_patience
+            ):
+                _logger.info(
+                    "[%s] epoch %d: no improvement in %d epochs (patience=%d) -> early stop",
+                    self.log_tag,
+                    epoch,
+                    rounds_no_improve,
+                    early_stopping_patience,
+                )
+                last_metrics["early_stopped"] = True
+                break
+
         if track_best:
             last_metrics["best_epoch"] = best_epoch
             last_metrics[f"best_val_{best_checkpoint_metric}"] = best_value
+        last_metrics.setdefault("early_stopped", False)
+        last_metrics["epochs_run"] = epoch - start_epoch + 1
 
         return last_metrics
 
