@@ -1,0 +1,104 @@
+# exp52_mlp4_nodrop_radimagenet — LINEAR PROBING: 4 capas ocultas, SIN dropout
+#
+# Celda (mlp4, dropout 0.0) del factorial 3 profundidades x 2 regularizaciones
+# exp50-exp55, que explora la profundidad de la cabeza de clasificación MLP
+# (head.hidden_dims) sobre features de RadImageNet CONGELADAS:
+#
+#              dropout 0.0   dropout 0.2
+#   6 ocultas    exp50         exp53
+#   5 ocultas    exp51         exp54
+#   4 ocultas    exp52         exp55
+#
+#   exp50 -> 6 capas ocultas [512, 256, 128, 64, 32, 16]
+#   exp51 -> 5 capas ocultas [512, 256, 128, 64, 32]
+#   exp52 -> 4 capas ocultas [512, 256, 128, 64]
+#
+# LINEAR PROBING (freeze_backbone: true): el backbone ResNet50 queda congelado
+# por completo, así que solo se entrena la cabeza — 1 221 698 de 24 729 730
+# parámetros (4.94%). Mide la calidad de la representación RadImageNet para
+# mamografía tal cual, SIN adaptarla; no es comparable con exp31, que sí hacía
+# fine-tuning de los 24.7M y llegó a val AUC 0.873.
+#
+# La cabeza produce 2 neuronas de salida (num_classes: 2) con softmax vía
+# CrossEntropyLoss (training.loss.name: ce) en lugar del logit único +
+# BCEWithLogitsLoss usado en exp31.
+#
+# SIN aumento de imágenes (augmentation: todos los flags en false/0):
+# solo se aplica la normalización RadImageNet (normalize_preset), que no
+# cuenta como aumento.
+#
+# Estructura del manifest (manifests/mamo-bench-split-no-ddsm-rsna.csv):
+#   train: 7 463 imgs  val: 934 imgs  test: 934 imgs  (9 331 total, 5 datasets)
+#   (splits ya definidos en el CSV — val/test_fraction ignorados)
+#
+# Comando:
+#   fedmammobench-centralized --config configs/exp52/centralized.yaml
+# (o vía /docker-run exp52)
+
+name: exp52_mlp4_nodrop_radimagenet
+mode: centralized
+seed: 42
+output_dir: runs/exp52_mlp4_nodrop_radimagenet
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/mamo-bench-split-no-ddsm-rsna.csv   # 9 331 imgs, 5 datasets (sin DDSM)
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1        # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.1       # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true    # datasets desbalanceados (kau-bcmd, cmmd)
+
+model:
+  name: resnet50
+  weight_source: radimagenet          # RadImageNet directamente (no exp15/exp27 pretrain)
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 2                    # 2 neuronas de salida: softmax vía CrossEntropyLoss
+  dropout: 0.0                      # brazo SIN dropout del factorial (su gemelo con 0.2 es exp55)
+  head:
+    hidden_dims: [512, 256, 128, 64]
+    activation: leaky_relu
+    batch_norm: false
+  freeze_backbone: true             # LINEAR PROBING: congela los 318 tensores de RadImageNet.
+                                    # Solo backbone.fc queda entrenable (1.22M / 24.7M = 4.94%).
+                                    # Las 53 BatchNorm del backbone quedan fijadas en eval por
+                                    # _freeze_bn_running_stats (trainer.py), así que sus
+                                    # running_mean/var tampoco derivan.
+
+training:
+  epochs: 100
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3         # el ÚNICO LR activo: con el backbone congelado el optimizador
+                            # tiene un solo grupo de parámetros (la cabeza)
+    lr_backbone: 1.0e-4     # INACTIVO con freeze_backbone: true (no hay grupo de backbone).
+                            # Se conserva por si una ablación futura lo descongela.
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 100
+  augmentation:
+    horizontal_flip: false
+    vertical_flip: false
+    rotate_limit: 0
+    brightness_contrast: false
+    elastic: false
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
