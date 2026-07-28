@@ -44,16 +44,27 @@ from fedmammobench.training import build_loss
 from fedmammobench.utils.csv_logger import CSVLogger
 from fedmammobench.utils.device import resolve_device
 from fedmammobench.utils.logging_utils import get_logger
-from fedmammobench.utils.tensorboard_utils import TensorBoardWriter
+from fedmammobench.utils.metrics_sink import MetricWriter, build_metric_sink
 
 _logger = get_logger(__name__)
+
+
+def _autoplot(out_root: Path) -> None:
+    """Render plots for the just-finished run. Imported lazily so this module's
+    import graph stays matplotlib-free (matplotlib is in requirements.txt but
+    not a pyproject.toml dependency, so CI doesn't have it). ``autoplot``
+    itself never raises — see fedmammobench.plotting.
+    """
+    from fedmammobench.plotting import autoplot
+
+    autoplot(out_root)
 
 
 def _build_evaluate_fn(
     cfg: ExperimentConfig,
     test_dataset: MammographyDataset | None,
     train_labels,  # noqa: ANN001 - numpy.ndarray
-    tb_writer: TensorBoardWriter | None,
+    tb_writer: MetricWriter | None,
     csv_logger: CSVLogger | None,
 ) -> Callable[[int, NDArrays, dict[str, Scalar]], tuple[float, dict[str, Scalar]] | None] | None:
     """Build a centralized evaluate_fn that runs after each aggregation."""
@@ -120,7 +131,7 @@ _METRIC_KEYS: tuple[str, ...] = (
 
 def _attach_federated_logging(
     strategy: Any,
-    tb_writer: TensorBoardWriter | None,
+    tb_writer: MetricWriter | None,
     csv_logger: CSVLogger | None,
 ) -> None:
     """Wrap ``strategy.aggregate_evaluate`` to log per-round federated metrics.
@@ -179,7 +190,7 @@ def _attach_federated_logging(
 def _maybe_attach_server_training(
     cfg: ExperimentConfig,
     strategy: Any,
-    tb_writer: TensorBoardWriter | None,
+    tb_writer: MetricWriter | None,
 ) -> None:
     """Attach hybrid server-side training to ``strategy`` when enabled.
 
@@ -228,7 +239,10 @@ def run_simulation(
     """
     out_root = Path(output_dir or Path(cfg.output_dir) / cfg.name).expanduser().resolve()
     out_root.mkdir(parents=True, exist_ok=True)
-    tb_writer = TensorBoardWriter(out_root / "tb")
+    # tb_writer fans out to TensorBoard + (if cfg.wandb.enabled) W&B — every
+    # existing consumer below only calls log_scalar/log_scalars/flush/close,
+    # so nothing else in this function needs to change. See metrics_sink.py.
+    tb_writer = build_metric_sink(cfg, out_root, job_type="fl-server-sim")
     csv_logger = CSVLogger(out_root / "server_metrics.csv")
     # Federated phase metrics live in a separate CSV so the two phases do not
     # fight over CSVLogger's locked-header schema (centralized vs federated
@@ -267,9 +281,12 @@ def run_simulation(
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
     _attach_federated_logging(strategy, tb_writer, fed_csv_logger)
     _maybe_attach_server_training(cfg, strategy, tb_writer)
-    # Per-node logging + timing + global-model capture. Attached last so the
-    # captured global parameters reflect any server-side training step.
-    recorder = NodeMetricsRecorder(out_root, tb_writer)
+    # Per-node logging + timing + global-model (+ best-checkpoint) capture.
+    # Attached last so the captured global parameters reflect any
+    # server-side training step. cfg is threaded through so the recorder can
+    # materialize/save weights/global_best.pt when federated.save_best_checkpoint
+    # is enabled (see node_logging.py record_eval's best-checkpoint hook).
+    recorder = NodeMetricsRecorder(out_root, tb_writer, cfg=cfg)
     recorder.wrap(strategy)
 
     client_fn = client_fn_factory(cfg, datasets, out_root=out_root / "clients")
@@ -303,6 +320,7 @@ def run_simulation(
         recorder.write_timing_summary(cfg, total_seconds)
         recorder.close()
         tb_writer.close()
+        _autoplot(out_root)
         _logger.info("Simulation complete. Artifacts in %s", out_root)
     return history
 
@@ -353,7 +371,9 @@ def run_grpc_server(
     """
     out_root = Path(output_dir or Path(cfg.output_dir) / cfg.name).expanduser().resolve()
     out_root.mkdir(parents=True, exist_ok=True)
-    tb_writer = TensorBoardWriter(out_root / "tb")
+    # tb_writer fans out to TensorBoard + (if cfg.wandb.enabled) W&B — see
+    # the matching comment in run_simulation() above.
+    tb_writer = build_metric_sink(cfg, out_root, job_type="fl-server-grpc")
     csv_logger = CSVLogger(out_root / "server_metrics.csv")
     # Federated phase metrics live in a separate CSV so the two phases do not
     # fight over CSVLogger's locked-header schema (centralized vs federated
@@ -406,7 +426,7 @@ def run_grpc_server(
     strategy = build_strategy(cfg.federated.strategy.name, **strategy_kwargs)
     _attach_federated_logging(strategy, tb_writer, fed_csv_logger)
     _maybe_attach_server_training(cfg, strategy, tb_writer)
-    recorder = NodeMetricsRecorder(out_root, tb_writer)
+    recorder = NodeMetricsRecorder(out_root, tb_writer, cfg=cfg)
     recorder.wrap(strategy)
 
     round_timeout = cfg.federated.round_timeout_seconds or None
@@ -460,6 +480,7 @@ def run_grpc_server(
         recorder.write_timing_summary(cfg, total_seconds)
         recorder.close()
         tb_writer.close()
+        _autoplot(out_root)
         _logger.info("gRPC server stopped. Artifacts in %s", out_root)
 
 

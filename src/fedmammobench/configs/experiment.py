@@ -9,6 +9,7 @@ from fedmammobench.configs.data_config import DataConfig, PartitioningConfig
 from fedmammobench.configs.federated_config import FederatedConfig
 from fedmammobench.configs.model_config import ModelConfig
 from fedmammobench.configs.training_config import TrainingConfig
+from fedmammobench.configs.wandb_config import WandbConfig
 
 
 @dataclass
@@ -44,6 +45,7 @@ class ExperimentConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     federated: FederatedConfig = field(default_factory=FederatedConfig)
+    wandb: WandbConfig = field(default_factory=WandbConfig)
 
     def validate(self) -> None:
         """Run all section validators plus cross-section consistency checks.
@@ -66,6 +68,7 @@ class ExperimentConfig:
         )
 
         self.federated.validate()
+        self.wandb.validate()
 
         # Cross-section: unfreeze_at_epoch should be reachable within training rounds
         if self.mode == "federated" and self.model.unfreeze_at_epoch is not None:

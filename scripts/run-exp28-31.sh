@@ -82,6 +82,7 @@ run_exp() {
         -v "$REPO/manifests:/app/manifests:ro" \
         -v "$REPO/runs:/app/runs" \
         -e PYTHONUNBUFFERED=1 \
+        -e WANDB_API_KEY="${WANDB_API_KEY:-}" \
         "$IMAGE_TAG" \
         python scripts/run_centralized.py \
         --config "configs/$exp_short_name/centralized.yaml" \

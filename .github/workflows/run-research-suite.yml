@@ -85,6 +85,7 @@ jobs:
             -v "$HOME/fl-data/data:/app/data:ro" \
             -v "$HOME/fl-data/weights:/app/weights:ro" \
             -v "$HOME/fl-data/runs:/app/runs" \
+            -e WANDB_API_KEY="${{ secrets.WANDB_API_KEY }}" \
             ayax911/federal-learning:latest \
             python scripts/run_centralized.py --config "$CONFIG"
           echo "[servidor] Pretrain completado — $(date '+%H:%M:%S')"
@@ -119,6 +120,7 @@ jobs:
             -v "$HOME/fl-data/data:/app/data:ro" \
             -v "$HOME/fl-data/weights:/app/weights:ro" \
             -v "$HOME/fl-data/runs:/app/runs" \
+            -e WANDB_API_KEY="${{ secrets.WANDB_API_KEY }}" \
             ayax911/federal-learning:latest \
             python scripts/run_centralized.py --config "$CONFIG"
           echo "[servidor] Centralizado completado — $(date '+%H:%M:%S')"
@@ -171,6 +173,7 @@ jobs:
               -v "$HOME/fl-data/weights:/app/weights:ro" \
               -v "$HOME/fl-data/runs:/app/runs" \
               -p 8080:8080 \
+              -e WANDB_API_KEY="${{ secrets.WANDB_API_KEY }}" \
               ayax911/federal-learning:latest \
               python scripts/run_server.py --config "$CONFIG" --address 0.0.0.0:8080
 

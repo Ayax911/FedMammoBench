@@ -22,7 +22,7 @@ from fedmammobench.evaluation.evaluator import Evaluator
 from fedmammobench.utils.checkpoint import save_checkpoint
 from fedmammobench.utils.csv_logger import CSVLogger
 from fedmammobench.utils.logging_utils import get_logger
-from fedmammobench.utils.tensorboard_utils import TensorBoardWriter
+from fedmammobench.utils.metrics_sink import MetricWriter
 
 _logger = get_logger(__name__)
 
@@ -58,7 +58,9 @@ class Trainer:
         grad_clip_norm: If > 0, applies ``clip_grad_norm_`` after backward.
         mixed_precision: If True and ``device.type == 'cuda'``, runs the
             forward in autocast and scales the loss with GradScaler.
-        tb_writer: Optional TensorBoardWriter for scalar logging.
+        tb_writer: Optional metric writer for scalar logging (TensorBoardWriter,
+            or a MetricSink fanning out to TensorBoard + W&B — anything
+            structurally matching MetricWriter).
         csv_logger: Optional CSVLogger for per-epoch rows.
         log_tag: Prefix for logs (useful in FL, e.g. ``"client_2"``).
     """
@@ -73,7 +75,7 @@ class Trainer:
         scheduler: LRScheduler | None = None,
         grad_clip_norm: float = 0.0,
         mixed_precision: bool = False,
-        tb_writer: TensorBoardWriter | None = None,
+        tb_writer: MetricWriter | None = None,
         csv_logger: CSVLogger | None = None,
         log_tag: str = "centralized",
     ) -> None:

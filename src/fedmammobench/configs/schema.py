@@ -8,6 +8,7 @@ All dataclasses now live in dedicated modules:
                                                AugmentationConfig, LossConfig
 - :mod:`fedmammobench.configs.federated_config`  — FederatedConfig, StrategyConfig
 - :mod:`fedmammobench.configs.experiment`        — ExperimentConfig, EvaluationConfig
+- :mod:`fedmammobench.configs.wandb_config`       — WandbConfig
 
 This module re-exports every public name so that existing imports such as
 ``from fedmammobench.configs.schema import ExperimentConfig`` continue to work
@@ -22,6 +23,7 @@ from fedmammobench.configs.data_config import (
 )
 from fedmammobench.configs.experiment import EvaluationConfig, ExperimentConfig
 from fedmammobench.configs.federated_config import (
+    FEDERATED_BEST_CHECKPOINT_METRICS,
     FederatedConfig,
     ServerTrainingConfig,
     StrategyConfig,
@@ -35,10 +37,13 @@ from fedmammobench.configs.training_config import (
     SchedulerConfig,
     TrainingConfig,
 )
+from fedmammobench.configs.wandb_config import WandbConfig
 
 __all__ = [
-    "AugmentationConfig",
     "BEST_CHECKPOINT_METRICS",
+    "FEDERATED_BEST_CHECKPOINT_METRICS",
+    "NORMALIZE_PRESETS",
+    "AugmentationConfig",
     "DataColumnMapping",
     "DataConfig",
     "EvaluationConfig",
@@ -47,12 +52,12 @@ __all__ = [
     "HeadConfig",
     "LossConfig",
     "ModelConfig",
-    "NORMALIZE_PRESETS",
     "OptimizerConfig",
     "PartitioningConfig",
     "SchedulerConfig",
     "ServerTrainingConfig",
     "StrategyConfig",
     "TrainingConfig",
+    "WandbConfig",
     "check_patient_ids_for_nan",
 ]

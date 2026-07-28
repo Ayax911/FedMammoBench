@@ -38,7 +38,7 @@ from fedmammobench.models import build_model  # noqa: E402
 from fedmammobench.training import Trainer, build_loss, build_optimizer, build_scheduler  # noqa: E402
 from fedmammobench.utils import (  # noqa: E402
     CSVLogger,
-    TensorBoardWriter,
+    build_metric_sink,
     get_logger,
     load_checkpoint,
     resolve_device,
@@ -108,7 +108,11 @@ def main() -> int:
     optimizer = build_optimizer(model, cfg.training.optimizer)
     scheduler = build_scheduler(optimizer, cfg.training.scheduler)
 
-    tb_writer = TensorBoardWriter(out_root / "tb")
+    # sink fans out to TensorBoard + (if cfg.wandb.enabled) W&B — every
+    # Trainer.log_scalars(...) call below reaches both with no further
+    # changes, since MetricSink duck-types as a TensorBoardWriter. See
+    # utils/metrics_sink.py.
+    sink = build_metric_sink(cfg, out_root, job_type="centralized")
     csv_logger = CSVLogger(out_root / "metrics.csv")
     trainer = Trainer(
         model,
@@ -118,7 +122,7 @@ def main() -> int:
         scheduler=scheduler,
         grad_clip_norm=cfg.training.grad_clip_norm,
         mixed_precision=cfg.training.mixed_precision,
-        tb_writer=tb_writer,
+        tb_writer=sink,
         csv_logger=csv_logger,
         log_tag="centralized",
     )
@@ -132,51 +136,66 @@ def main() -> int:
     weights_dir = out_root.parent / "weights"
     best_ckpt_path = weights_dir / "best.pt"
 
-    fit_result = trainer.fit(
-        train_loader,
-        val_loader=val_loader,
-        evaluator=evaluator,
-        epochs=cfg.training.epochs,
-        best_checkpoint_metric=(
-            cfg.training.best_checkpoint_metric if cfg.training.save_best_checkpoint else None
-        ),
-        best_checkpoint_path=(best_ckpt_path if cfg.training.save_best_checkpoint else None),
-    )
-
-    save_checkpoint(weights_dir / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs)
-
-    # Trainer.fit() left `model` at its last-epoch weights. If best-checkpoint
-    # tracking was enabled, reload the checkpoint that scored highest on
-    # val_{best_checkpoint_metric} before evaluating on test — otherwise a run
-    # that overfits past its optimum (common for small/frozen-backbone heads)
-    # would report test metrics for a model worse than one seen mid-training.
-    checkpoint_used = "final"
-    if cfg.training.save_best_checkpoint and best_ckpt_path.is_file():
-        load_checkpoint(best_ckpt_path, model, strict=True)
-        best_epoch = fit_result.get("best_epoch")
-        best_value = fit_result.get(f"best_val_{cfg.training.best_checkpoint_metric}")
-        checkpoint_used = f"best_epoch_{best_epoch}"
-        logger.info(
-            "Loaded best checkpoint for test evaluation: epoch=%s %s=%s",
-            best_epoch,
-            cfg.training.best_checkpoint_metric,
-            best_value,
+    # Wrapped in try/finally so sink.close() always runs — previously
+    # tb_writer.close() was unconditional at the end of main(), which meant
+    # an exception in trainer.fit()/evaluator.evaluate() leaked the TB
+    # writer. That was a minor bug on its own; it becomes load-bearing now
+    # that `sink` can hold a live W&B run — an unclosed run never calls
+    # `finish()` and stays "running" forever in the W&B UI. autoplot() runs
+    # in the same finally, after the sink is closed so metrics.csv/
+    # test_metrics.csv are fully flushed to disk.
+    try:
+        fit_result = trainer.fit(
+            train_loader,
+            val_loader=val_loader,
+            evaluator=evaluator,
+            epochs=cfg.training.epochs,
+            best_checkpoint_metric=(
+                cfg.training.best_checkpoint_metric if cfg.training.save_best_checkpoint else None
+            ),
+            best_checkpoint_path=(best_ckpt_path if cfg.training.save_best_checkpoint else None),
         )
 
-    test_metrics = evaluator.evaluate(test_loader, criterion=criterion)
-    logger.info("Test metrics: %s", {k: v for k, v in test_metrics.items() if k != "y_true"})
-    scalar_test = {k: v for k, v in test_metrics.items() if isinstance(v, (int, float))}
-    test_csv = CSVLogger(out_root / "test_metrics.csv")
-    test_csv.append(
-        {
-            "epoch": -1,
-            "phase": "test",
-            "checkpoint": checkpoint_used,
-            **{f"test_{k}": v for k, v in scalar_test.items()},
-        }
-    )
+        save_checkpoint(
+            weights_dir / "final.pt", model, optimizer=optimizer, epoch=cfg.training.epochs
+        )
 
-    tb_writer.close()
+        # Trainer.fit() left `model` at its last-epoch weights. If best-checkpoint
+        # tracking was enabled, reload the checkpoint that scored highest on
+        # val_{best_checkpoint_metric} before evaluating on test — otherwise a run
+        # that overfits past its optimum (common for small/frozen-backbone heads)
+        # would report test metrics for a model worse than one seen mid-training.
+        checkpoint_used = "final"
+        if cfg.training.save_best_checkpoint and best_ckpt_path.is_file():
+            load_checkpoint(best_ckpt_path, model, strict=True)
+            best_epoch = fit_result.get("best_epoch")
+            best_value = fit_result.get(f"best_val_{cfg.training.best_checkpoint_metric}")
+            checkpoint_used = f"best_epoch_{best_epoch}"
+            logger.info(
+                "Loaded best checkpoint for test evaluation: epoch=%s %s=%s",
+                best_epoch,
+                cfg.training.best_checkpoint_metric,
+                best_value,
+            )
+
+        test_metrics = evaluator.evaluate(test_loader, criterion=criterion)
+        logger.info("Test metrics: %s", {k: v for k, v in test_metrics.items() if k != "y_true"})
+        scalar_test = {k: v for k, v in test_metrics.items() if isinstance(v, (int, float))}
+        test_csv = CSVLogger(out_root / "test_metrics.csv")
+        test_csv.append(
+            {
+                "epoch": -1,
+                "phase": "test",
+                "checkpoint": checkpoint_used,
+                **{f"test_{k}": v for k, v in scalar_test.items()},
+            }
+        )
+    finally:
+        sink.close()
+        from fedmammobench.plotting import autoplot  # lazy: matplotlib isn't a hard dep
+
+        autoplot(out_root)
+
     logger.info("Run complete. Artifacts at %s", out_root)
     return 0
 

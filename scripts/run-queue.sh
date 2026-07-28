@@ -107,6 +107,7 @@ run_centralized_phase() {
     -v "$WEIGHTS_DIR:/app/weights:ro" \
     -v "$MAMMO_DATA:/app/data:ro" \
     -v "$REPO/runs:/app/runs" \
+    -e WANDB_API_KEY="${WANDB_API_KEY:-}" \
     "$IMAGE_TAG" \
     python scripts/run_centralized.py --config "configs/$exp/$cfg" \
     >> "$QUEUE_LOG" 2>&1
