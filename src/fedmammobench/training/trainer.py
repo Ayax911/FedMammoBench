@@ -18,7 +18,9 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
+from fedmammobench.configs.schema import ModelConfig
 from fedmammobench.evaluation.evaluator import Evaluator
+from fedmammobench.models.weight_loaders import apply_freeze_policy
 from fedmammobench.utils.checkpoint import save_checkpoint
 from fedmammobench.utils.csv_logger import CSVLogger
 from fedmammobench.utils.logging_utils import get_logger
@@ -199,6 +201,37 @@ class Trainer:
 
     # ------------------------------------------------------------------
 
+    def _apply_progressive_unfreeze(
+        self, model_cfg: ModelConfig, epoch: int, unfreeze_lr: float | None
+    ) -> None:
+        """Lift backbone freezing at ``model_cfg.unfreeze_at_epoch``, centralized side.
+
+        Mirrors ``federated/client.py``'s per-round call to
+        ``apply_freeze_policy(..., current_round=<round>)`` — but centralized
+        training runs one continuous epoch loop instead of rebuilding a fresh
+        optimizer every round, so newly-unfrozen params (e.g. ``layer4``) are
+        not yet owned by ``self.optimizer`` — it was built while they were
+        still frozen. Registers them via ``add_param_group``, the same fix
+        already used for the federated *cyclic* (``local_unfreeze_at_epoch``)
+        unfreeze. A no-op once already applied: ``apply_freeze_policy`` is
+        idempotent, and the id-diff below finds nothing new on later epochs.
+        """
+        existing_ids = {id(p) for g in self.optimizer.param_groups for p in g["params"]}
+        apply_freeze_policy(self.model, model_cfg, current_round=epoch)
+        newly_trainable = [
+            p for p in self.model.parameters() if p.requires_grad and id(p) not in existing_ids
+        ]
+        if newly_trainable:
+            lr = unfreeze_lr if unfreeze_lr is not None else self.optimizer.param_groups[0]["lr"]
+            self.optimizer.add_param_group({"params": newly_trainable, "lr": lr})
+            _logger.info(
+                "[%s] epoch %d: progressive unfreeze added %d params to optimizer (lr=%.2e)",
+                self.log_tag,
+                epoch,
+                len(newly_trainable),
+                lr,
+            )
+
     def fit(
         self,
         train_loader: DataLoader,
@@ -212,10 +245,23 @@ class Trainer:
         early_stopping_patience: int = 0,
         resume_checkpoint_path: str | Path | None = None,
         resume_state: dict[str, Any] | None = None,
+        model_cfg: ModelConfig | None = None,
+        unfreeze_lr: float | None = None,
     ) -> dict[str, Any]:
         """Train for ``epochs`` epochs. Returns the last epoch's metrics.
 
         Args:
+            model_cfg: When set, applies ``model_cfg``'s progressive backbone
+                unfreeze policy (``unfreeze_at_epoch``/``unfreeze_layers``) at
+                the start of every epoch, exactly like the federated client
+                does per round. ``None`` (default) skips this entirely — same
+                behavior as before this parameter existed. Harmless to pass
+                for configs that don't set ``unfreeze_at_epoch``:
+                ``apply_freeze_policy`` just re-applies the same static freeze
+                every epoch in that case.
+            unfreeze_lr: Learning rate for params newly unfrozen mid-training
+                (see ``_apply_progressive_unfreeze``). Falls back to the
+                optimizer's first param group's LR when ``None``.
             best_checkpoint_metric: When set (together with
                 ``best_checkpoint_path``), track this key from the per-epoch
                 validation metrics dict and overwrite the checkpoint at
@@ -264,6 +310,8 @@ class Trainer:
             return result
 
         for epoch in range(start_epoch, start_epoch + epochs):
+            if model_cfg is not None:
+                self._apply_progressive_unfreeze(model_cfg, epoch, unfreeze_lr)
             t0 = time.perf_counter()
             train_stats = self.train_one_epoch(train_loader, epoch=epoch)
             train_seconds = time.perf_counter() - t0

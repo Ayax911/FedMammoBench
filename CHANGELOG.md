@@ -64,6 +64,27 @@
   (`round_offset > 0`) — previously these would have looked contradictory in
   `final_summary.txt` (e.g. "6 rounds completed" next to "round #20"). Gated
   so the default (non-resumed) case stays byte-identical.
+- **`model.unfreeze_at_epoch`/`unfreeze_layers` (progressive backbone
+  unfreeze) now actually works for centralized training.** The docstring
+  promised "federated round (or centralized epoch)", but `apply_freeze_policy`
+  was only ever called once per federated round, by `federated/client.py`
+  — `Trainer.fit` never called it at all, so any `centralized.yaml` setting
+  `unfreeze_at_epoch` silently trained with the backbone permanently frozen
+  for the whole run instead. `Trainer.fit` gained `model_cfg=`/`unfreeze_lr=`
+  (both optional, default `None` — no behavior change for the ~56 existing
+  configs, none of which set these) and now applies the freeze policy at the
+  start of every epoch, mirroring the federated client. Because centralized
+  training runs one continuous optimizer across the whole loop (unlike
+  federated, which rebuilds a fresh optimizer every round), newly-unfrozen
+  params aren't yet owned by it — registered via `optimizer.add_param_group`,
+  the same fix already used for the federated *cyclic*
+  (`local_unfreeze_at_epoch`) unfreeze. `scripts/run_centralized.py` threads
+  `cfg.model` and the resolved `lr_backbone` (or `lr` if unset) through.
+  Known limitation: `--resume` combined with a crash that lands *after* the
+  unfreeze threshold fails loudly (`optimizer.load_state_dict` param-group
+  count mismatch) rather than silently — the freshly-rebuilt optimizer before
+  a resume-load only has the original group(s); resuming past that point
+  currently means dropping `--resume` and accepting the lost partial epochs.
 
 ## [0.7.0] — 2026-07-28
 

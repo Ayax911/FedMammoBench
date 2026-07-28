@@ -1,0 +1,38 @@
+name: exp61_mlp5_d02_radimagenet_unfreeze_l4_eval
+mode: centralized
+output_dir: runs/exp61_mlp5_d02_radimagenet_unfreeze_l4
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/mamo-bench-split-no-ddsm-rsna.csv
+  image_root: data/
+  image_size: 224
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  pretrained: false
+  in_channels: 3
+  num_classes: 2
+  dropout: 0.2   # DEBE coincidir con centralized.yaml: cambia los índices del Sequential
+  head:
+    hidden_dims: [512, 256, 128, 64, 32]
+    activation: leaky_relu
+    batch_norm: false
+  weight_source: none
+
+training:
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true

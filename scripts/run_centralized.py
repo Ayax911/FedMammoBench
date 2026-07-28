@@ -76,6 +76,18 @@ def _resolve_centralized_resume(
     is treated as the TOTAL budget across the original run + any resumes, not
     "how many more" — so ``remaining_epochs`` can be <= 0 if the checkpoint
     already reached (or exceeds, e.g. after shrinking the config) that total.
+
+    Known limitation: ``--resume`` combined with ``model.unfreeze_at_epoch``
+    (progressive backbone unfreeze) is only safe when the crash happened
+    BEFORE the unfreeze threshold. ``optimizer`` here is freshly built from a
+    freshly-built (still fully frozen) ``model``, so it has only the original
+    param group(s). If the crash happened AFTER
+    ``Trainer._apply_progressive_unfreeze`` had already added a param group
+    (e.g. for ``layer4``), ``optimizer.load_state_dict`` below raises
+    ``ValueError`` (saved vs. current param-group count mismatch) instead of
+    silently restoring the wrong state — a loud failure, not silent
+    corruption, but resuming past that point currently requires dropping
+    ``--resume`` and accepting the lost partial progress.
     """
     if not resume or not final_ckpt_path.is_file():
         return 0, cfg.training.epochs, None
@@ -144,6 +156,14 @@ def main() -> int:
     ).to(device)
     optimizer = build_optimizer(model, cfg.training.optimizer)
     scheduler = build_scheduler(optimizer, cfg.training.scheduler)
+    # Resolved once here (not inside Trainer) so Trainer stays decoupled from
+    # OptimizerConfig — only needs the resulting float for newly-unfrozen
+    # params (e.g. layer4 crossing model.unfreeze_at_epoch).
+    unfreeze_lr = (
+        cfg.training.optimizer.lr_backbone
+        if cfg.training.optimizer.lr_backbone is not None
+        else cfg.training.optimizer.lr
+    )
 
     # sink fans out to TensorBoard + (if cfg.wandb.enabled) W&B — every
     # Trainer.log_scalars(...) call below reaches both with no further
@@ -208,6 +228,8 @@ def main() -> int:
                 early_stopping_patience=cfg.training.early_stopping_patience,
                 resume_checkpoint_path=(final_ckpt_path if args.resume else None),
                 resume_state=resume_state,
+                model_cfg=cfg.model,
+                unfreeze_lr=unfreeze_lr,
             )
         else:
             logger.info(
