@@ -42,7 +42,7 @@ from fedmammobench.models import build_model
 from fedmammobench.training import Trainer, build_loss, build_optimizer
 from fedmammobench.utils.device import resolve_device
 from fedmammobench.utils.logging_utils import get_logger
-from fedmammobench.utils.tensorboard_utils import TensorBoardWriter
+from fedmammobench.utils.metrics_sink import MetricWriter
 
 _logger = get_logger(__name__)
 
@@ -129,7 +129,7 @@ def attach_server_training(
     trainer: ServerTrainer,
     *,
     server_weight: float,
-    tb_writer: TensorBoardWriter | None = None,
+    tb_writer: MetricWriter | None = None,
 ) -> None:
     """Wrap ``strategy.aggregate_fit`` to run a server training step each round.
 

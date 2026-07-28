@@ -234,6 +234,24 @@ class TestTrainingConfig:
             cfg.validate(strategy_name="fedprox", proximal_mu=0.01)
         assert not any("FedProx" in str(warning.message) for warning in w)
 
+    def test_save_best_checkpoint_valid_metric_ok(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, save_best_checkpoint=True, best_checkpoint_metric="roc_auc")
+        cfg.validate()
+
+    def test_save_best_checkpoint_invalid_metric_raises(self):
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, save_best_checkpoint=True, best_checkpoint_metric="loss")
+        with pytest.raises(ValueError, match="best_checkpoint_metric"):
+            cfg.validate()
+
+    def test_invalid_metric_ignored_when_save_best_checkpoint_off(self):
+        # best_checkpoint_metric is only validated when save_best_checkpoint is
+        # True — an unused/invalid value sitting in the default shouldn't block.
+        from fedmammobench.configs.training_config import TrainingConfig
+        cfg = TrainingConfig(epochs=5, save_best_checkpoint=False, best_checkpoint_metric="loss")
+        cfg.validate()
+
 
 # ---------------------------------------------------------------------------
 # ExperimentConfig.validate() cross-section checks
@@ -335,10 +353,12 @@ class TestSchemaBackwardCompat:
     def test_all_classes_importable_from_schema(self):
         from fedmammobench.configs.schema import (
             AugmentationConfig,
+            BEST_CHECKPOINT_METRICS,
             DataColumnMapping,
             DataConfig,
             EvaluationConfig,
             ExperimentConfig,
+            FEDERATED_BEST_CHECKPOINT_METRICS,
             FederatedConfig,
             LossConfig,
             ModelConfig,
@@ -348,11 +368,63 @@ class TestSchemaBackwardCompat:
             SchedulerConfig,
             StrategyConfig,
             TrainingConfig,
+            WandbConfig,
         )
         assert ExperimentConfig is not None
         assert isinstance(NORMALIZE_PRESETS, dict)
+        assert isinstance(BEST_CHECKPOINT_METRICS, tuple)
+        assert isinstance(FEDERATED_BEST_CHECKPOINT_METRICS, tuple)
+        assert WandbConfig is not None
 
     def test_experiment_config_from_schema(self):
         from fedmammobench.configs.schema import ExperimentConfig
         cfg = ExperimentConfig(name="test", seed=0)
         assert cfg.name == "test"
+
+
+# ---------------------------------------------------------------------------
+# WandbConfig
+# ---------------------------------------------------------------------------
+
+class TestWandbConfig:
+    def test_defaults(self):
+        from fedmammobench.configs.wandb_config import WandbConfig
+        cfg = WandbConfig()
+        # Enabled by default (decision: W&B on unless the user opts out) —
+        # see utils/wandb_utils.py for how a keyless run degrades safely.
+        assert cfg.enabled is True
+        assert cfg.mode == "online"
+        assert cfg.project == "fedmammobench"
+        cfg.validate()
+
+    def test_no_api_key_field_exists(self):
+        # SECURITY: save_config() snapshots the resolved config to
+        # runs/<name>/config.snapshot.yaml — a secret field here would be
+        # written to disk. See WandbConfig's docstring.
+        from fedmammobench.configs.wandb_config import WandbConfig
+        import dataclasses
+        field_names = {f.name for f in dataclasses.fields(WandbConfig)}
+        assert not any("key" in name.lower() or "secret" in name.lower() for name in field_names)
+
+    def test_invalid_mode_raises(self):
+        from fedmammobench.configs.wandb_config import WandbConfig
+        cfg = WandbConfig(mode="bogus")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="mode"):
+            cfg.validate()
+
+    def test_disabled_skips_project_check(self):
+        from fedmammobench.configs.wandb_config import WandbConfig
+        cfg = WandbConfig(enabled=False, project="")
+        cfg.validate()  # must not raise — nothing gets constructed when disabled
+
+    def test_enabled_empty_project_raises(self):
+        from fedmammobench.configs.wandb_config import WandbConfig
+        cfg = WandbConfig(enabled=True, project="")
+        with pytest.raises(ValueError, match="project"):
+            cfg.validate()
+
+    def test_experiment_config_wandb_enabled_by_default(self):
+        from fedmammobench.configs.schema import ExperimentConfig
+        cfg = ExperimentConfig()
+        assert cfg.wandb.enabled is True
+        cfg.validate()

@@ -80,6 +80,7 @@ run_exp() {
         -v "$REPO/manifests:/app/manifests:ro" \
         -v "$REPO/runs:/app/runs" \
         -e PYTHONUNBUFFERED=1 \
+        -e WANDB_API_KEY="${WANDB_API_KEY:-}" \
         ayax911/federal-learning:latest \
         python scripts/run_centralized.py \
         --config "configs/$exp_short_name/centralized.yaml" \

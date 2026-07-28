@@ -59,7 +59,12 @@ _EVAL_KEYS: tuple[str, ...] = (
 class NodeMetricsRecorder:
     """Owns per-node CSV/TB sinks, timing, and the latest global parameters."""
 
-    def __init__(self, out_root: str | Path, tb_writer: TensorBoardWriter | None = None) -> None:
+    def __init__(
+        self,
+        out_root: str | Path,
+        tb_writer: TensorBoardWriter | None = None,
+        cfg: ExperimentConfig | None = None,
+    ) -> None:
         self.out_root = Path(out_root).expanduser().resolve()
         self.clients_dir = self.out_root / "clients"
         self.tb_writer = tb_writer
@@ -78,6 +83,19 @@ class NodeMetricsRecorder:
         self._node_fit_samples_total: dict[int, int] = {}
         # Aggregated federated eval metrics per round (for final summary)
         self._round_agg_metrics: list[dict] = []
+
+        # Best-checkpoint tracking (federated.save_best_checkpoint). `cfg` is
+        # optional (kept for tests/callers that only need CSV/TB recording,
+        # e.g. tests/test_node_logging.py constructs this with just out_root)
+        # but is required for both save_global_model() and best-checkpoint
+        # saving, since materializing a checkpoint needs cfg.model/cfg.device.
+        self.cfg = cfg
+        _fed = getattr(cfg, "federated", None)
+        self._track_best: bool = bool(_fed is not None and _fed.save_best_checkpoint)
+        self._best_metric: str | None = _fed.best_checkpoint_metric if self._track_best else None
+        self._best_value: float | None = None
+        self._best_round: int | None = None
+        self._best_path: Path | None = None
 
     # -- lazy per-client sinks --------------------------------------------
 
@@ -136,12 +154,16 @@ class NodeMetricsRecorder:
             }
             self._fit_logger(cid).append(row)
             tb = self._client_tb_writer(cid)
-            tb.log_scalars(
-                "fit",
-                {k: v for k, v in row.items() if isinstance(v, float)},
-                server_round,
-            )
+            numeric_row = {k: v for k, v in row.items() if isinstance(v, float)}
+            tb.log_scalars("fit", numeric_row, server_round)
             tb.flush()
+            if self.tb_writer is not None:
+                # Same numbers, also pushed to the shared server sink (TB +
+                # wandb, see MetricSink) under a per-node prefix, so
+                # node_<cid>/train_loss shows up next to the other server
+                # scalars — the per-client writer above only feeds that
+                # node's own isolated TB run.
+                self.tb_writer.log_scalars(f"node_{cid}", numeric_row, server_round)
             if fs == fs:
                 fit_secs.append(fs)
                 self._node_fit_seconds_total[cid] = self._node_fit_seconds_total.get(cid, 0.0) + fs
@@ -194,12 +216,18 @@ class NodeMetricsRecorder:
                     row[k] = float(m[k]) if k in m else ""
             self._eval_logger(cid).append(row)
             tb = self._client_tb_writer(cid)
-            tb.log_scalars(
-                "eval",
-                {k: v for k, v in row.items() if isinstance(v, float)},
-                server_round,
-            )
+            numeric_row = {k: v for k, v in row.items() if isinstance(v, float)}
+            tb.log_scalars("eval", numeric_row, server_round)
             tb.flush()
+            if self.tb_writer is not None:
+                # val_-prefix so it doesn't collide with record_fit's node_<cid>/
+                # train-side keys on the shared server sink (e.g. node_0/val_loss
+                # next to node_0/train_loss).
+                self.tb_writer.log_scalars(
+                    f"node_{cid}",
+                    {f"val_{k}": v for k, v in numeric_row.items()},
+                    server_round,
+                )
 
         # Accumulate weighted-average metrics across clients for this round
         total_samples = sum(int(r.num_examples) for _, r in results)
@@ -221,6 +249,21 @@ class NodeMetricsRecorder:
                 if weights:
                     agg[k] = sum(weighted_vals) / sum(weights)
             self._round_agg_metrics.append(agg)
+
+            # Best-checkpoint tracking (federated.save_best_checkpoint). The
+            # ordering guarantee this relies on: within round R, Flower calls
+            # aggregate_fit(R) (which sets self._latest_parameters, see
+            # wrap()/fit_wrapped below) BEFORE distributing those exact params
+            # to clients and calling aggregate_evaluate(R) -> record_eval(R).
+            # So at this point _latest_parameters IS the checkpoint `agg`
+            # describes, with no extra state needed to prove it.
+            if self._track_best and self._best_metric in agg:
+                current = float(agg[self._best_metric])
+                if current == current and (  # current == current -> not NaN
+                    self._best_value is None or current > self._best_value
+                ):
+                    self._best_value, self._best_round = current, server_round
+                    self._save_best_global_model(server_round, current)
 
     # -- strategy wrapping ------------------------------------------------
 
@@ -251,13 +294,35 @@ class NodeMetricsRecorder:
 
     # -- finalization -----------------------------------------------------
 
+    def _materialize_and_save(
+        self, cfg: ExperimentConfig, out_path: Path, *, epoch: int, extra: dict[str, Any]
+    ) -> Path | None:
+        """Shared body: latest captured params -> model -> checkpoint on disk.
+
+        Builds a fresh model each call rather than caching one, so this stays
+        bit-identical to what save_global_model always did (including
+        `.to(device)`) — the cost (~1s: build_model + strict state_dict load)
+        is negligible against a multi-minute FL round.
+        """
+        if self._latest_parameters is None:
+            return None
+        ndarrays = parameters_to_ndarrays(self._latest_parameters)
+        device = resolve_device(cfg.device)
+        model = build_model(cfg.model).to(device)
+        load_ndarrays_to_state_dict(model, ndarrays, strict=True)
+        save_checkpoint(out_path, model, epoch=epoch, extra=extra)
+        return out_path
+
     def save_global_model(
         self, cfg: ExperimentConfig, path: str | Path | None = None
     ) -> Path | None:
         """Materialize the latest aggregated parameters into a checkpoint.
 
-        Returns the path written, or None if no parameters were captured (e.g.
-        the run produced zero successful fit rounds).
+        Always the LAST round's weights — unaffected by best-checkpoint
+        tracking, which writes a separate `global_best.pt` (see
+        _save_best_global_model). Returns the path written, or None if no
+        parameters were captured (e.g. the run produced zero successful fit
+        rounds).
         """
         if self._latest_parameters is None:
             _logger.warning(
@@ -265,10 +330,6 @@ class NodeMetricsRecorder:
                 "Did any fit round succeed?"
             )
             return None
-        ndarrays = parameters_to_ndarrays(self._latest_parameters)
-        device = resolve_device(cfg.device)
-        model = build_model(cfg.model).to(device)
-        load_ndarrays_to_state_dict(model, ndarrays, strict=True)
         # Weights live in a "weights/" sibling of self.out_root (which is
         # normally <output_dir>/<name>/), not inside it, so the (large)
         # checkpoint can be excluded from a sync/upload of the rest of the
@@ -280,9 +341,9 @@ class NodeMetricsRecorder:
             if path is not None
             else (self.out_root.parent / "weights" / "global_model.pt")
         )
-        save_checkpoint(
+        self._materialize_and_save(
+            cfg,
             out,
-            model,
             epoch=cfg.federated.rounds,
             extra={"source": "federated_global", "rounds": cfg.federated.rounds},
         )
@@ -293,6 +354,46 @@ class NodeMetricsRecorder:
             out,
         )
         return out
+
+    def _save_best_global_model(self, server_round: int, value: float) -> None:
+        """Save weights/global_best.pt when the tracked metric improves mid-run.
+
+        Unlike save_global_model (called once, after the run loop finishes),
+        this runs mid-run — wrapped in try/except so a transient disk error
+        can never take down round N+1. Named `global_best.pt` (shares the
+        `global_` prefix with `global_model.pt` so they sort together in an
+        `ls`, and is distinct from the centralized path's `weights/best.pt`).
+        """
+        cfg = self.cfg
+        if cfg is None or self._latest_parameters is None:
+            return
+        out = self.out_root.parent / "weights" / "global_best.pt"
+        try:
+            self._materialize_and_save(
+                cfg,
+                out,
+                epoch=server_round,
+                extra={
+                    "source": "federated_global_best",
+                    "round": server_round,
+                    "metric": self._best_metric,
+                    "value": float(value),
+                    "rounds_total": cfg.federated.rounds,
+                },
+            )
+        except Exception:
+            _logger.warning(
+                "Failed to save best global checkpoint at round %d", server_round, exc_info=True
+            )
+            return
+        self._best_path = out
+        _logger.info(
+            "[server] round %d: new best %s=%.4f -> saved %s",
+            server_round,
+            self._best_metric,
+            value,
+            out,
+        )
 
     def write_timing_summary(self, cfg: ExperimentConfig, total_seconds: float) -> None:
         """Write timing summary CSVs and a human-readable final_summary.txt."""
@@ -357,8 +458,12 @@ class NodeMetricsRecorder:
             )
 
         if self._round_agg_metrics:
+            # Same key best-checkpoint tracking uses when enabled (self._best_metric),
+            # else "roc_auc" — this is cosmetic-only (no weights kept for it) unless
+            # federated.save_best_checkpoint is on, in which case it matches exactly.
+            metric_key = self._best_metric or "roc_auc"
             best = max(
-                self._round_agg_metrics, key=lambda r: float(r.get("roc_auc", 0.0))
+                self._round_agg_metrics, key=lambda r: float(r.get(metric_key, 0.0))
             )
             last = self._round_agg_metrics[-1]
             lines += [
@@ -372,6 +477,14 @@ class NodeMetricsRecorder:
                 f"AUC={_fmt(best.get('roc_auc'))}  "
                 f"F1={_fmt(best.get('f1'))}  "
                 f"Loss={_fmt(best.get('loss'))}",
+            ]
+            if self._best_path is not None:
+                lines.append(
+                    f"    Checkpoint mejor   : {self._best_path}  "
+                    f"(ronda {self._best_round}, {self._best_metric}="
+                    f"{_fmt(self._best_value)})"
+                )
+            lines += [
                 "",
                 "  MÉTRICAS COMPLETAS POR RONDA:",
             ]

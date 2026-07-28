@@ -20,18 +20,27 @@ from fedmammobench.configs.data_config import (
     check_patient_ids_for_nan,
 )
 from fedmammobench.configs.experiment import EvaluationConfig, ExperimentConfig
-from fedmammobench.configs.federated_config import FederatedConfig, StrategyConfig
+from fedmammobench.configs.federated_config import (
+    FEDERATED_BEST_CHECKPOINT_METRICS,
+    FederatedConfig,
+    StrategyConfig,
+)
 from fedmammobench.configs.loader import load_config, save_config
 from fedmammobench.configs.model_config import NORMALIZE_PRESETS, ModelConfig
 from fedmammobench.configs.training_config import (
+    BEST_CHECKPOINT_METRICS,
     AugmentationConfig,
     LossConfig,
     OptimizerConfig,
     SchedulerConfig,
     TrainingConfig,
 )
+from fedmammobench.configs.wandb_config import WandbConfig
 
 __all__ = [
+    "BEST_CHECKPOINT_METRICS",
+    "FEDERATED_BEST_CHECKPOINT_METRICS",
+    "NORMALIZE_PRESETS",
     "AugmentationConfig",
     "DataColumnMapping",
     "DataConfig",
@@ -40,12 +49,12 @@ __all__ = [
     "FederatedConfig",
     "LossConfig",
     "ModelConfig",
-    "NORMALIZE_PRESETS",
     "OptimizerConfig",
     "PartitioningConfig",
     "SchedulerConfig",
     "StrategyConfig",
     "TrainingConfig",
+    "WandbConfig",
     "check_patient_ids_for_nan",
     "load_config",
     "save_config",

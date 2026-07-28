@@ -72,6 +72,7 @@ launch_server() {
     -v "$REPO/configs:/app/configs:ro" \
     -v "$WEIGHTS_DIR:/app/weights:ro" \
     -v "$REPO/runs:/app/runs" \
+    -e WANDB_API_KEY="${WANDB_API_KEY:-}" \
     ayax911/federal-learning:latest \
     python scripts/run_server.py \
       --config "configs/$EXPERIMENT/server.yaml" \

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.0] — 2026-07-28
+
+### Features
+
+- **Best-checkpoint selection for centralized training**, via
+  `training.save_best_checkpoint` (default `false`, off) and
+  `training.best_checkpoint_metric` (default `"roc_auc"`, must be one of
+  `TrainingConfig.BEST_CHECKPOINT_METRICS` — all "higher is better":
+  `roc_auc`, `f1`, `accuracy`, `auc_pr`, `precision`, `recall`). When enabled,
+  `Trainer.fit()` overwrites `weights/best.pt` every time the tracked
+  validation metric improves, and returns `best_epoch` /
+  `best_val_<metric>` in its metrics dict. `scripts/run_centralized.py`
+  reloads `best.pt` before the final test-set evaluation instead of using the
+  last epoch's weights, and records which checkpoint was used in
+  `test_metrics.csv` (`checkpoint` column: `"final"` or `"best_epoch_<N>"`).
+  `weights/final.pt` is still always written (last epoch), unchanged.
+  Motivated by exp50-55 (`configs/exp50`-`exp55`): all six linear-probing runs
+  reached their best `val_roc_auc` within the first 3-15 of 100 epochs, then
+  degraded from overfitting (`train_loss` → ~0, `val_loss` up 3-9x) — the
+  pipeline had no way to recover or report that better checkpoint, so the
+  reported test AUC (0.834-0.852) understated what each config actually
+  achieved (~0.86-0.865). Off by default so existing configs/runs are
+  unaffected. See `tests/test_best_checkpoint.py`.
+
 ## [0.4.0] — 2026-07-25
 
 ### Features

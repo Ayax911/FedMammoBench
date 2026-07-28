@@ -7,6 +7,17 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from fedmammobench.configs.training_config import BEST_CHECKPOINT_METRICS
+
+#: Federated-safe subset of BEST_CHECKPOINT_METRICS (training_config.py). ``auc_pr``
+#: is excluded: FedMammoBenchClient.evaluate (federated/client.py numeric_keys) never
+#: puts it in EvaluateRes.metrics, and NodeMetricsRecorder._EVAL_KEYS
+#: (federated/node_logging.py) never aggregates it — tracking it federated-side would
+#: validate cleanly and then silently never fire.
+FEDERATED_BEST_CHECKPOINT_METRICS: tuple[str, ...] = tuple(
+    m for m in BEST_CHECKPOINT_METRICS if m != "auc_pr"
+)
+
 
 @dataclass
 class StrategyConfig:
@@ -103,6 +114,22 @@ class FederatedConfig:
         strategy: Strategy selection (see :class:`StrategyConfig`).
         server_training: Optional hybrid server-side training
             (see :class:`ServerTrainingConfig`). Disabled by default.
+        save_best_checkpoint: When True, track ``best_checkpoint_metric`` on the
+            weighted-average **federated** eval metric (across clients, per round —
+            not a server holdout) and save ``weights/global_best.pt`` whenever it
+            improves, alongside the always-written ``weights/global_model.pt``
+            (last round). Same names/semantics as
+            ``TrainingConfig.save_best_checkpoint`` in the centralized path. Off by
+            default so existing configs/runs are unaffected. Unlike the centralized
+            path, the server does **not** reload the best checkpoint at the end —
+            there is no terminal test pass to reload it for (``evaluate_fn`` runs
+            per-round); evaluate ``global_best.pt`` post-hoc with
+            ``fedmammobench-evaluate``.
+        best_checkpoint_metric: Which validation metric to maximize when
+            ``save_best_checkpoint`` is True. Must be one of
+            ``FEDERATED_BEST_CHECKPOINT_METRICS`` (a subset of
+            ``TrainingConfig.BEST_CHECKPOINT_METRICS`` — ``auc_pr`` is excluded
+            because federated clients never report it).
     """
 
     num_clients: int = 4
@@ -122,6 +149,8 @@ class FederatedConfig:
     round_timeout_seconds: int = 0
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     server_training: ServerTrainingConfig = field(default_factory=ServerTrainingConfig)
+    save_best_checkpoint: bool = False
+    best_checkpoint_metric: str = "roc_auc"
 
     def validate(self) -> None:
         """Raise ValueError for invalid federated settings."""
@@ -151,6 +180,13 @@ class FederatedConfig:
             raise ValueError(
                 f"round_timeout_seconds must be >= 0, got {self.round_timeout_seconds}"
             )
+        if self.save_best_checkpoint and self.best_checkpoint_metric not in FEDERATED_BEST_CHECKPOINT_METRICS:
+            raise ValueError(
+                f"federated.best_checkpoint_metric must be one of "
+                f"{FEDERATED_BEST_CHECKPOINT_METRICS}, got {self.best_checkpoint_metric!r}. "
+                "(auc_pr is valid for training.best_checkpoint_metric centrally, but is "
+                "never reported by federated clients, so it is excluded here.)"
+            )
         self.server_training.validate()
 
     def model_config_hash(self, model_config_fields: dict[str, Any]) -> str:
@@ -169,6 +205,7 @@ class FederatedConfig:
 
 
 __all__ = [
+    "FEDERATED_BEST_CHECKPOINT_METRICS",
     "FederatedConfig",
     "ServerTrainingConfig",
     "StrategyConfig",

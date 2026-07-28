@@ -27,11 +27,23 @@ configs/
 │   └── client.yaml
 ├── exp10/                 # Centralizado variante
 │   └── centralized.yaml
+├── exp50 .. exp55/        # Factorial linear probing (backbone RadImageNet CONGELADO):
+│   ├── centralized.yaml   #   3 profundidades de cabeza MLP x 2 dropouts
+│   └── eval/
+│       └── mammo_bench.yaml
+├── exp56/                 # Igual que exp54 pero epochs=15 + save_best_checkpoint
+│   ├── centralized.yaml   #   (ver "Selección de mejor checkpoint" más abajo)
+│   └── eval/
+│       └── mammo_bench.yaml
 └── legacy/                # Configs anteriores al refactor (no usar en experimentos nuevos)
     ├── fedavg_cbis_ddsm.yaml
     ├── radimagenet_*.yaml
     └── ...
 ```
+
+`configs/exp11` a `exp49` (omitidos arriba por brevedad) siguen el mismo patrón que exp07-10:
+carpetas con `server.yaml`/`client.yaml` (federado) o `centralized.yaml` (centralizado), más `eval/`
+cuando aplica.
 
 ---
 
@@ -308,6 +320,41 @@ docker run --rm --gpus all --network host \
     --checkpoint runs/exp07_fedavg_resnet50/exp07_fedavg_resnet50/global_model.pt \
     --split test
 ```
+
+---
+
+## Selección de mejor checkpoint (solo centralizado)
+
+Desde la v0.5.0, `training.save_best_checkpoint` permite que `fedmammobench-centralized` guarde y
+evalúe el mejor checkpoint visto durante el entrenamiento en vez de siempre usar el de la última
+época:
+
+```yaml
+training:
+  epochs: 15
+  save_best_checkpoint: true       # default: false — no cambia el comportamiento si se omite
+  best_checkpoint_metric: roc_auc  # default: roc_auc. Debe ser "mayor es mejor":
+                                    # roc_auc | f1 | accuracy | auc_pr | precision | recall
+```
+
+Con esto activado:
+
+- `weights/final.pt` se sigue guardando igual que siempre (última época).
+- `weights/best.pt` se sobrescribe cada vez que `val_<best_checkpoint_metric>` mejora.
+- Antes de evaluar el test set, se recarga `best.pt` en vez de usar los pesos de la última época.
+- `test_metrics.csv` añade una columna `checkpoint` (`final` o `best_epoch_<N>`) indicando cuál se usó.
+
+**Por qué existe:** en el factorial exp50-55 (linear probing sobre RadImageNet congelado) las 6
+corridas alcanzaban su mejor `val_roc_auc` entre la época 3 y 15 de 100, y luego se degradaban por
+sobreajuste (`val_loss` sube 3-9x) — el AUC de test reportado terminaba midiendo el checkpoint ya
+sobreajustado, no el mejor real. `exp56` (mismos hiperparámetros que `exp54`, `epochs: 15` +
+`save_best_checkpoint: true`) es el primer experimento que usa este flag; úsalo como plantilla para
+cualquier config nueva con pocas épocas efectivas de convergencia (cabezas pequeñas, backbone
+congelado, fine-tuning corto).
+
+Sin selección de mejor checkpoint (el resto de experimentos, exp01-55), no hay early stopping real: si
+`training.epochs` es mucho mayor que el punto de convergencia, revisa `metrics.csv` para confirmar que
+`val_roc_auc`/`val_loss` no se degradaron antes de confiar en el AUC de test final.
 
 ---
 
