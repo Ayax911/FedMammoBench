@@ -232,6 +232,16 @@ training:
   # del término proximal, pero el resto del backward usa FP16.
   mixed_precision: false
 
+  # true → guarda weights/best.pt cada vez que val_<best_checkpoint_metric>
+  # mejora, y lo recarga antes de la evaluación final de test (en vez de usar
+  # los pesos de la última época). weights/final.pt se sigue guardando igual.
+  # Solo aplica a fedmammobench-centralized (modo federado: ver federated.save_best_checkpoint).
+  save_best_checkpoint: false
+
+  # Métrica a rastrear si save_best_checkpoint: true. Debe ser "mayor es mejor":
+  # roc_auc | f1 | accuracy | auc_pr | precision | recall
+  best_checkpoint_metric: roc_auc
+
   optimizer:
     # "sgd" | "adam" | "adamw"
     name: adamw
@@ -374,6 +384,19 @@ federated:
   # Útil para detectar clientes caídos en gRPC real.
   round_timeout_seconds: 0
 
+  # true → guarda weights/global_best.pt cada vez que el promedio ponderado
+  # entre nodos de val_<best_checkpoint_metric> mejora ronda a ronda.
+  # weights/global_model.pt (última ronda) se sigue guardando igual siempre.
+  # A diferencia del centralizado, el servidor NO recarga global_best.pt al
+  # terminar (no hay paso de test terminal que recargar) — evalúalo aparte
+  # con `fedmammobench-evaluate --checkpoint runs/<exp>/weights/global_best.pt`.
+  save_best_checkpoint: false
+
+  # Métrica a rastrear si save_best_checkpoint: true. Debe ser "mayor es mejor"
+  # y estar entre las que aggregate_evaluate agrega: roc_auc | f1 | accuracy |
+  # precision | recall (NO incluye auc_pr — el cliente federado no lo reporta).
+  best_checkpoint_metric: roc_auc
+
   strategy:
     # "fedavg"   → promedio ponderado estándar.
     # "fedprox"  → regularización proximal para datos no-IID (requiere params.mu).
@@ -414,3 +437,49 @@ federated:
     # 1.0 → toma los pesos del servidor tal cual (continuación desde el global).
     # 0.5 → promedio entre el global agregado y el resultado del servidor.
     server_weight: 1.0
+
+
+# -----------------------------------------------------------------------------
+# wandb — WandbConfig
+# Monitoreo en tiempo real vía Weights & Biases. UN run por experimento, solo
+# del lado servidor/centralizado (los clientes federados nunca llaman
+# wandb.init; sus métricas por nodo llegan al run del servidor con prefijo
+# node_<id>/...). Ver "Weights & Biases" en configs/README.md para el flujo
+# completo con Docker (dónde poner WANDB_API_KEY, fallback offline, wandb sync).
+# -----------------------------------------------------------------------------
+
+wandb:
+  # ACTIVO POR DEFECTO — no hace falta declarar esta sección para que reporte.
+  # false, o mode: disabled más abajo, para desactivarlo en un experimento puntual.
+  enabled: true
+
+  # Nombre del proyecto en wandb.ai/<entity>/<project>.
+  project: fedmammobench
+
+  # Team/usuario de W&B. null → el default de la cuenta autenticada.
+  entity: null
+
+  # Nombre del run en la UI. null → usa el `name:` raíz de este config.
+  run_name: null
+
+  # Agrupa runs relacionados en la UI (ej. todas las corridas de un mismo
+  # experimento con distintas semillas). null → usa `name:` también.
+  group: null
+
+  # Tags libres para filtrar en la UI de W&B.
+  tags: []
+
+  # "online"   → intenta conectar a wandb.ai (baja solo a offline si no hay
+  #              WANDB_API_KEY ni ~/.netrc con credenciales, o si init falla).
+  # "offline"  → nunca intenta red; escribe el historial localmente.
+  # "disabled" → no importa wandb ni hace nada (equivalente a enabled: false).
+  mode: online
+
+  # Carpeta donde W&B escribe sus archivos locales (incl. runs offline).
+  # null → <output_dir>/<name>/wandb.
+  log_dir: null
+
+  # NO EXISTE (y no debe añadirse) un campo api_key aquí: el config resuelto
+  # se vuelca a runs/<name>/config.snapshot.yaml, así que cualquier secreto
+  # puesto en esta sección terminaría en disco. La key sale únicamente de la
+  # variable de entorno WANDB_API_KEY, nunca de un YAML.

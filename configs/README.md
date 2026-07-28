@@ -323,7 +323,7 @@ docker run --rm --gpus all --network host \
 
 ---
 
-## Selección de mejor checkpoint (solo centralizado)
+## Selección de mejor checkpoint (centralizado y federado)
 
 Desde la v0.5.0, `training.save_best_checkpoint` permite que `fedmammobench-centralized` guarde y
 evalúe el mejor checkpoint visto durante el entrenamiento en vez de siempre usar el de la última
@@ -355,6 +355,130 @@ congelado, fine-tuning corto).
 Sin selección de mejor checkpoint (el resto de experimentos, exp01-55), no hay early stopping real: si
 `training.epochs` es mucho mayor que el punto de convergencia, revisa `metrics.csv` para confirmar que
 `val_roc_auc`/`val_loss` no se degradaron antes de confiar en el AUC de test final.
+
+Desde la v0.6.0 existe el equivalente en federado, con los **mismos nombres de campo** pero bajo
+`federated:` en vez de `training:`:
+
+```yaml
+federated:
+  rounds: 20
+  save_best_checkpoint: true       # default: false
+  best_checkpoint_metric: roc_auc  # default: roc_auc. Igual lista que arriba MENOS auc_pr:
+                                    # roc_auc | f1 | accuracy | precision | recall
+                                    # (auc_pr no lo reporta FedMammoBenchClient.evaluate en
+                                    # federado, así que nunca dispararía un guardado)
+```
+
+Diferencias con el centralizado:
+
+- El checkpoint se guarda en `weights/global_best.pt` (junto a `weights/global_model.pt`, que sigue
+  siendo siempre la última ronda — nombre distinto de `weights/best.pt` del centralizado a propósito,
+  para no confundirlos si algún día un mismo `runs/` mezcla ambos modos).
+- Se sobrescribe cada vez que el **promedio ponderado entre nodos** de `val_<best_checkpoint_metric>`
+  (la métrica que ya agrega `aggregate_evaluate`) mejora ronda a ronda.
+- El servidor **no recarga** `global_best.pt` al terminar — a diferencia del centralizado, el federado
+  no tiene un paso de test terminal que recargar (`evaluate_fn` ya corre cada ronda). Evalúa
+  `global_best.pt` después con `fedmammobench-evaluate --checkpoint runs/<exp>/weights/global_best.pt`.
+- `timing_summary.csv` reporta la ronda y el valor del mejor checkpoint cuando el tracking está activo.
+
+---
+
+## Weights & Biases (monitoreo en tiempo real)
+
+Desde la v0.6.0, tanto `fedmammobench-centralized` como el servidor federado
+(`run_server.py`/`fedmammobench-federated`) reportan métricas a [Weights & Biases](https://wandb.ai)
+además de TensorBoard/CSV, vía la sección `wandb:` del config:
+
+```yaml
+wandb:
+  enabled: true              # default: true — activo aunque no pongas esta sección
+  project: fedmammobench     # nombre del proyecto en wandb.ai
+  entity: null                # null = tu team/usuario por defecto
+  run_name: null               # null = usa `name:` del experimento
+  group: null                  # null = usa `name:` del experimento (agrupa runs relacionados)
+  tags: []
+  mode: online                # online | offline | disabled
+  log_dir: null                 # null = <output_dir>/<name>/wandb
+```
+
+**Es un solo run por experimento, del lado del servidor.** Los clientes/nodos federados (workers Ray en
+simulación, o contenedores `run_client.py` en gRPC) **nunca** llaman a `wandb.init` — sus métricas por
+nodo llegan igual al run del servidor bajo claves `node_<id>/train_loss`, `node_<id>/val_roc_auc`, etc.,
+así que verás paneles por nodo dentro de un único run en la UI de W&B, no un run por nodo.
+
+`enabled: true` es el default (decisión explícita de este proyecto), así que **no hace falta escribir
+la sección `wandb:` para que se active** — cualquier config sin ella igual reporta a W&B. Para
+desactivarlo en un experimento puntual: `wandb: {enabled: false}`, o `wandb: {mode: disabled}`.
+
+### Cómo usarlo con Docker
+
+El proceso W&B corre **dentro** del contenedor del servidor/centralizado, así que necesita la API key
+ahí adentro. `docker-deploy-federated.sh`, `run-queue.sh`, `run-exp{20-22,24-26,28-31,50-55}.sh` y los
+workflows de GitHub Actions ya pasan `-e WANDB_API_KEY="${WANDB_API_KEY:-}"` a los contenedores de
+servidor/centralizado (nunca a los de cliente/nodo — no la necesitan). Para que llegue algo ahí:
+
+```bash
+# Opción 1 — exportar en la shell que lanza el script, antes de correrlo
+export WANDB_API_KEY="tu-api-key-de-wandb.ai/authorize"
+scripts/docker-deploy-federated.sh exp14
+
+# Opción 2 — guardarla en .env (ya está en .gitignore) y cargarla antes de lanzar
+cp .env.example .env   # si no existe aún
+# editar .env: WANDB_API_KEY=tu-api-key
+set -a; source .env; set +a
+scripts/docker-deploy-federated.sh exp14
+```
+
+`wandb login` en el host **no sirve** — escribe `~/.netrc` del host, que ningún contenedor monta. La
+key tiene que llegar como variable de entorno.
+
+**Si no defines `WANDB_API_KEY` (o la dejas vacía), nada se rompe.** `WandbWriter` detecta la ausencia
+de credenciales *antes* de intentar conectarse y baja solo a `mode: offline`: sigue escribiendo el
+historial localmente en `runs/<exp>/<name>/wandb/wandb/offline-run-*/` (dentro del mismo mount `-v
+"$REPO/runs:/app/runs"` que ya usan todos los scripts), sin tocar la red y sin bloquear el
+entrenamiento ni un segundo. Para subir esas corridas después, desde el host con `wandb` instalado:
+
+```bash
+pip install wandb && wandb login
+wandb sync runs/<exp>/<name>/wandb/wandb/offline-run-*
+```
+
+Lo mismo pasa si el paquete `wandb` no está instalado en la imagen (por ejemplo, mientras no se haya
+reconstruido y republicado `ayax911/federal-learning:latest` tras este cambio): se loguea un aviso una
+vez y el entrenamiento sigue exactamente igual, solo sin datos en W&B.
+
+**GitHub Actions**: definir el secret `WANDB_API_KEY` en el repo (Settings → Secrets → Actions) para
+que `run-experiment.yml`/`run-batch.yml`/`run-research-suite.yml` lo pasen automáticamente a los
+contenedores de servidor/centralizado.
+
+### Qué ver en la UI
+
+Con la key configurada, entra a `wandb.ai/<tu-entity>/<project>` mientras la corrida está en marcha:
+curvas de `train_loss`/`val_loss`/`val_roc_auc`/etc. en tiempo real (actualizan cada época en
+centralizado, cada ronda en federado), el config completo del experimento (sin secretos — `WandbConfig`
+no tiene ni puede tener un campo de API key, ver su docstring), y en federado un panel por
+`node_<id>/…` con las métricas de cada nodo superpuestas.
+
+---
+
+## Gráficas automáticas
+
+Desde la v0.6.0, al terminar cualquier entrenamiento (centralizado o federado, simulación o gRPC) se
+generan automáticamente las gráficas en `runs/<exp>/<name>/plots/` — ya no hace falta correr
+`scripts/plot_experiment.py` a mano después. Si `matplotlib` no está disponible o el ploteo falla por
+cualquier razón, solo se loguea un warning; nunca hace fallar la corrida.
+
+Nuevo en v0.6.0 (antes rotas en federado — ver [CHANGELOG.md](../CHANGELOG.md)):
+
+- `nodes_loss_train_val.png` — train loss y val loss lado a lado, una línea por nodo.
+- `node_<N>_loss.png` — un archivo por nodo, train (sólida) + val (discontinua) en el mismo eje, para
+  ver de un vistazo si ese nodo concreto está sobreajustando.
+
+Para regenerar manualmente (por ejemplo sobre un run viejo, de antes de este cambio):
+
+```bash
+python scripts/plot_experiment.py --run-dir runs/<exp>/<name>
+```
 
 ---
 
