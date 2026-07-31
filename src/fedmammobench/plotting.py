@@ -409,6 +409,98 @@ def plot_nodes(run_dir: Path, out_dir: Path, dpi: int) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
+# Test-set diagnostics (ROC curve + confusion matrix)
+# ---------------------------------------------------------------------------
+
+def _find_test_predictions(run_dir: Path) -> Path | None:
+    """Locate a post-hoc test predictions CSV under ``run_dir/eval/``.
+
+    Written by ``scripts/run_evaluation.py --split test --predictions-out ...``
+    (not produced automatically during training), so this is opt-in: only
+    experiments that had this evaluation run manually get these plots.
+    """
+    eval_dir = run_dir / "eval"
+    if not eval_dir.is_dir():
+        return None
+    candidates = sorted(eval_dir.glob("*predictions*.csv"))
+    return candidates[0] if candidates else None
+
+
+def plot_test_diagnostics(run_dir: Path, out_dir: Path, dpi: int) -> list[Path]:
+    """ROC curve + confusion matrix from a saved test-set ``predictions.csv``.
+
+    Expects ``y_true`` and a probability column (``y_prob_malignant`` or
+    ``y_prob``) plus optionally ``y_pred`` (falls back to thresholding the
+    probability at 0.5 if absent).
+    """
+    pred_path = _find_test_predictions(run_dir)
+    if pred_path is None:
+        _logger.info("  [test] no eval/*predictions*.csv found — skipping.")
+        return []
+
+    df = _load(pred_path)
+    if df is None or "y_true" not in df.columns:
+        _logger.info("  [test] %s missing or has no y_true column — skipping.", pred_path)
+        return []
+
+    prob_col = next((c for c in ("y_prob_malignant", "y_prob", "y_score") if c in df.columns), None)
+    if prob_col is None:
+        _logger.info("  [test] %s has no probability column — skipping.", pred_path)
+        return []
+
+    from sklearn.metrics import auc, confusion_matrix, roc_curve
+
+    y_true = df["y_true"].to_numpy()
+    y_prob = df[prob_col].to_numpy()
+    y_pred = df["y_pred"].to_numpy() if "y_pred" in df.columns else (y_prob >= 0.5).astype(int)
+
+    plt, _ = _mpl()
+    written: list[Path] = []
+
+    # --- ROC curve ---
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    roc_auc = auc(fpr, tpr)
+    fig, ax = plt.subplots(figsize=(5.5, 5))
+    ax.plot(fpr, tpr, color=_COLORS[0], label=f"ROC (AUC = {roc_auc:.3f})")
+    ax.plot([0, 1], [0, 1], color="#999999", linestyle="--", linewidth=1, label="Chance")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    _style_ax(ax, "Test ROC curve", "False positive rate", "True positive rate")
+    fig.tight_layout()
+    out = out_dir / "test_roc_curve.png"
+    _savefig(fig, out, dpi)
+    written.append(out)
+
+    # --- confusion matrix ---
+    cm = confusion_matrix(y_true, y_pred)
+    labels = ["Benign", "Malignant"]
+    fig, ax = plt.subplots(figsize=(5, 4.5))
+    im = ax.imshow(cm, cmap="Blues")
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+    ax.set_xlabel("Predicted", fontsize=9)
+    ax.set_ylabel("True", fontsize=9)
+    ax.set_title("Test confusion matrix", fontsize=11, fontweight="bold")
+    thresh = cm.max() / 2
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(
+                j, i, str(cm[i, j]), ha="center", va="center",
+                color="white" if cm[i, j] > thresh else "black", fontsize=12,
+            )
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.tight_layout()
+    out = out_dir / "test_confusion_matrix.png"
+    _savefig(fig, out, dpi)
+    written.append(out)
+
+    _logger.info("  [test] plots written to %s (source: %s)", out_dir, pred_path)
+    return written
+
+
+# ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
 
@@ -446,6 +538,8 @@ def plot_run(run_dir: str | Path, out_dir: str | Path | None = None, dpi: int = 
             "(expected metrics.csv or server_metrics.csv/clients/)"
         )
 
+    written += plot_test_diagnostics(run_dir, out_dir, dpi)
+
     _logger.info("Done. All plots saved to %s", out_dir)
     return written
 
@@ -471,4 +565,5 @@ __all__ = [
     "plot_nodes",
     "plot_run",
     "plot_server",
+    "plot_test_diagnostics",
 ]

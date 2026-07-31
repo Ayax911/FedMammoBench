@@ -1,6 +1,6 @@
-name: exp59_mlp4_nodrop_radimagenet_unfreeze_l4_eval
+name: exp64_linear_head_radimagenet_unfreeze_l3l4_eval
 mode: centralized
-output_dir: runs/exp59_mlp4_nodrop_radimagenet_unfreeze_l4
+output_dir: runs/exp64_linear_head_radimagenet_unfreeze_l3l4
 
 data:
   name: mammo_bench
@@ -19,11 +19,7 @@ model:
   pretrained: false
   in_channels: 3
   num_classes: 2
-  dropout: 0.0   # DEBE coincidir con centralized.yaml: cambia los índices del Sequential
-  head:
-    hidden_dims: [512, 256, 128, 64]
-    activation: leaky_relu
-    batch_norm: false
+  dropout: 0.5   # DEBE coincidir con centralized.yaml: cambia los índices del Sequential
   weight_source: none
 
 training:

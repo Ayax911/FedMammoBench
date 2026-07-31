@@ -25,6 +25,7 @@ import warnings
 from typing import Any
 
 import albumentations as A
+import cv2
 from albumentations.pytorch import ToTensorV2
 
 from fedmammobench.configs.schema import NORMALIZE_PRESETS, AugmentationConfig
@@ -91,6 +92,35 @@ def _resolve_norm(
 
 
 # ---------------------------------------------------------------------------
+# Resize helper
+# ---------------------------------------------------------------------------
+
+def _resize_ops(image_size: int, resize_mode: str) -> list[Any]:
+    """Resize step shared by the train/eval pipelines.
+
+    INTER_AREA is used unconditionally: every image in this benchmark's
+    manifests is larger than ``image_size`` (native sizes range roughly
+    500x1334 to 962x2052 px, vs. image_size=224 in every config), so this is
+    always a downscale, where INTER_AREA is OpenCV's recommended method
+    (better aliasing/moiré suppression than the previous default,
+    INTER_LINEAR). It degrades to near-linear behavior on the rare
+    non-shrink case, so it stays correct even if a future config sets
+    ``image_size`` at or above the native resolution.
+    """
+    if resize_mode == "letterbox":
+        return [
+            A.LongestMaxSize(max_size=image_size, interpolation=cv2.INTER_AREA),
+            A.PadIfNeeded(
+                min_height=image_size,
+                min_width=image_size,
+                border_mode=cv2.BORDER_CONSTANT,
+                fill=0,
+            ),
+        ]
+    return [A.Resize(image_size, image_size, interpolation=cv2.INTER_AREA)]
+
+
+# ---------------------------------------------------------------------------
 # Public factory
 # ---------------------------------------------------------------------------
 
@@ -132,7 +162,7 @@ def build_transforms(
 
     mean, std = _resolve_norm(augmentation, in_channels)
 
-    train_ops: list[Any] = [A.Resize(image_size, image_size)]
+    train_ops: list[Any] = _resize_ops(image_size, augmentation.resize_mode)
     if augmentation.horizontal_flip:
         train_ops.append(A.HorizontalFlip(p=0.5))
     if augmentation.vertical_flip:
@@ -155,7 +185,7 @@ def build_transforms(
     )
 
     eval_ops: list[Any] = [
-        A.Resize(image_size, image_size),
+        *_resize_ops(image_size, augmentation.resize_mode),
         A.Normalize(mean=mean, std=std, max_pixel_value=255.0),
         ToTensorV2(),
     ]

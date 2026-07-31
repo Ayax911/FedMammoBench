@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.9.0] — 2026-07-31
+
+### Fixes
+
+- **Resize interpolation changed from bilinear to area-based
+  (`cv2.INTER_AREA`).** `build_transforms()` (`datasets/transforms.py`) never
+  set `A.Resize`'s `interpolation` argument, so every train/eval pipeline
+  silently used Albumentations' default, `cv2.INTER_LINEAR`. Every image in
+  this benchmark's manifests is larger than `data.image_size` (native sizes
+  sampled in the 500×1334–962×2052 px range vs. `image_size=224` in every
+  config), i.e. the resize step is always a downscale — the case where
+  OpenCV recommends `INTER_AREA` over bilinear (less aliasing/moiré, sharper
+  perceived edges/texture in the resized breast tissue). This is a default
+  behavior change: it alters resized pixel values for every config, past and
+  future. Historical results (exp07–exp61+) remain valid as a record of what
+  was run, but re-running the same YAML today no longer reproduces those
+  runs pixel-for-pixel (random init/augmentation already dominated that
+  variance in practice, so this is not expected to materially change
+  reported metrics — flagged here for anyone attempting exact reproduction).
+
+### Features
+
+- **Opt-in aspect-ratio-preserving resize (`augmentation.resize_mode`).**
+  New `AugmentationConfig.resize_mode: Literal["squash", "letterbox"]`
+  (default `"squash"`, i.e. today's behavior — a direct, non-uniform stretch
+  to a square — unchanged for every existing config). Mammography sources
+  are tall rectangles with dataset-dependent aspect ratios (CBIS-DDSM,
+  VinDr-Mammo, Mammo-Bench); squashing them to a square distorts breast
+  anatomy by a different factor per source dataset, a potential confound
+  between datasets. `resize_mode: letterbox` instead does
+  `A.LongestMaxSize(image_size) + A.PadIfNeeded(image_size, image_size,
+  border_mode=BORDER_CONSTANT, value=0)` — scales to fit, then pads with
+  black (matching the black background already typical of cropped
+  mammograms) rather than stretching. Available for new experiments/ablations
+  without touching any already-run config.
+
 ## [0.8.0] — 2026-07-28
 
 ### Features

@@ -41,6 +41,11 @@ class AugmentationConfig:
     # YAML sequences are loaded as list[float]; scalars as float.
     normalize_mean: Any = 0.5
     normalize_std: Any = 0.25
+    # Aspect-ratio handling for the resize target. "squash" (default) matches
+    # every pre-0.9.0 experiment config (exp07+) geometry byte-for-byte;
+    # "letterbox" preserves native aspect ratio via LongestMaxSize+PadIfNeeded
+    # (black padding) instead of a non-uniform stretch to a square.
+    resize_mode: Literal["squash", "letterbox"] = "squash"
 
 
 @dataclass
