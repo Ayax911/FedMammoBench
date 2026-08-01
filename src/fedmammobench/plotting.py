@@ -422,7 +422,9 @@ def _find_test_predictions(run_dir: Path) -> Path | None:
     eval_dir = run_dir / "eval"
     if not eval_dir.is_dir():
         return None
-    candidates = sorted(eval_dir.glob("*predictions*.csv"))
+    # Direct children first (scripts/run_evaluation.py --predictions-out convention);
+    # fall back to one level of nesting (--output-dir default: eval/<config_name>/predictions.csv).
+    candidates = sorted(eval_dir.glob("*predictions*.csv")) or sorted(eval_dir.glob("*/*predictions*.csv"))
     return candidates[0] if candidates else None
 
 
@@ -496,7 +498,80 @@ def plot_test_diagnostics(run_dir: Path, out_dir: Path, dpi: int) -> list[Path]:
     _savefig(fig, out, dpi)
     written.append(out)
 
+    if "source_dataset" in df.columns:
+        written += _plot_test_macro_diagnostics(df, prob_col, out_dir, dpi)
+
     _logger.info("  [test] plots written to %s (source: %s)", out_dir, pred_path)
+    return written
+
+
+def _plot_test_macro_diagnostics(
+    df: pd.DataFrame, prob_col: str, out_dir: Path, dpi: int
+) -> list[Path]:
+    """Per-``source_dataset`` AUC/AUC-PR + macro average — the honest metric.
+
+    Pooling datasets with very different malignancy prevalence and reporting
+    a single global AUC lets a model win by recognizing *which dataset* an
+    image came from (and emitting that dataset's base rate) rather than by
+    reading the image — global AUC can't tell the two apart. Computing AUC
+    within each dataset and averaging (macro) removes that shortcut, because
+    a single dataset's own prevalence is constant and uninformative for
+    ranking its own images.
+    """
+    from sklearn.metrics import auc as _auc, average_precision_score, roc_auc_score, roc_curve
+
+    plt, _ = _mpl()
+    written: list[Path] = []
+    rows = []
+    fig, ax = plt.subplots(figsize=(6, 5.5))
+    for i, ds in enumerate(sorted(df["source_dataset"].unique())):
+        sub = df[df["source_dataset"] == ds]
+        y = sub["y_true"].to_numpy()
+        p = sub[prob_col].to_numpy()
+        if len(set(y.tolist())) < 2:
+            _logger.info("  [test-macro] %s has a single class present — skipping its AUC.", ds)
+            continue
+        ds_auc = roc_auc_score(y, p)
+        ds_auc_pr = average_precision_score(y, p)
+        rows.append(
+            {"source_dataset": ds, "n": len(sub), "prevalence": float(y.mean()),
+             "auc": ds_auc, "auc_pr": ds_auc_pr}
+        )
+        fpr, tpr, _ = roc_curve(y, p)
+        ax.plot(fpr, tpr, color=_COLORS[i % len(_COLORS)], label=f"{ds} (AUC={ds_auc:.3f}, n={len(sub)})")
+
+    if not rows:
+        plt.close(fig)
+        return []
+
+    import pandas as pd
+
+    macro_auc = float(pd.DataFrame(rows)["auc"].mean())
+    macro_auc_pr = float(pd.DataFrame(rows)["auc_pr"].mean())
+
+    ax.plot([0, 1], [0, 1], color="#999999", linestyle="--", linewidth=1, label="Chance")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    _style_ax(
+        ax, f"Test ROC by dataset (macro AUC = {macro_auc:.3f})",
+        "False positive rate", "True positive rate",
+    )
+    ax.legend(fontsize=7)
+    fig.tight_layout()
+    out = out_dir / "test_roc_by_dataset.png"
+    _savefig(fig, out, dpi)
+    written.append(out)
+
+    summary = pd.DataFrame(rows)
+    summary_path = out_dir / "test_metrics_by_dataset.csv"
+    summary.to_csv(summary_path, index=False)
+    with open(summary_path, "a") as f:
+        f.write(f"\n# macro_auc,{macro_auc:.6f}\n# macro_auc_pr,{macro_auc_pr:.6f}\n")
+    written.append(summary_path)
+    _logger.info(
+        "  [test-macro] macro AUC=%.4f (global AUC would overstate this if dataset "
+        "prevalence varies) -> %s", macro_auc, summary_path,
+    )
     return written
 
 

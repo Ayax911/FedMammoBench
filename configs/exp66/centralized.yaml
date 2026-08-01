@@ -1,0 +1,98 @@
+# exp66_linear_head_radimagenet_unfreeze_l4_res512 — ablación de RESOLUCIÓN:
+# misma arquitectura y misma configuración de exp63 (cabeza lineal, layer4
+# descongelado desde época 0), cambiando ÚNICAMENTE image_size: 224 -> 512.
+#
+# Motivación: las imágenes nativas del manifest van de ~500x1334 a 962x2052 px
+# (medido directamente sobre una muestra de 400 imágenes cmmd). A 224px el
+# resize reduce ~8x en el eje vertical — microcalcificaciones y márgenes
+# espiculados quedan sub-píxel. El probe lineal puro (exp62, solo 4 098
+# parámetros entrenables) ya alcanza val AUC=0.852 frente a val AUC=0.866 del
+# mejor fine-tuning con mucha más capacidad (exp63, 14.97M params
+# entrenables) — un delta de 0.014 con ~3 650x más parámetros sugiere que el
+# cuello de botella no es la arquitectura ni la cabeza, sino la información
+# ya perdida en la imagen de entrada a 224px.
+#
+# ResNet50 no impone ninguna restricción de tamaño de entrada (usa
+# AdaptiveAvgPool2d antes del FC; verificado con inputs 224/448/512 sin
+# error) — este cambio no requiere tocar código, solo config.
+#
+# num_workers: 0 -> 4 (a 224px la decodificación JPEG en el proceso
+# principal no era el cuello de botella; a 512px sí lo es. La GPU de esta
+# máquina tiene 46+ GB libres, así que no hizo falta bajar batch_size).
+#
+# Resto de hiperparámetros IDÉNTICOS a exp63 (ver ese archivo para el detalle
+# completo de la ablación exp62-65: cabeza lineal Dropout(0.5)+Linear,
+# layer4 descongelado desde época 0, sin augmentation, early stopping
+# patience 15).
+#
+# Estructura del manifest (manifests/mamo-bench-split-no-ddsm-rsna.csv):
+#   train: 7 463 imgs  val: 934 imgs  test: 934 imgs  (9 331 total, 5 datasets)
+#   (splits ya definidos en el CSV — val/test_fraction ignorados)
+#
+# Comando:
+#   fedmammobench-centralized --config configs/exp66/centralized.yaml
+
+name: exp66_linear_head_radimagenet_unfreeze_l4_res512
+mode: centralized
+seed: 42
+output_dir: runs/exp66_linear_head_radimagenet_unfreeze_l4_res512
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/mamo-bench-split-no-ddsm-rsna.csv   # 9 331 imgs, 5 datasets (sin DDSM)
+  image_root: data/
+  image_size: 512                   # ÚNICA variable respecto a exp63 (era 224)
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 4                    # 0 -> 4: decodificación JPEG deja de ser cuello de botella a 512px
+  val_fraction: 0.1        # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.1       # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true    # datasets desbalanceados (kau-bcmd, cmmd)
+
+model:
+  name: resnet50
+  weight_source: radimagenet          # RadImageNet directamente (no exp15/exp27 pretrain)
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 2                    # 2 neuronas de salida: softmax vía CrossEntropyLoss
+  dropout: 0.5                      # Dropout antes del único Linear de salida (sin head.hidden_dims)
+  freeze_backbone: true             # Arranca congelado; unfreeze_at_epoch de abajo lo levanta
+                                    # parcialmente desde la época 0.
+  unfreeze_at_epoch: 0              # layer4 pasa a entrenable desde la primera época.
+  unfreeze_layers: ["layer4"]       # Solo el último bloque convolucional (14.96M params);
+                                    # stem + layer1-3 permanecen congelados toda la corrida.
+
+training:
+  epochs: 100                       # techo; early_stopping_patience decide el corte real
+  save_best_checkpoint: true        # requerido por early_stopping_patience
+  best_checkpoint_metric: roc_auc
+  early_stopping_patience: 15       # detiene tras 15 épocas sin mejorar val_roc_auc
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3         # LR de la cabeza (siempre entrenable)
+    lr_backbone: 1.0e-4     # LR de layer4 una vez descongelado (desde la época 0 aquí)
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 100
+  augmentation:
+    horizontal_flip: false            # sin cambios respecto a exp63 — solo resolución varía aquí
+    vertical_flip: false
+    rotate_limit: 0
+    brightness_contrast: false
+    elastic: false
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true

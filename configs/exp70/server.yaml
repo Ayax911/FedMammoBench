@@ -1,0 +1,104 @@
+# exp70_fedprox_r1e28_res512_aug_radimagenet — SERVIDOR CENTRAL (5 nodos = 5 datasets)
+#
+# Primer experimento FEDERADO tras la serie centralizada exp50-69. Arquitectura
+# y config de entrenamiento IDÉNTICAS al mejor experimento centralizado (exp69:
+# cabeza lineal Dropout(0.5)+Linear, layer4 descongelado desde época 0, image_size
+# 512, augmentation conservadora horizontal_flip+rotate+brightness_contrast),
+# solo que ahora los datos NO se agrupan en un único pool — cada nodo es UN
+# dataset completo (partición "natural", máxima heterogeneidad de prevalencia
+# entre clientes: cmmd 78.7% maligno vs kau-bcmd 4.1%, ver diagnóstico de
+# exp50-69 sobre el atajo de prevalencia / efecto Simpson).
+#
+# rounds: 1, local_epochs: 28 — 28 es la época del MEJOR checkpoint de exp69
+# (val_roc_auc=0.8783, antes de que el early stopping cortara en época 43).
+# Es decir: cada cliente entrena localmente el equivalente a la corrida
+# centralizada completa (hasta su punto óptimo observado), y el servidor
+# agrega UNA sola vez al final — la forma más simple de comparar "mismo
+# presupuesto de cómputo, pero con los datos separados por institución en vez
+# de mezclados" contra el baseline centralizado exp69.
+#
+# strategy: fedprox (proximal_mu=0.1, valor por defecto usado en el resto del
+# grid exp32-49) — penaliza que los pesos locales de cada cliente se alejen
+# demasiado del modelo global, mitigando la divergencia esperable cuando los
+# 5 clientes tienen distribuciones de clase tan distintas entre sí.
+#
+# num_workers: 0 en los clientes (ver client.yaml) — scripts/docker-deploy-federated.sh
+# no define --shm-size en sus `docker run`, y a image_size=512 con num_workers>0
+# el proceso revienta con "unable to allocate shared memory" (visto en exp69,
+# resuelto ahí con --shm-size=4g manual; aquí se evita por completo).
+#
+# WARM START: RadImageNet directo.  EVALUACIÓN: data.name=none → 100% federada
+# (el servidor no tiene datos propios; las métricas de test post-hoc se sacan
+# igual que en el resto de la serie, vía scripts/run_evaluation.py sobre
+# weights/global_model.pt).
+#
+# Despliegue (ver docs/DOCKER_DEPLOYMENT o memoria "docker_federated_deployment_skill"):
+#   scripts/docker-deploy-federated.sh exp70
+
+name: exp70_fedprox_r1e28_res512_aug_radimagenet
+mode: federated
+seed: 42
+output_dir: runs/exp70_fedprox_r1e28_res512_aug_radimagenet
+device: auto
+
+data:
+  name: none              # servidor sin datos → evaluación federada
+  image_size: 512
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0
+  val_fraction: 0.1
+  test_fraction: 0.1
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  in_channels: 3
+  num_classes: 2
+  dropout: 0.5                      # Dropout antes del único Linear de salida (sin head.hidden_dims) — igual que exp69
+  freeze_backbone: true             # Arranca congelado; unfreeze_at_epoch de abajo lo levanta parcialmente
+  unfreeze_at_epoch: 0              # layer4 pasa a entrenable desde la primera época — igual que exp69
+  local_unfreeze_at_epoch: null
+  unfreeze_layers: ["layer4"]
+
+training:
+  local_epochs: 28          # = época del mejor checkpoint de exp69 (val_roc_auc=0.8783); DEBE coincidir con el cliente
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3         # LR de la cabeza (siempre entrenable) — igual que exp69
+    lr_backbone: 1.0e-4     # LR de layer4 una vez descongelado — igual que exp69
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 28                # = local_epochs (única ronda: el scheduler cubre toda la corrida local)
+  augmentation:
+    normalize_preset: radimagenet_rgb   # el servidor no entrena; solo normalización por consistencia
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  num_clients: 5
+  rounds: 1
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+  min_fit_clients: 5
+  min_evaluate_clients: 5
+  min_available_clients: 5
+  accept_failures: false
+  server_address: "0.0.0.0:8080"
+  strategy:
+    name: fedprox
+    params:
+      proximal_mu: 0.1

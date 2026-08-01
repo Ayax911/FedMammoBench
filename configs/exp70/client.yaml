@@ -1,0 +1,81 @@
+# exp70_fedprox_r1e28_res512_aug_radimagenet — NODOS CLIENTE (5 nodos, 1 dataset por nodo)
+#
+# Mapeo nodo → dataset (vía scripts/docker-deploy-federated.sh, hardcodeado en
+# el script): node1 → cmmd, node2 → inbreast, node3 → cdd-cesm, node4 → kau-bcmd,
+# node5 → dmid. Cada nodo usa ESTE YAML; el manifest real se pasa por --manifest
+# en el script (el manifest_path de abajo es solo un placeholder, igual que en
+# exp21-49).
+#
+# COHERENCIA servidor↔cliente: freeze_backbone/unfreeze_*, image_size,
+# scheduler.t_max, local_epochs, rounds y strategy DEBEN coincidir con server.yaml.
+#
+# num_workers: 0 — ver nota extensa en server.yaml sobre /dev/shm a 512px.
+
+name: exp70_fedprox_r1e28_res512_aug_radimagenet
+mode: federated
+seed: 42
+output_dir: runs/exp70_fedprox_r1e28_res512_aug_radimagenet
+device: auto
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/cmmd-split.csv   # sobreescrito por --manifest en el workflow
+  image_root: data/
+  image_size: 512
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 0            # evita el crash de shared memory de DataLoader workers a 512px (ver exp69)
+  val_fraction: 0.15        # IGNORADO: el manifest ya trae split explícito
+  test_fraction: 0.0        # IGNORADO: idem
+  image_format: jpg
+  normal_policy: benign
+  balance_classes: true     # datasets desbalanceados (kau-bcmd, cmmd)
+
+model:
+  name: resnet50
+  weight_source: radimagenet
+  checkpoint_path: weights/RadImageNet-resnet50.pth
+  strict_load: false
+  in_channels: 3
+  num_classes: 2
+  dropout: 0.5                      # DEBE coincidir con server.yaml
+  freeze_backbone: true
+  unfreeze_at_epoch: 0
+  local_unfreeze_at_epoch: null
+  unfreeze_layers: ["layer4"]
+
+training:
+  local_epochs: 28          # DEBE coincidir con el servidor
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  optimizer:
+    name: adamw
+    lr: 1.0e-4
+    lr_head: 1.0e-3
+    lr_backbone: 1.0e-4
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine
+    t_max: 28                # = local_epochs
+  augmentation:
+    horizontal_flip: true             # igual que exp69 — verificado anatómicamente válido
+    vertical_flip: false              # NO activar: anatómicamente imposible
+    rotate_limit: 10                  # igual que exp69
+    brightness_contrast: true
+    elastic: false                    # NO activar: distorsiona la feature diagnóstica
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
+
+federated:
+  rounds: 1                 # DEBE coincidir con el servidor
+  strategy:
+    name: fedprox
+    params:
+      proximal_mu: 0.1

@@ -1,0 +1,34 @@
+name: exp69_linear_head_radimagenet_unfreeze_l4_res512_aug_eval
+mode: centralized
+output_dir: runs/exp69_linear_head_radimagenet_unfreeze_l4_res512_aug
+
+data:
+  name: mammo_bench
+  manifest_path: manifests/mamo-bench-split-no-ddsm-rsna.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench
+  image_size: 512   # DEBE coincidir con centralized.yaml de este experimento
+  grayscale: false
+  num_classes: 2
+  batch_size: 32
+  num_workers: 4
+  image_format: jpg
+  normal_policy: benign
+
+model:
+  name: resnet50
+  pretrained: false
+  in_channels: 3
+  num_classes: 2
+  dropout: 0.5   # DEBE coincidir con centralized.yaml: cambia los índices del Sequential
+  weight_source: none
+
+training:
+  augmentation:
+    normalize_preset: radimagenet_rgb
+  loss:
+    name: ce
+    auto_class_weights: true
+
+evaluation:
+  threshold: 0.5
+  save_predictions: true
