@@ -194,7 +194,12 @@ model:
   in_channels: 1
 
   # true → congela todos los parámetros del backbone (requires_grad=False).
-  # Útil para warm-up de la cabeza en las primeras rondas.
+  # Trainer también fija en modo eval() (tras cada model.train()) las capas
+  # BatchNorm cuyos parámetros afines están congelados — si no, running_mean/
+  # running_var de esas capas seguirían actualizándose pese a que γ/β no
+  # entrenan, y las estadísticas de BN de cada cliente federado derivarían
+  # de forma independiente y se corromperían al agregar (fix 2026-07-08).
+  # Útil para warm-up de la cabeza en las primeras rondas/épocas.
   freeze_backbone: false
 
   # true → congela el head de clasificación.
@@ -203,12 +208,30 @@ model:
   # Si se establece, descongela el backbone cuando la ronda/epoch alcanza este valor.
   # null → sin descongelamiento progresivo.
   # Advertencia si unfreeze_at_epoch >= federated.rounds (nunca se ejecutaría).
+  # Funciona tanto en centralizado (Trainer.fit, v0.8.0) como en federado.
   unfreeze_at_epoch: null
 
-  # Submodulos del backbone a descongelar cuando se alcanza unfreeze_at_epoch.
+  # Submodulos del backbone a descongelar cuando se alcanza unfreeze_at_epoch
+  # (o, en federado, en local_unfreeze_at_epoch — ver abajo).
   # null → descongela todos los parámetros del backbone (comportamiento original).
   # Ej: [layer4, fc] → solo desbloquea las últimas capas (mismo que centralizado).
   unfreeze_layers: null
+
+  # SOLO federado (ignorado en modo centralized). Descongelamiento CÍCLICO
+  # dentro de cada ronda: apply_freeze_policy vuelve a congelar el backbone
+  # al inicio de cada ronda, y FedMammoBenchClient.fit lo descongela
+  # parcialmente al llegar a esta época LOCAL (0-indexed) dentro de la
+  # ronda — a diferencia de unfreeze_at_epoch, que es un descongelamiento
+  # global de una sola vez a nivel de ronda. Usa la misma lista
+  # unfreeze_layers de arriba (o el backbone completo si es null).
+  # Requiere freeze_backbone: true y unfreeze_at_epoch: null — si
+  # unfreeze_at_epoch también está fijado, ese descongelamiento global tiene
+  # prioridad. Como el optimizer del cliente se construye con el backbone
+  # aún congelado, al descongelar se le añade un param_group nuevo (con
+  # lr_backbone si está definido); sin esto optimizer.step() nunca
+  # actualizaría esos parámetros.
+  # null (default) → sin descongelamiento cíclico.
+  local_unfreeze_at_epoch: null
 
 
 # -----------------------------------------------------------------------------
@@ -281,6 +304,20 @@ training:
     t_max: 50
 
   augmentation:
+    # Cómo redimensionar la imagen a image_size x image_size:
+    #   "squash"    (default) → A.Resize directo: estira la imagen a un
+    #                cuadrado sin preservar el aspect ratio. Comportamiento
+    #                histórico, idéntico byte-a-byte a exp07 en adelante.
+    #   "letterbox" → preserva el aspect ratio nativo vía LongestMaxSize +
+    #                PadIfNeeded (relleno negro) en vez de un estiramiento
+    #                no uniforme.
+    # En ambos casos se usa interpolación INTER_AREA: todas las imágenes del
+    # benchmark (~500x1334 a 962x2052 px nativo) son más grandes que
+    # image_size, así que siempre es un downscale (INTER_AREA es lo
+    # recomendado por OpenCV para reducir tamaño, mejor que INTER_LINEAR
+    # contra aliasing/moiré).
+    resize_mode: squash
+
     horizontal_flip: true
     vertical_flip: false
 
@@ -414,10 +451,22 @@ federated:
   early_stopping_patience: 0
 
   strategy:
-    # "fedavg"   → promedio ponderado estándar.
+    # "fedavg"   → promedio ponderado estándar (FedAvg, McMahan et al. 2017).
     # "fedprox"  → regularización proximal para datos no-IID (requiere params.mu).
     # "scaffold" → reducción de varianza via control variates.
     # "fedbn"    → no agrega capas BatchNorm (útil para heterogeneidad extrema).
+    # "fedadam"  → paso adaptativo tipo Adam en el SERVIDOR (Reddi et al. 2021)
+    #              sobre el pseudo-gradiente delta = x_t - aggregated_params;
+    #              los clientes entrenan localmente igual que en FedAvg.
+    # "fedyogi"  → igual que fedadam pero con la regla de actualización Yogi
+    #              (más conservadora en el segundo momento; útil si FedAdam
+    #              diverge por un tau/beta_2 mal calibrados).
+    # NOTA: fedadam/fedyogi SÍ están registrados (@register_strategy) y en
+    # uso en experimentos reales (exp29_fedyogi, exp34/exp43_fedadam), pero
+    # el Literal de StrategyConfig.name en federated_config.py sólo declara
+    # fedavg/fedprox/scaffold/fedbn — no bloquea su uso (Literal no se valida
+    # en runtime), pero conviene tenerlo en cuenta si algún día se añade
+    # validación estricta de este campo.
     name: fedavg
 
     # Parámetros específicos de la estrategia.
@@ -426,6 +475,12 @@ federated:
     #   mu muy bajo → parecido a FedAvg.
     # SCAFFOLD: {}             → sin parámetros adicionales requeridos.
     # FedBN: {}                → sin parámetros adicionales requeridos.
+    # FedAdam/FedYogi: { eta: 0.01, eta_l: 0.0316, beta_1: 0.9, beta_2: 0.99, tau: 0.001 }
+    #   eta    → learning rate del paso adaptativo en el servidor.
+    #   eta_l  → normalizador del LR de cliente (ver paper Reddi et al. 2021).
+    #   beta_1 → decaimiento del primer momento (momentum del servidor).
+    #   beta_2 → decaimiento del segundo momento.
+    #   tau    → término de estabilidad numérica / adaptatividad (evita división por ~0).
     params: {}
 
   # Entrenamiento híbrido en el nodo central (servidor también entrena).
