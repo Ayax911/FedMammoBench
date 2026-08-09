@@ -20,7 +20,9 @@ Thumbs.db
 .env
 
 # Project artifacts
-runs/
+runs/**/*.pt
+runs/**/*.pth
+
 checkpoints/
 *.pth
 *.pt
@@ -37,7 +39,7 @@ mammobench_info/
 guia_explicativa.docx
 guia_implementacion.docx
 PROMPT_PARA_MODIFICACIONES.md
-manifests/
+
 
 # Tests / coverage
 .pytest_cache/
