@@ -1,0 +1,49 @@
+{
+  "experiment": "exp06",
+  "block": 2,
+  "run_name": "exp06_resnet50_radimagenet_mammobench_layer4_layer3_dropout0.3",
+  "unfrozen": "\u00faltima y pen\u00faltima capa (layer4 + layer3) descongeladas",
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.3,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 32,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 224,
+    "optimizer": "AdamW",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(10)"
+  },
+  "epochs_run": 21,
+  "best_epoch": 1,
+  "best_val_loss": 0.4488065205514431,
+  "final_train_loss": 0.025979573751298807,
+  "final_val_loss": 1.155135610315483,
+  "test": {
+    "accuracy": 0.7852272727272728,
+    "auc": 0.8503943115707822,
+    "precision": 0.7903930131004366,
+    "recall": 0.7956043956043956,
+    "f1": 0.7929901423877328,
+    "confusion_matrix": [
+      [
+        329,
+        96
+      ],
+      [
+        93,
+        362
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp06_resnet50_radimagenet_mammobench_layer4_layer3_dropout0.3/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp06_resnet50_radimagenet_mammobench_layer4_layer3_dropout0.3/last_model.pth"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "experiment": "exp04",
+  "block": 2,
+  "run_name": "exp04_resnet50_radimagenet_mammobench_frozen_dropout0.3",
+  "unfrozen": "backbone completamente congelado",
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.3,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "batch_size": 32,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 224,
+    "optimizer": "AdamW",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(10)"
+  },
+  "epochs_run": 27,
+  "best_epoch": 7,
+  "best_val_loss": 0.44378355451460394,
+  "final_train_loss": 0.3205098738025756,
+  "final_val_loss": 0.5831730919224876,
+  "test": {
+    "accuracy": 0.7840909090909091,
+    "auc": 0.8410833872010343,
+    "precision": 0.7467411545623837,
+    "recall": 0.8813186813186813,
+    "f1": 0.8084677419354839,
+    "confusion_matrix": [
+      [
+        289,
+        136
+      ],
+      [
+        54,
+        401
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp04_resnet50_radimagenet_mammobench_frozen_dropout0.3/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp04_resnet50_radimagenet_mammobench_frozen_dropout0.3/last_model.pth"
+  }
+}
