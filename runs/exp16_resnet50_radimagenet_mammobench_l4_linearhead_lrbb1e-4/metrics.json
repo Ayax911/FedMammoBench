@@ -1,0 +1,53 @@
+{
+  "experiment": "exp16",
+  "block": 5,
+  "run_name": "exp16_resnet50_radimagenet_mammobench_l4_linearhead_lrbb1e-4",
+  "unfrozen": "solo la \u00faltima capa (layer4) descongelada",
+  "seed": 42,
+  "hyperparams": {
+    "head": "linear",
+    "dropout": null,
+    "lr": 0.001,
+    "lr_head": 0.001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 32,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 224,
+    "optimizer": "AdamW",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(10)",
+    "seed": 42
+  },
+  "epochs_run": 26,
+  "best_epoch": 6,
+  "best_val_loss": 0.44362857352410046,
+  "final_train_loss": 0.05645045340514206,
+  "final_val_loss": 1.1027387641702913,
+  "test": {
+    "accuracy": 0.8011363636363636,
+    "auc": 0.8481706528765353,
+    "precision": 0.7734375,
+    "recall": 0.8703296703296703,
+    "f1": 0.8190279214064116,
+    "confusion_matrix": [
+      [
+        309,
+        116
+      ],
+      [
+        59,
+        396
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp16_resnet50_radimagenet_mammobench_l4_linearhead_lrbb1e-4/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp16_resnet50_radimagenet_mammobench_l4_linearhead_lrbb1e-4/last_model.pth"
+  }
+}
