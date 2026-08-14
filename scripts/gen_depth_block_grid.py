@@ -89,7 +89,7 @@ DATASET_ROOT = Path(
     "c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_"
     "DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench"
 )
-MANIFEST_PATH = PROJECT_ROOT / "manifests" / "fedmammobench.csv"
+MANIFEST_PATH = PROJECT_ROOT / "manifests" / "fedmammobench_tompei.csv"
 RADIMAGENET_WEIGHTS_PATH = PROJECT_ROOT / "weights" / "RadImageNet-resnet50.pth"
 
 # W&B: la API key NUNCA se pega aquí. Se lee de la variable de entorno
