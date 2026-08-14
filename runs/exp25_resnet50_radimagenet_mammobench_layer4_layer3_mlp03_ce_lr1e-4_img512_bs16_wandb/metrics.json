@@ -1,0 +1,59 @@
+{
+  "experiment": "exp25",
+  "block": 6,
+  "run_name": "exp25_resnet50_radimagenet_mammobench_layer4_layer3_mlp03_ce_lr1e-4_img512_bs16_wandb",
+  "unfrozen": "\u00faltima y pen\u00faltima capa (layer4 + layer3) descongeladas",
+  "unfreeze_idx": [
+    7,
+    6
+  ],
+  "seed": 42,
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.3,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 512,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 25,
+  "best_epoch": 5,
+  "best_val_loss": 0.4313397607593625,
+  "best_val_f1_macro": 0.8194128401384315,
+  "final_train_loss": 0.1013833520986702,
+  "final_val_loss": 0.7870385386868967,
+  "test": {
+    "accuracy": 0.8329411764705882,
+    "auc": 0.8856500628387618,
+    "precision": 0.7810650887573964,
+    "recall": 0.927400468384075,
+    "f1": 0.8479657387580299,
+    "confusion_matrix": [
+      [
+        312,
+        111
+      ],
+      [
+        31,
+        396
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp25_resnet50_radimagenet_mammobench_layer4_layer3_mlp03_ce_lr1e-4_img512_bs16_wandb/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp25_resnet50_radimagenet_mammobench_layer4_layer3_mlp03_ce_lr1e-4_img512_bs16_wandb/last_model.pth"
+  }
+}

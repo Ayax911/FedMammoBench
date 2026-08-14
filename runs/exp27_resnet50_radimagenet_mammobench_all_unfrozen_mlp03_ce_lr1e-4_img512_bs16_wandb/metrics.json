@@ -1,0 +1,63 @@
+{
+  "experiment": "exp27",
+  "block": 6,
+  "run_name": "exp27_resnet50_radimagenet_mammobench_all_unfrozen_mlp03_ce_lr1e-4_img512_bs16_wandb",
+  "unfrozen": "todo el backbone descongelado",
+  "unfreeze_idx": [
+    7,
+    6,
+    5,
+    4,
+    1,
+    0
+  ],
+  "seed": 42,
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.3,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 512,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 21,
+  "best_epoch": 1,
+  "best_val_loss": 0.4290385484971382,
+  "best_val_f1_macro": 0.8178191247193042,
+  "final_train_loss": 0.15139018539295374,
+  "final_val_loss": 0.7545384871894688,
+  "test": {
+    "accuracy": 0.8047058823529412,
+    "auc": 0.8666932416496421,
+    "precision": 0.7625754527162978,
+    "recall": 0.8875878220140515,
+    "f1": 0.8203463203463204,
+    "confusion_matrix": [
+      [
+        305,
+        118
+      ],
+      [
+        48,
+        379
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp27_resnet50_radimagenet_mammobench_all_unfrozen_mlp03_ce_lr1e-4_img512_bs16_wandb/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp27_resnet50_radimagenet_mammobench_all_unfrozen_mlp03_ce_lr1e-4_img512_bs16_wandb/last_model.pth"
+  }
+}
