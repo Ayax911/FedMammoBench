@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+FedMammoBench: a federated learning framework for binary mammography classification (benign/malignant), built on Flower + PyTorch + Ray. `README.md` is stale on the specifics (see "Documentation map" below) but that one-line description of the project still holds.
+
 ## Commands
 
 ```bash
@@ -46,6 +48,11 @@ scripts/docker-deploy-federated.sh <exp> --monitor                # Monitor unti
 scripts/docker-deploy-federated.sh <exp> --no-clean               # Skip cleanup of previous containers
 
 # Docker compose wrapper (server + node0 + node1 on this or separate hosts; reads .env)
+# CURRENTLY BROKEN: docker-compose.yml / docker-compose.gpu.yml were deleted from the
+# repo in e2db7ec (still on this branch's history) and never restored; run.sh still
+# references them via `-f docker-compose.yml [-f docker-compose.gpu.yml]` and will fail
+# at the `docker compose` invocation. Use `scripts/docker-deploy-federated.sh` above
+# instead until the compose files are restored.
 ./run.sh build --gpu
 ./run.sh up --gpu                 # full local experiment
 ./run.sh server --gpu -d          # only the aggregation server, background
@@ -173,6 +180,12 @@ Two frozen-backbone subtleties in that loop (both fixed 2026-07-08, regression t
 - `loss_history.csv` — per-epoch train/val loss
 - `plots/loss_curve.png`, `plots/test_confusion_matrix.png`, `plots/test_metric_<name>.png`
 - `best_model.pth` — early-stopping checkpoint
+- `predictions.csv` — Block 7 only (`exp28`–`exp32`): the evaluated manifest rows (every original
+  column) plus `y_true`/`y_pred`/`y_prob` appended, one row per test-set image
+- `per_dataset/metrics_per_dataset.json`, `per_dataset/test_metrics_per_dataset.png`,
+  `per_dataset/test_confusion_matrix_per_dataset.png`, `per_dataset/predictions_<source_dataset>.csv`
+  — Block 7 only: the same test metrics/predictions broken out by `source_dataset`, kept out of
+  `plots/`/`predictions.csv` (global-only) on purpose
 
 Unlike package runs, these notebook outputs **are committed** (`.gitignore` only excludes `*.pt`/`*.pth`),
 so `runs/` doubles as the results record for the notebook series.
@@ -230,10 +243,11 @@ today are notebooks, unrelated to the exp01–exp09 YAML experiments that `CHANG
 still discuss. `configs/README.md` is the authoritative reference for experiment-specific
 mechanics (per-node hyperparameter matching, best-checkpoint selection, resume, W&B, autoplot).
 
-**Three config generators live in `scripts/`; neither output should be hand-edited.**
+**Four config generators live in `scripts/`; none of their output should be hand-edited.**
 `gen_lr_backbone_grid.py` emits the exp10–exp19 notebook grid (see next section);
 `gen_depth_block_grid.py` emits Block 6 (`exp24`–`exp27`, generated from the `exp23` template — see
-next section); `gen_federated_grid.py` emits the federated YAML grid (8 files per experiment:
+next section); `gen_img256_block_grid.py` emits Block 7 (`exp29`–`exp32`, generated from the `exp28`
+template — same idea, one resolution lower); `gen_federated_grid.py` emits the federated YAML grid (8 files per experiment:
 `server.yaml`, `client.yaml`, `eval/{mammo_bench,node1..5_partition}.yaml`), holding everything
 constant but `rounds`, `local_epochs` (= `scheduler.t_max`) and the aggregation strategy. Its module
 docstring and inline comments carry calibration learnings that are cheaper to read than to rediscover
@@ -296,8 +310,69 @@ cells are byte-identical across all five notebooks; only the parameters cell
 (`EXP_ID`/`RUN_NAME`/`UNFROZEN_DESC`/`UNFREEZE_IDX`/`WANDB_TAGS`) differs. `scripts/gen_depth_block_grid.py`
 substitutes exactly that cell to produce `exp24`–`exp27` from the `exp23` template — `exp23` itself is
 hand-edited, not generated, so don't regenerate over it; edit the generator's `EXPERIMENTS` list and
-re-run with `--force` to change `exp24`–`exp27`. None of the five have been executed yet as of this
-writing (no `runs/exp2{3..7}...` directories).
+re-run with `--force` to change `exp24`–`exp27`. All five have been executed and have committed
+`runs/exp2{3..7}...` results (added 2026-08-16, `93c3a8d`).
+
+**Stale manifest reference in `exp23`–`exp27` (as of `ee54a6b`, 2026-08-16).** Their params cell
+points `MANIFEST_PATH` at `manifests/fedmammobench_tompei.csv`, which that same commit deleted from
+the repo (replaced by a corrected `manifests/fedmammobench.csv`, still carrying the `source_dataset`
+column). The five notebooks already ran successfully against the old file before it was removed, so
+their committed `runs/` results stand, but re-running any of `exp23`–`exp27` today will fail at the
+manifest-loading cell until `MANIFEST_PATH` is repointed at `fedmammobench.csv`. Block 7 (below)
+already points at the live file — don't copy the stale path from `exp23`–`exp27` into new work.
+
+**Block 7 — same depth-of-unfreezing grid as Block 6, at 256px instead of 512px, plus a per-database
+test breakdown (`exp28`–`exp32`).** `exp28` is a hand-edited copy of `exp23` (same architecture/
+hyperparameters/seed/W&B) with three changes: `IMAGE_SIZE` 512 → 256; `MANIFEST_PATH` repointed at
+`manifests/fedmammobench.csv` (see above); and a `source_dataset`-level test breakdown appended after
+the existing global test cell.
+
+Evaluation is built around one reusable function, `evaluate_model(model, checkpoint_path, dataloader,
+...)`: it loads `checkpoint_path` into `model` and runs inference over whatever `DataLoader` it's
+handed, returning accuracy/AUC/precision/recall/F1 + confusion matrix (AUC/precision/recall/F1 come
+back `None` with a `"warning"` key when the subset has fewer than 2 classes present — a real risk on
+the smaller per-dataset subsets). It does no dataset/dataloader construction itself — the caller
+decides what data and which checkpoint that means. The global test cell calls it once with the `test`
+`DataLoader` already built earlier in the notebook and `BEST_MODEL_PATH`; the per-dataset cell then
+builds one fresh `DataLoader` per `source_dataset` value (`CSVDataset`'s `dataframe=` constructor path,
+added alongside the existing `csv_file=`+`split=` one — `CSVDataset` still filters a manifest by split
+when no `dataframe` is given, so `train`/`val` construction is untouched) and calls `evaluate_model`
+again for each, same `BEST_MODEL_PATH`. This means the checkpoint gets loaded from disk and the test
+set gets inferred over 5 times total (once "global," then once per dataset) instead of once — a
+deliberate trade for a single, stateless, order-independent evaluation function instead of one that
+depends on `model` already holding the right weights from an earlier cell.
+
+Outputs land in two places on purpose: `RUN_DIR/plots/` + `RUN_DIR/metrics.json` stay global-test-only
+(unchanged from Block 6), while `RUN_DIR/per_dataset/metrics_per_dataset.json` + a grouped bar chart +
+a confusion-matrix grid go in their own `RUN_DIR/per_dataset/` folder, so the two granularities' files
+never mix. `wandb_run.finish()` moved from the end of the global-metrics cell to the end of the
+per-dataset plotting cell, so per-dataset metrics/images still land on the same W&B run. `BLOCK = 7` in
+all five notebooks; `UNFREEZE_IDX` is the only thing that varies:
+
+`save_predictions_csv(manifest_df, result, out_path)` writes per-sample predictions alongside the
+aggregate metrics: it copies whichever `DataFrame` was just evaluated (`test_processed.data` for
+global, a `source_dataset` subset for per-dataset) and appends `y_true`/`y_pred`/`y_prob` from
+`evaluate_model`'s returned `"labels"`/`"preds"`/`"probs"` lists — assigned by *position*, not by
+pandas index, so it depends on the same row-order guarantee the rest of this section already relies
+on (`shuffle=False` + `CSVDataset(dataframe=...)` preserving input row order). Global goes to
+`RUN_DIR/predictions.csv`; each per-dataset subset goes to
+`RUN_DIR/per_dataset/predictions_<source_dataset>.csv`, written before that iteration's `result` gets
+its `labels`/`preds`/`probs` popped off (they're no longer needed once the CSV is on disk).
+
+| Notebook | `UNFREEZE_IDX` | Depth | Block 6 counterpart |
+|---|---|---|---|
+| `exp29` | `[]` | backbone fully frozen | `exp24` |
+| `exp28` | `[7]` | layer4 only | `exp23` |
+| `exp30` | `[7, 6]` | layer4 + layer3 | `exp25` |
+| `exp31` | `[7, 6, 5]` | layer4 + layer3 + layer2 | `exp26` |
+| `exp32` | `[7, 6, 5, 4, 1, 0]` | entire backbone | `exp27` |
+
+`scripts/gen_img256_block_grid.py` substitutes the parameters cell to produce `exp29`–`exp32` from the
+`exp28` template, mirroring `gen_depth_block_grid.py` exactly (freeze/optimizer/per-dataset-eval cells
+are already dynamic over `UNFREEZE_IDX` and don't need touching). `exp28` itself is hand-edited, not
+generated — edit the generator's `EXPERIMENTS` list and re-run with `--force` to change `exp29`–`exp32`.
+None of the five have been executed yet as of this writing (no `runs/exp2{8..9}...`/`exp3{0..2}...`
+directories).
 
 **`configs/exp71`–`exp77` are an earlier, superseded draft of this same work — don't treat them as
 part of the series.** Tells: the filename carries a description (`exp72_resnet50_layer4only.ipynb`)
@@ -331,6 +406,8 @@ exp01–exp09, which ran unseeded with a single LR. exp10 and exp11 exist as see
 exp09 to bridge that gap. Block 6 (`exp23`–`exp27`, see above) is generated the same way, from a
 different template and generator (`gen_depth_block_grid.py` off of `exp23`) — it inherits blocks 4–5's
 seeding but not their discriminative-LR convention (LR is intentionally undifferentiated in Block 6).
+Block 7 (`exp28`–`exp32`, see above) repeats Block 6's grid at 256px via `gen_img256_block_grid.py` off
+of `exp28`, and adds the per-`source_dataset` test breakdown described above.
 
 `runs/` is the results index for this series: one directory per `RUN_NAME`, and a notebook with no
 `runs/` entry has not been executed on the workstation yet. The names encode the ablation cell
