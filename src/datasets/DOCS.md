@@ -1,13 +1,184 @@
 # Documentación de la carpeta
 
-## dataset.py
+`src/datasets/` carga el manifest CSV, lo valida, lo separa en splits `train`/`val`/`test`
+sin fuga de pacientes entre splits, construye el pipeline de transforms y expone el
+`Dataset` de PyTorch que consume `DataLoader`. Flujo típico:
 
-### 
+```python
+manifest = Manifest(manifest_path="manifests/fedmammobench.csv", image_root="data/")
+split = Split(manifest=manifest)
+transform = TransformBuilder(image_size=(224, 224), use_horizontal_flip=True).build()
+train_ds = MammoBenchDataset(split.train_df(), transform=transform)
+```
 
 ## manifest.py
 
-Inputs: 
-- manifest_path: ruta relativa al manifest
-- image_root: ruta relativa a las imágenes 
+### Manifest
 
-### verify_columns()
+Carga un manifest CSV y lo deja listo para usar: valida columnas, valida `patient_id`,
+normaliza la etiqueta y resuelve rutas absolutas de imagen. Todas las validaciones
+corren dentro de `__init__`, en este orden — si algo falla, el objeto nunca llega a
+existir a medias.
+
+Inputs:
+- `manifest_path` (`str | Path`): ruta al CSV del manifest.
+- `image_root` (`str | Path`): directorio contra el que se resuelven las rutas
+  relativas de imagen del manifest.
+
+Atributos tras `__init__`:
+- `self.manifest_path` / `self.image_root`: versiones `Path` de los inputs.
+- `self.df`: `DataFrame` del CSV, aumentado en el sitio por cada paso de validación
+  con `label_norm` (`normalize_labels`) y `abs_image_path` (`resolve_image_paths`).
+
+Raises:
+- `FileNotFoundError`: `manifest_path` no existe (la lanza `pd.read_csv`).
+- `NotADirectoryError`: `image_root` no existe.
+- `ValueError`: falta una columna requerida, hay `patient_id` nulos, o hay valores de
+  `classification`/`preprocessed_image_path` inválidos.
+
+#### verify_columns()
+
+Revisa que `self.df` tenga las columnas requeridas: `preprocessed_image_path`,
+`classification`, `split`, `patient_id`.
+
+Raises: `ValueError` listando las columnas faltantes.
+
+#### check_patients_id()
+
+Revisa que ninguna fila tenga `patient_id` nulo — es la garantía de base para que
+`Split` pueda evitar que un mismo paciente caiga en dos splits distintos.
+
+Raises: `ValueError` con el número de filas afectadas.
+
+#### normalize_labels()
+
+Agrega `self.df['label_norm']` (`int`, 0/1) a partir de la columna cruda
+`classification` (`'benign'` → 0, `'malignant'` → 1, sin distinguir mayúsculas ni
+espacios). No modifica `classification`.
+
+Raises: `ValueError` con los valores no reconocidos, si alguno no mapea a `benign`/`malignant`.
+
+#### resolve_image_paths()
+
+Agrega `self.df['abs_image_path']` uniendo `preprocessed_image_path` con
+`self.image_root` (`image_root / preprocessed_image_path`, como string).
+
+Raises:
+- `NotADirectoryError`: `self.image_root` no existe.
+- `ValueError`: alguna fila tiene `preprocessed_image_path` nulo.
+
+## split.py
+
+### Split
+
+Deriva los splits `train`/`val`/`test` a **nivel paciente** a partir de un `Manifest`
+ya validado, y expone un `DataFrame` filtrado por split. No decide ni recalcula el
+split — solo agrupa y valida el que ya trae la columna `split` del manifest.
+
+Inputs:
+- `manifest` (`Manifest`, *keyword-only*): manifest ya cargado y validado.
+
+Atributos tras `__init__`:
+- `self.manifest`, `self.patient_col` (`"patient_id"`), `self.split_col` (`"split"`).
+- `self.splits`: `dict[str, list[str]]`, resultado de `group_by_split()`.
+
+Raises: `ValueError` si algún paciente aparece en más de un split (ver
+`verify_patient_consistency`).
+
+#### verify_patient_consistency()
+
+Revisa que ningún `patient_id` tenga filas repartidas en más de un valor de `split` —
+la garantía anti-fuga entre train/val/test.
+
+Raises: `ValueError` con la lista de pacientes inconsistentes.
+
+#### group_by_split()
+
+Agrupa `manifest.df` por `split` y devuelve, para cada split, la lista de
+`patient_id` únicos que le pertenecen. Solo agrupa lo que ya está en el manifest, no
+calcula ninguna proporción.
+
+Returns: `dict[str, list[str]]`, p. ej. `{"train": [...], "val": [...], "test": [...]}`.
+
+#### train_df() / val_df() / test_df()
+
+Devuelven `manifest.df` filtrado a las filas cuyo `patient_id` está en
+`self.splits["train"]` / `["val"]` / `["test"]` respectivamente. Cada llamada relee
+`manifest.df`, así que reflejan cualquier mutación posterior del manifest.
+
+Returns: `pd.DataFrame`.
+
+## dataset.py
+
+### MammoBenchDataset(Dataset[tuple[torch.Tensor, int]])
+
+`Dataset` de PyTorch sobre un `DataFrame` ya filtrado por split (normalmente el que
+devuelve `Split.train_df()` / `val_df()` / `test_df()`). Lee la imagen desde
+`abs_image_path` y la etiqueta desde `label_norm` — ambas columnas las agrega
+`Manifest`, así que espera un `DataFrame` que ya pasó por ahí.
+
+Inputs:
+- `df` (`pd.DataFrame`): filas con, como mínimo, `abs_image_path` y `label_norm`.
+- `grayscale` (`bool`, default `False`): si `True`, abre la imagen en modo `"L"`
+  (1 canal) en vez de `"RGB"` (3 canales).
+- `transform` (`transforms.Compose | None`): pipeline de torchvision a aplicar sobre
+  la imagen ya abierta. Si es `None`, usa `_default_transform()`.
+
+#### _default_transform()
+
+Transform mínimo de reemplazo cuando no se pasa uno explícito: `Resize((224, 224))` +
+`ToTensor()`. SUPUESTO: 224×224 — ajústalo si el modelo espera otro tamaño (o pasa un
+`transform` propio, p. ej. desde `TransformBuilder`).
+
+Returns: `transforms.Compose`.
+
+#### __len__()
+
+Returns: número de filas de `self.df`.
+
+#### __getitem__(idx)
+
+Carga la fila `idx`: abre `abs_image_path` con Pillow en modo `"L"` o `"RGB"` según
+`self.grayscale`, le aplica `self.transform`, y castea `label_norm` a `int`.
+
+Returns: `tuple[torch.Tensor, int]` — `(imagen_transformada, label)`.
+
+## transform.py
+
+### TransformBuilder
+
+Arma un `transforms.Compose` de torchvision a partir de flags booleanos, en vez de
+que cada caller construya la lista de pasos a mano. Pensado para pasarse directo al
+`transform=` de `MammoBenchDataset`.
+
+Inputs:
+- `image_size` (`tuple[int, int]`, default `(224, 224)`): tamaño final (alto, ancho)
+  tras el resize.
+- `use_horizontal_flip` (`bool`, default `False`): agrega flip horizontal aleatorio.
+- `use_rotation` (`bool`, default `False`): agrega rotación aleatoria.
+- `rotation_degrees` (`int`, default `15`): rango máximo de rotación, solo aplica si
+  `use_rotation=True`.
+- `horizontal_flip_p` (`float`, default `0.5`): probabilidad del flip, solo aplica si
+  `use_horizontal_flip=True`.
+
+#### build()
+
+Construye el pipeline en orden fijo: `Resize` → (`RandomHorizontalFlip` si
+`use_horizontal_flip`) → (`RandomRotation` si `use_rotation`, con `fill=0`) →
+`ToTensor`. Sin augmentations activas, es equivalente a
+`MammoBenchDataset._default_transform()` salvo por `image_size`.
+
+Returns: `transforms.Compose`.
+
+## __init__.py
+
+Reexporta `Manifest`, `Split` y (con nombre distinto al real) el dataset de
+`dataset.py`.
+
+⚠️ **Bug conocido:** `__init__.py` hace `from .dataset import Dataset`, pero
+`dataset.py` solo define la clase `MammoBenchDataset` — no existe ningún `Dataset` en
+ese módulo (torchvision/`torch.utils.data.Dataset` es la clase base de la que hereda,
+no un alias exportable). Como está hoy, `import datasets` (o `from src import
+datasets`) lanza `ImportError: cannot import name 'Dataset' from 'src.datasets.dataset'`.
+Corrección: cambiar el import y el `__all__` a `MammoBenchDataset`, o agregar
+`Dataset = MammoBenchDataset` en `dataset.py` si se quiere mantener el nombre corto.
