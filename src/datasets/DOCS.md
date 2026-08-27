@@ -1,14 +1,18 @@
 # Documentación de la carpeta
 
 `src/datasets/` carga el manifest CSV, lo valida, lo separa en splits `train`/`val`/`test`
-sin fuga de pacientes entre splits, construye el pipeline de transforms y expone el
-`Dataset` de PyTorch que consume `DataLoader`. Flujo típico:
+sin fuga de pacientes entre splits, construye el pipeline de transforms y arma los
+`Dataset`/`DataLoader` de PyTorch que consume el resto del pipeline. Flujo típico:
 
 ```python
 manifest = Manifest(manifest_path="manifests/fedmammobench.csv", image_root="data/")
 split = Split(manifest=manifest)
-transform = TransformBuilder(image_size=(224, 224), use_horizontal_flip=True).build()
-train_ds = MammoBenchDataset(split.train_df(), transform=transform)
+
+train_tx = TransformBuilder(image_size=(224, 224), use_horizontal_flip=True)
+eval_tx = TransformBuilder(image_size=(224, 224))
+
+loaders = builder_dataloader(split, train_tx, eval_tx, batch_size=16)
+train_loader = loaders["train"]
 ```
 
 ## manifest.py
@@ -128,7 +132,8 @@ Inputs:
 
 Transform mínimo de reemplazo cuando no se pasa uno explícito: `Resize((224, 224))` +
 `ToTensor()`. SUPUESTO: 224×224 — ajústalo si el modelo espera otro tamaño (o pasa un
-`transform` propio, p. ej. desde `TransformBuilder`).
+`transform` propio, p. ej. desde `TransformBuilder`). A diferencia de
+`TransformBuilder.build()`, no normaliza.
 
 Returns: `transforms.Compose`.
 
@@ -148,8 +153,9 @@ Returns: `tuple[torch.Tensor, int]` — `(imagen_transformada, label)`.
 ### TransformBuilder
 
 Arma un `transforms.Compose` de torchvision a partir de flags booleanos, en vez de
-que cada caller construya la lista de pasos a mano. Pensado para pasarse directo al
-`transform=` de `MammoBenchDataset`.
+que cada caller construya la lista de pasos a mano. Pensado para pasarse a
+`builder_dataloader` (o, ya construido con `.build()`, directo al `transform=` de
+`MammoBenchDataset`).
 
 Inputs:
 - `image_size` (`tuple[int, int]`, default `(224, 224)`): tamaño final (alto, ancho)
@@ -160,18 +166,48 @@ Inputs:
   `use_rotation=True`.
 - `horizontal_flip_p` (`float`, default `0.5`): probabilidad del flip, solo aplica si
   `use_horizontal_flip=True`.
+- `normalize_mean` (`tuple[float, float, float]`, default `(0.5, 0.5, 0.5)`): media por
+  canal para `transforms.Normalize`.
+- `normalize_std` (`tuple[float, float, float]`, default `(0.5, 0.5, 0.5)`): desviación
+  estándar por canal para `transforms.Normalize`.
+
+Nota: `normalize_mean`/`normalize_std` traen 3 valores fijos (pensados para `RGB`); si
+se usa con `MammoBenchDataset(grayscale=True)` (1 canal), `Normalize` fallará por
+desajuste de canales — hay que pasar tuplas de un solo valor en ese caso.
 
 #### build()
 
 Construye el pipeline en orden fijo: `Resize` → (`RandomHorizontalFlip` si
 `use_horizontal_flip`) → (`RandomRotation` si `use_rotation`, con `fill=0`) →
-`ToTensor`. Sin augmentations activas, es equivalente a
-`MammoBenchDataset._default_transform()` salvo por `image_size`.
+`ToTensor` → `Normalize(mean=normalize_mean, std=normalize_std)`.
 
 Returns: `transforms.Compose`.
 
+## build.py
+
+### builder_dataloader(split, train_transform_builder, eval_transform_builder, batch_size=16, num_workers=1)
+
+Arma los tres `MammoBenchDataset` (train/val/test) a partir de un `Split` ya creado y
+los envuelve en `DataLoader`. Es el punto de entrada que junta todo lo demás del
+paquete: `Split` → `TransformBuilder` → `MammoBenchDataset` → `DataLoader`.
+
+Inputs:
+- `split` (`Split`): ya construido sobre un `Manifest` válido.
+- `train_transform_builder` (`TransformBuilder`): se usa para `train` — normalmente con
+  augmentations activas (`use_horizontal_flip`/`use_rotation`).
+- `eval_transform_builder` (`TransformBuilder`): se usa para `val` **y** `test` — sin
+  augmentations, para que la evaluación sea determinista.
+- `batch_size` (`int`, default `16`).
+- `num_workers` (`int`, default `1`).
+
+Comportamiento fijo (no configurable vía parámetros): `train` se baraja
+(`shuffle=True`); `val` y `test` no (`shuffle=False`).
+
+Returns: `dict[str, DataLoader[tuple[torch.Tensor, int]]]` con las claves `"train"`,
+`"val"`, `"test"`.
+
 ## __init__.py
 
-Reexporta `Manifest`, `Split` y (con nombre distinto al real) el dataset de
-`dataset.py`.
-
+Reexporta `Manifest`, `Split` y `MammoBenchDataset` (`__all__` con esos tres nombres).
+`build.py` no se reexporta aquí — se importa directo como
+`from .build import builder_dataloader` (o `from datasets.build import ...`).
