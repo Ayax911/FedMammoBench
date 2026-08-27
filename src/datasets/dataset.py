@@ -1,41 +1,41 @@
-from typing import Callable
+from typing import cast
 
 import pandas as pd
 import torch
-from PIL import Image
 from torch.utils.data import Dataset
+from torchvision import transforms  # pyright: ignore[reportMissingTypeStubs]
+from PIL import Image
 
 
-class MammographyDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, transform: Callable | None = None) -> None:
-        """Wrap a manifest slice as a PyTorch dataset.
+class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        grayscale: bool = False,
+        transform: transforms.Compose | None = None,
+    ) -> None:
+        self.df = df
+        self.grayscale = grayscale
+        self.transform = transform or self._default_transform()
 
-        Args:
-            df: A DataFrame produced by Split (e.g. train_df()/val_df()/test_df()).
-                Must carry 'abs_image_path' and 'label_norm' columns — both added
-                by Manifest, never computed here.
-            transform: Callable applied to the PIL image before returning it
-                (e.g. a torchvision.transforms.Compose). None returns the raw
-                PIL image untouched.
-        """
-        self.df = df.reset_index(drop=True)
-        self.transform = transform
+    def _default_transform(self) -> transforms.Compose:
+        """Transform mínimo: redimensiona y convierte a tensor.
+        SUPUESTO: 224x224 — ajústalo si tu modelo espera otro tamaño."""
+        return transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
 
     def __len__(self) -> int:
         return len(self.df)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
-        """Return (image, label) for row idx.
-
-        idx is positional (.iloc), not a pandas index label — required because
-        the DataFrame Split hands back can carry a non-contiguous index even
-        after the reset_index() above resets it, since any further slicing by
-        the caller (e.g. filtering by source_dataset) reintroduces gaps.
-        """
         row = self.df.iloc[idx]
 
-        image = Image.open(row["abs_image_path"]).convert("RGB")
-        if self.transform is not None:
-            image = self.transform(image)
+        mode = "L" if self.grayscale else "RGB" # "L" is parameter to Pillow "luminance" to one canal
+        image = Image.open(row["abs_image_path"]).convert(mode)
 
-        return image, int(row["label_norm"])
+        image_tensor = cast(torch.Tensor, self.transform(image))
+        label = int(row["label_norm"])
+
+        return image_tensor, label
