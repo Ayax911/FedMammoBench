@@ -11,6 +11,8 @@ class TransformBuilder:
         use_rotation: bool = False,
         rotation_degrees: int = 15,
         horizontal_flip_p: float = 0.5,
+        normalize_mean: tuple[float, float, float] = (0.5, 0.5, 0.5),
+        normalize_std: tuple[float, float, float] = (0.5, 0.5, 0.5),
     ) -> None:
         """
         Args:
@@ -25,6 +27,8 @@ class TransformBuilder:
         self.use_rotation = use_rotation
         self.rotation_degrees = rotation_degrees
         self.horizontal_flip_p = horizontal_flip_p
+        self.normalize_mean = normalize_mean
+        self.normalize_std = normalize_std
 
     def build(self) -> transforms.Compose:
         """Construye el pipeline según qué flags estén activos en self."""
@@ -37,5 +41,6 @@ class TransformBuilder:
             steps.append(transforms.RandomRotation(degrees=self.rotation_degrees, fill=0))
 
         steps.append(transforms.ToTensor())
+        steps.append(transforms.Normalize(mean=self.normalize_mean, std=self.normalize_std))
 
         return transforms.Compose(steps)
