@@ -77,9 +77,9 @@ check first, or run them inside the image. Runtime deps are pinned in `requireme
 `pyproject.toml`, which carries only loose constraints); for GPU boxes install `torch`/`torchvision`
 from the CUDA wheel index *before* `pip install -r requirements.txt`.
 
-CI (`.github/workflows/ci.yml`) runs `pytest tests/ -v --tb=short --cov=fedmammobench` on Python 3.11
-plus a config-import smoke check, on every push to `main`/`feature/**` and every PR to `main`. CI covers
-`src/` and `tests/` only — nothing validates `configs/**/*.ipynb`.
+There is no CI workflow (`.github/workflows/ci.yml` was removed 2026-08-27). `pytest tests/ -v --tb=short
+--cov=fedmammobench` and the config-import smoke check it used to run are no longer run automatically on
+push/PR — run them manually before merging.
 
 None of the commands above apply to the notebook experiments (`configs/exp*/*.ipynb`) — those are run
 cell-by-cell in Jupyter on the lab workstation's GPU, outside Docker and outside this package. See
