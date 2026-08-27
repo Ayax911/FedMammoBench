@@ -175,10 +175,3 @@ Returns: `transforms.Compose`.
 Reexporta `Manifest`, `Split` y (con nombre distinto al real) el dataset de
 `dataset.py`.
 
-⚠️ **Bug conocido:** `__init__.py` hace `from .dataset import Dataset`, pero
-`dataset.py` solo define la clase `MammoBenchDataset` — no existe ningún `Dataset` en
-ese módulo (torchvision/`torch.utils.data.Dataset` es la clase base de la que hereda,
-no un alias exportable). Como está hoy, `import datasets` (o `from src import
-datasets`) lanza `ImportError: cannot import name 'Dataset' from 'src.datasets.dataset'`.
-Corrección: cambiar el import y el `__all__` a `MammoBenchDataset`, o agregar
-`Dataset = MammoBenchDataset` en `dataset.py` si se quiere mantener el nombre corto.
