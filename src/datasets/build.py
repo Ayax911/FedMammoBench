@@ -3,6 +3,7 @@
 import torch
 from torch.utils.data import DataLoader
 
+from ..seed import make_generator, seed_worker
 from .dataset import MammoBenchDataset
 from .split import Split
 from .transform import TransformBuilder
@@ -14,6 +15,7 @@ def builder_dataloader(
     eval_transform_builder: TransformBuilder,
     batch_size: int = 16,
     num_workers: int = 1,
+    seed: int = 42,
 ) -> dict[str, DataLoader[tuple[torch.Tensor, int]]]:
     """Constructs PyTorch DataLoaders for train, validation, and test dataset splits.
 
@@ -23,6 +25,11 @@ def builder_dataloader(
         eval_transform_builder: `TransformBuilder` configuring deterministic evaluation transforms.
         batch_size: Number of image samples per mini-batch. Default is 16.
         num_workers: Number of subprocesses used for data loading. Default is 1.
+        seed: Seed for the train loader's shuffle order (`generator=`) and for
+            re-seeding each worker process (`worker_init_fn=`) when
+            `num_workers > 0`. Default 42, matching the notebook series
+            convention. Only affects "train" — "val"/"test" never shuffle,
+            so there's no order to make reproducible.
 
     Returns:
         dict[str, DataLoader[tuple[torch.Tensor, int]]]: Dictionary mapping split names
@@ -37,9 +44,16 @@ def builder_dataloader(
     val_ds = MammoBenchDataset(df=split.val_df(), transform=eval_transform)
     test_ds = MammoBenchDataset(df=split.test_df(), transform=eval_transform)
 
-    # Wrap in PyTorch DataLoaders (shuffling enabled strictly for training split)
+    # Wrap in PyTorch DataLoaders (shuffling + seeding enabled strictly for training split)
     return {
-        "train": DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers),
+        "train": DataLoader(
+            train_ds,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            worker_init_fn=seed_worker,
+            generator=make_generator(seed),
+        ),
         "val": DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers),
         "test": DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers),
     }
