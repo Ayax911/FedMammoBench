@@ -11,6 +11,7 @@ from torchmetrics.classification import (
 )
 
 
+
 def build_metric_collection(device: str = "cpu") -> MetricCollection:
     """Crea el conjunto de métricas a trackear durante una evaluación.
 
