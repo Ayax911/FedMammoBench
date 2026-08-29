@@ -1,3 +1,5 @@
+"""Checkpoint weight loading, state_dict cleaning, key remapping, and model truncation utilities."""
+
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -14,35 +16,41 @@ def load_weights(
     valid_prefixes: tuple[str, ...],
     device: str = "cpu",
 ) -> tuple[nn.Sequential, LoadReport]:
-    """Carga un checkpoint en cualquier arquitectura construida por
-    model_factory, remapeando y filtrando sus claves según los parámetros
-    dados, y devuelve el backbone truncado + reporte.
+    """Loads a pretrained checkpoint into a model instance created by model_factory.
+
+    Performs state_dict cleaning (stripping `module.` wrapper prefixes from PyTorch DataParallel),
+    prefix remapping (matching custom checkpoint keys to PyTorch target module names), prefix
+    filtering (retaining only backbone tensors), non-strict parameter loading, and backbone truncation.
 
     Args:
-        model_factory: función o clase invocable sin argumentos que
-            construye el modelo base.
-        weights_path: ruta al checkpoint.
-        key_remap: mapeo de prefijos {prefijo_original: prefijo_real}.
-        valid_prefixes: prefijos que definen qué claves pertenecen al backbone.
-        device: dispositivo destino para los tensores cargados.
+        model_factory: Callable or factory function returning an uninitialized base model.
+        weights_path: File system path to the weight checkpoint (`.pth` or `.pt`).
+        key_remap: Dictionary mapping original checkpoint key prefixes to target layer prefixes.
+            Example: `{"backbone.0.": "conv1."}`.
+        valid_prefixes: Tuple of valid tensor name prefixes belonging to the encoder backbone.
+        device: Target compute device for loading state_dict tensors (`"cpu"` or `"cuda"`).
 
     Returns:
-        (backbone, report)
+        tuple[nn.Sequential, LoadReport]: A tuple containing:
+            1. Truncated `nn.Sequential` encoder backbone containing the first 9 layer blocks.
+            2. `LoadReport` dataclass detailing matched, missing, and unexpected tensor keys.
 
     Raises:
-        RuntimeError: el state_dict remapeado/filtrado quedó vacío, o
-            matched == 0 (ver LoadReport).
+        RuntimeError: If zero tensors survive key remapping/filtering, or if no parameters match.
     """
     model = model_factory()
 
+    # Load checkpoint state dictionary onto target compute device
     checkpoint: dict[str, Any] = torch.load(weights_path, map_location=device)
     state_dict = (
         checkpoint["state_dict"]
         if isinstance(checkpoint, dict) and "state_dict" in checkpoint  # pyright: ignore[reportUnnecessaryIsInstance]
         else checkpoint
     )
+    # Strip PyTorch DataParallel 'module.' prefix if present
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
+    # Remap layer tensor key prefixes to match PyTorch model architecture names
     remapped: dict[str, Any] = {}
     for k, v in state_dict.items():
         new_k = k
@@ -52,16 +60,19 @@ def load_weights(
                 break
         remapped[new_k] = v
 
+    # Filter state_dict to keep only valid backbone encoder layers
     state_dict: dict[str, Any] = {
         k: v for k, v in remapped.items() if k.startswith(valid_prefixes)
     }
 
+    # Validate that state_dict is not empty prior to parameter loading
     if len(state_dict) == 0:
         raise RuntimeError(
             "0 tensors survived remapping/filtering — "
             "check the checkpoint's key format before continuing."
         )
 
+    # Load parameters into model without strict matching (head weights may be missing)
     missing, unexpected = cast(
         "tuple[list[str], list[str]]",
         model.load_state_dict(state_dict, strict=False),
@@ -72,6 +83,7 @@ def load_weights(
         unexpected=list(unexpected),
     )
 
+    # Truncate model up to layer index 9 (extracting standard ResNet encoder layers)
     encoder_layers = list(model.children())
     backbone = nn.Sequential(*encoder_layers[:9])
 

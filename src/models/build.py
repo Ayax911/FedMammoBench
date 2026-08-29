@@ -1,3 +1,5 @@
+"""Factory orchestration for model architecture creation, weight loading, and block freezing."""
+
 from dataclasses import dataclass
 from typing import Callable
 
@@ -9,16 +11,25 @@ from .freeze import FreezeStrategy, ResNetFreezeStrategy
 
 @dataclass
 class ArchitectureSpec:
-    """Todo lo que varía por arquitectura """
+    """Encapsulates model-specific architecture parameters, weight remapping, and freeze rules.
+
+    Attributes:
+        model_factory: Callable returning an uninitialized base PyTorch module instance.
+        key_remap: Dictionary mapping custom checkpoint tensor key prefixes to standard PyTorch names.
+        valid_prefixes: Tuple of layer name prefixes belonging to the encoder backbone.
+        freeze_strategy: Strategy implementation handling block freezing and gradient unfreezing.
+    """
+    model_factory: Callable[[], nn.Module]
     key_remap: dict[str, str]
     valid_prefixes: tuple[str, ...]
     freeze_strategy: FreezeStrategy
 
-# Factory de modelos
+
+# Internal registry of supported model specifications
 _ARCHITECTURES: dict[str, ArchitectureSpec] = {
     "resnet50_radimagenet": ArchitectureSpec(
         model_factory=lambda: resnet50(weights=None),
-        # Mapeo de claves de RadImageNet a las claves de PyTorch en el state_dict
+        # Tensor key substitutions to map RadImageNet state_dict keys to PyTorch ResNet50 layer names
         key_remap={
             "backbone.0.": "conv1.", "backbone.1.": "bn1.",
             "backbone.4.": "layer1.", "backbone.5.": "layer2.",
@@ -29,7 +40,7 @@ _ARCHITECTURES: dict[str, ArchitectureSpec] = {
     ),
 }
 
-# Función que construye el modelo
+
 def build_model(
     name: str,
     weights_path: str,
@@ -37,26 +48,29 @@ def build_model(
     unfreeze_from: str = "none",
     device: str = "cpu",
 ) -> tuple[nn.Sequential, LoadReport]:
-    """Construye un backbone completo: arquitectura + pesos + freeze.
+    """Constructs a complete vision backbone: instantiates architecture, loads weights, and applies freeze rules.
 
     Args:
-        name: clave en _ARCHITECTURES, ej. "resnet50_radimagenet".
-        weights_path: ruta al checkpoint de pesos preentrenados.
-        unfreeze_from: pasado directo a FreezeStrategy.apply().
-        device: dispositivo destino.
+        name: Name identifier registered in `_ARCHITECTURES` (e.g., `"resnet50_radimagenet"`).
+        weights_path: File path to the pretrained weights checkpoint (`.pth` / `.pt`).
+        unfreeze_from: Layer block name from which parameters are unfrozen for fine-tuning.
+            Passed directly to `FreezeStrategy.apply()`.
+        device: Target compute device for model initialization (`"cpu"` or `"cuda"`).
 
     Returns:
-        (backbone, report) — el backbone ya con freeze aplicado.
+        tuple[nn.Sequential, LoadReport]: A tuple containing:
+            1. Truncated `nn.Sequential` backbone module with parameters frozen/unfrozen.
+            2. `LoadReport` dataclass summarizing tensor matching statistics.
 
     Raises:
-        ValueError: name no está en _ARCHITECTURES.
+        ValueError: If `name` is not registered in `_ARCHITECTURES`.
     """
     if name not in _ARCHITECTURES:
-        raise ValueError(f"Arquitectura desconocida: {name!r}. Opciones: {sorted(_ARCHITECTURES)}")
+        raise ValueError(f"Unknown architecture: {name!r}. Registered options: {sorted(_ARCHITECTURES)}")
 
     spec = _ARCHITECTURES[name]
 
-    # Carga de pesos preentrenados con mapeo de claves
+    # Instantiate base model, clean state_dict, remap keys, and filter encoder parameters
     backbone, report = load_weights(
         model_factory=spec.model_factory,
         weights_path=weights_path,
@@ -65,7 +79,7 @@ def build_model(
         device=device,
     )
 
-    # Congela las capas iniciales del backbone según el parámetro unfreeze_from
+    # Apply parameter freezing strategy starting from specified unfreeze_from layer block
     spec.freeze_strategy.apply(backbone, unfreeze_from=unfreeze_from)
 
     return backbone, report

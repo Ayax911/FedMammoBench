@@ -345,15 +345,29 @@ See [docs/EXTENDING.md](docs/EXTENDING.md) for the step-by-step pipeline per mod
 
 ---
 
+## Documentation Architecture
+
+This repository follows a strict **4-Layer Documentation Architecture**:
+
+1. **Layer 1 (Project Level)**: Global workflow guides located in `README.md` and the [`docs/`](docs/) directory.
+2. **Layer 2 (Module Level)**: Specialized functional specifications located in each package subfolder:
+   - [`src/datasets/DOCS.md`](src/datasets/DOCS.md): Data loading, transforms, and patient-disjoint splits.
+   - [`src/models/DOCS.md`](src/models/DOCS.md): Architecture specs, weight remapping, and layer freezing.
+   - [`scripts/DOCS.md`](scripts/DOCS.md): Centralized, federated, and CLI execution scripts.
+3. **Layer 3 (Code Level)**: Fully typed, Google-style docstrings on all public functions, dataclasses, and module entrypoints.
+4. **Layer 4 (Inline Level)**: Inline code comments explaining domain rationale, state_dict key transformations, and clinical metrics.
+
+---
+
 ## Project Structure
 
 ```
-src/fedmammobench/
-├── configs/           Per-section config modules (each with validate())
-├── datasets/          Dataset loaders and patient-aware partitioning
-├── federated/         Flower client, server, and strategy implementations
-├── models/            Architecture builders and weight loaders
-├── training/          Unified trainer (centralized + federated)
-├── evaluation/        Clinical binary classification metrics
-└── utils/             Logging, checkpointing, TensorBoard, seeding
+src/
+├── datasets/          Dataset loaders, transforms, manifests, and patient-aware partitioning (see src/datasets/DOCS.md)
+├── models/            Architecture builders, RadImageNet weight loaders, and layer freeze strategies (see src/models/DOCS.md)
+└── train/             Training pipelines and FL orchestration
+
+scripts/               Execution scripts for centralized, federated gRPC, and evaluation workflows (see scripts/DOCS.md)
+docs/                  Detailed research, deployment, and methodology guides
 ```
+
