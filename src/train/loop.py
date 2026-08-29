@@ -9,7 +9,7 @@ from .build import LossSpec
 
 def train_one_epoch(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, int]],
     optimizer: Optimizer,
     loss_spec: LossSpec,
     device: str,
@@ -40,7 +40,7 @@ def train_one_epoch(
         optimizer.zero_grad()
         outputs = model(images)
         loss = loss_spec.compute(outputs, labels)
-        loss.backward()
+        loss.backward() # pyright: ignore[reportUnknownMemberType]
         optimizer.step()
 
         total_loss += loss.item()
@@ -64,7 +64,7 @@ def _set_frozen_bn_eval(model: nn.Module) -> None:
 @torch.no_grad()
 def evaluate(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, int]],
     loss_spec: LossSpec,
     device: str,
 ) -> dict[str, float]:

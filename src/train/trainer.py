@@ -4,6 +4,7 @@ memoria entre épocas — compara la métrica de validación contra la mejor
 vista hasta ahora, y guarda el checkpoint solo cuando mejora."""
 from pathlib import Path
 
+import torch
 import torch.nn as nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -52,7 +53,7 @@ class Trainer:
         self.best_metric: float = float("-inf")
         self.best_checkpoint_path: Path | None = None
 
-    def fit(self, train_loader: DataLoader, val_loader: DataLoader, epochs: int) -> Path:
+    def fit(self, train_loader: DataLoader[tuple[torch.Tensor, int]], val_loader: DataLoader[tuple[torch.Tensor, int]], epochs: int) -> Path:
         """Corre el loop completo de épocas: entrena, valida, y guarda el
         checkpoint solo cuando la métrica de validación mejora.
 
