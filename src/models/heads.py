@@ -2,8 +2,8 @@
 
 from typing import Type
 
-from ..heads import HeadBuilder
-from .standard_mlp import StandardMLPHead
+from .head_builder import HeadBuilder
+from .mlp_configs.standard_mlp import StandardMLPHead
 
 # Internal registry mapping head strategy names to their uninstantiated builder classes
 _HEAD_STRATEGIES: dict[str, Type[HeadBuilder]] = {

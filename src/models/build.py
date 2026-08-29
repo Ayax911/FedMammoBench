@@ -5,8 +5,10 @@ from typing import Callable
 
 import torch.nn as nn
 from torchvision.models import resnet50  # pyright: ignore[reportMissingTypeStubs]
-from .weights import load_weights, LoadReport
+
 from .freeze import FreezeStrategy, ResNetFreezeStrategy
+from .weights import load_weights, LoadReport
+
 
 
 @dataclass

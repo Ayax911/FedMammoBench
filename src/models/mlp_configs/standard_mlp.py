@@ -1,7 +1,5 @@
 import torch.nn as nn
-
-from ..heads import HeadBuilder
-
+from ..head_builder import HeadBuilder
 
 class StandardMLPHead(HeadBuilder):
     """Standard multi-layer perceptron (MLP) classification head.
@@ -16,7 +14,7 @@ class StandardMLPHead(HeadBuilder):
         in_features: int = 2048,
         hidden_dim: int = 512,
         dropout: float = 0.5,
-        num_classes: int = 2,
+        num_classes: int = 1,
     ) -> None:
         """Initializes configuration parameters for the MLP head builder.
 
