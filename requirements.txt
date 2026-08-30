@@ -28,3 +28,8 @@ pillow>=12.0,<13.0
 pydantic>=2.13,<3.0
 PyYAML>=6.0,<7.0
 tensorboard>=2.21,<3.0
+
+# Optional -- only imported at runtime if train.wandb_project is set in the
+# experiment YAML (see tracking.py's lazy `import wandb`). Safe to omit if
+# you never use it; nothing else in src/ depends on it.
+wandb>=0.29,<0.30
