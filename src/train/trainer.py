@@ -27,6 +27,8 @@ class Trainer:
         device: str = "cpu",
         scheduler: LRScheduler | None = None,
         metric_name: str = "auc",
+        wandb_project: str | None = None,
+        wandb_run_name: str | None = None,
     ) -> None:
         """
         Args:
@@ -47,6 +49,9 @@ class Trainer:
                 final de cada época.
             metric_name: clave del dict que devuelve evaluate() a maximizar
                 para decidir el mejor checkpoint. Default "auc".
+            wandb_project: opcional — pasado directo a MetricsLogger. None
+                (default) desactiva W&B por completo.
+            wandb_run_name: opcional — nombre de esta corrida en W&B.
         """
         self.model = model
         self.optimizer = optimizer
@@ -56,6 +61,8 @@ class Trainer:
         self.device = device
         self.scheduler = scheduler
         self.metric_name = metric_name
+        self.wandb_project = wandb_project
+        self.wandb_run_name = wandb_run_name
 
         self.best_metric: float = float("-inf")
         self.best_checkpoint_path: Path | None = None
@@ -79,7 +86,9 @@ class Trainer:
             RuntimeError: ninguna época produjo un checkpoint válido (por
                 ejemplo, si epochs == 0).
         """
-        with MetricsLogger(self.run_dir) as logger:
+        with MetricsLogger(
+            self.run_dir, wandb_project=self.wandb_project, wandb_run_name=self.wandb_run_name
+        ) as logger:
             for epoch in range(epochs):
                 train_metrics = train_one_epoch(
                     self.model, train_loader, self.optimizer, self.loss_spec, self.device
