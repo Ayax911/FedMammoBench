@@ -93,6 +93,8 @@ def run(config: ExperimentConfig) -> None:
         device=config.train.device,
         scheduler=scheduler,
         metric_name=config.train.metric_name,
+        wandb_project=config.train.wandb_project,
+        wandb_run_name=config.experiment_id,
     )
 
     # Dejar registrado, junto al resto de run_dir, exactamente qué config
