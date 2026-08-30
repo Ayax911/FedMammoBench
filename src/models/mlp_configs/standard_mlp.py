@@ -23,8 +23,12 @@ class StandardMLPHead(HeadBuilder):
                 (e.g., 2048 for ResNet50 after global average pooling).
             hidden_dim: Number of channels in the intermediate hidden dense layer.
             dropout: Dropout probability applied after activation to prevent overfitting.
-            num_classes: Number of output logits (defaults to 2 for binary
-                CrossEntropyLoss classification: benign vs malignant).
+            num_classes: Number of output logits. Defaults to 1 — a single
+                logit for binary BCEWithLogitsLoss classification (benign vs
+                malignant). Must be paired with loss="bce" in build_loss()
+                (train/build.py); num_classes=2 pairs with loss="cross_entropy"
+                instead — nothing enforces this match automatically, see
+                LossSpec's docstring in train/build.py.
         """
         self.in_features = in_features
         self.hidden_dim = hidden_dim
