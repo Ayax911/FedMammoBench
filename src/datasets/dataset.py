@@ -20,6 +20,13 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
             If False, opens images in 3-channel RGB mode (`"RGB"`). Default is False.
         transform: torchvision transformation pipeline to apply on loaded PIL Images.
             If None, applies default resize (224x224) and tensor conversion.
+
+    Example:
+        >>> from src.datasets.manifest import Manifest
+        >>> from src.datasets.dataset import MammoBenchDataset
+        >>> manifest = Manifest("manifests/fedmammobench.csv", "data/images")
+        >>> dataset = MammoBenchDataset(df=manifest.df)
+        >>> img_tensor, label = dataset[0]
     """
 
     def __init__(
@@ -60,6 +67,10 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
         Returns:
             tuple[torch.Tensor, int]: A tuple `(image_tensor, label)` where `image_tensor`
                 has shape `[C, H, W]` and `label` is 0 (benign) or 1 (malignant).
+
+        Example:
+            >>> img, label = dataset[0]
+            >>> print(img.shape, label)
         """
         row = self.df.iloc[idx]
 

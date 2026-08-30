@@ -1,4 +1,14 @@
-# train/build.py
+"""Fábricas de optimizadores, schedulers y especificadores de funciones de pérdida (LossSpec).
+
+Ejemplo de uso:
+    >>> import torch.nn as nn
+    >>> from src.train.build import build_optimizer, build_scheduler, build_loss
+    >>> model = nn.Linear(10, 1)
+    >>> optimizer = build_optimizer(model.parameters(), name="adamw", lr=1e-4)
+    >>> scheduler = build_scheduler(optimizer, name="cosine", T_max=10)
+    >>> loss_spec = build_loss(name="bce")
+"""
+
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -13,7 +23,6 @@ from torch.optim.optimizer import ParamsT
 _OPTIMIZERS: dict[str, Callable[..., Optimizer]] = {
     "adam": torch.optim.Adam,
     "adamw": torch.optim.AdamW,
-    
 }
 
 
@@ -28,17 +37,25 @@ def build_optimizer(params: ParamsT, name: str, **hparams: Any) -> Optimizer:
         name: clave en _OPTIMIZERS, ej. "adam".
         **hparams: hiperparámetros propios de ese optimizer (lr, weight_decay, etc.).
 
+    Returns:
+        Optimizer: Instancia configurada del optimizador PyTorch.
+
     Raises:
         ValueError: name no reconocido.
+
+    Example:
+        >>> optimizer = build_optimizer(model.parameters(), "adamw", lr=0.001)
     """
     if name not in _OPTIMIZERS:
         raise ValueError(f"Optimizer desconocido: {name!r}. Opciones: {sorted(_OPTIMIZERS)}")
     return _OPTIMIZERS[name](params, **hparams)
 
+
 _SCHEDULERS: dict[str, Callable[..., LRScheduler]] = {
     "reduceonplateu": torch.optim.lr_scheduler.ReduceLROnPlateau,
     "cosine": torch.optim.lr_scheduler.CosineAnnealingLR,
 }
+
 
 def build_scheduler(optimizer: Optimizer, name: str, **hparams: Any) -> LRScheduler:
     """Construye un scheduler por nombre, con los hiperparámetros que le pases.
@@ -54,10 +71,14 @@ def build_scheduler(optimizer: Optimizer, name: str, **hparams: Any) -> LRSchedu
 
     Raises:
         ValueError: name no reconocido.
+
+    Example:
+        >>> scheduler = build_scheduler(optimizer, "cosine", T_max=20)
     """
     if name not in _SCHEDULERS:
         raise ValueError(f"Scheduler desconocido: {name!r}. Opciones: {sorted(_SCHEDULERS)}")
     return _SCHEDULERS[name](optimizer, **hparams)
+
 
 @dataclass(frozen=True)
 class LossSpec:
@@ -79,6 +100,11 @@ class LossSpec:
         probs: `outputs -> probabilidad de la clase positiva`, shape `[B]`.
             Usado por `evaluate()` para alimentar las métricas (AUC, etc.),
             nunca para entrenar.
+
+    Example:
+        >>> loss_spec = build_loss("bce")
+        >>> loss_val = loss_spec.compute(logits, labels)
+        >>> probs_val = loss_spec.probs(logits)
     """
 
     compute: Callable[[Tensor, Tensor], Tensor]
@@ -138,6 +164,9 @@ def build_loss(name: str, **hparams: Any) -> LossSpec:
 
     Raises:
         ValueError: name no reconocido.
+
+    Example:
+        >>> loss_spec = build_loss("bce")
     """
     if name not in _LOSSES:
         raise ValueError(f"Loss desconocida: {name!r}. Opciones: {sorted(_LOSSES)}")

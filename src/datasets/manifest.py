@@ -15,6 +15,11 @@ class Manifest:
         manifest_path: Path to the input manifest CSV file.
         image_root: Directory path used to resolve relative image paths.
         df: Processed pandas DataFrame augmented with `label_norm` and `abs_image_path`.
+
+    Example:
+        >>> from src.datasets.manifest import Manifest
+        >>> manifest = Manifest("manifests/fedmammobench.csv", "data/images")
+        >>> print(len(manifest.df))
     """
 
     def __init__(self, manifest_path: str | Path, image_root: str | Path) -> None:
@@ -29,6 +34,9 @@ class Manifest:
             NotADirectoryError: If `image_root` is not a valid directory.
             ValueError: If mandatory columns are missing, patient IDs are null,
                 or classification values are unrecognized.
+
+        Example:
+            >>> manifest = Manifest("data/manifest.csv", "data/raw_images")
         """
         self.manifest_path = Path(manifest_path)
         self.df = pd.read_csv(manifest_path)
@@ -103,4 +111,3 @@ class Manifest:
         self.df["abs_image_path"] = self.df["preprocessed_image_path"].astype(str).map(
             lambda p: str(self.image_root / str(p))
         )
-

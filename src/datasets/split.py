@@ -18,9 +18,24 @@ class Split:
         patient_col: Column name identifying patient IDs (`"patient_id"`).
         split_col: Column name identifying split partition names (`"split"`).
         splits: Dictionary mapping split names (`"train"`, `"val"`, `"test"`) to unique patient ID lists.
+
+    Example:
+        >>> from src.datasets.manifest import Manifest
+        >>> from src.datasets.split import Split
+        >>> manifest = Manifest("manifests/fedmammobench.csv", "data/images")
+        >>> split = Split(manifest=manifest)
+        >>> df_train = split.train_df()
     """
 
     def __init__(self, *, manifest: Manifest) -> None:
+        """Initializes Split object and validates anti-leakage patient consistency.
+
+        Args:
+            manifest: Validated `Manifest` object.
+
+        Raises:
+            ValueError: If any patient_id appears in multiple split partitions.
+        """
         self.manifest = manifest
         self.patient_col = "patient_id"
         self.split_col = "split"

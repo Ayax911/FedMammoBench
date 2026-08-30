@@ -1,4 +1,14 @@
-"""Abstract base class and architecture-specific implementations for layer freezing strategies."""
+"""Abstract base class and architecture-specific implementations for layer freezing strategies.
+
+Provides positional block-based parameter freezing and unfreezing for fine-tuning vision backbones.
+
+Example:
+    >>> import torch.nn as nn
+    >>> from src.models.freeze import ResNetFreezeStrategy
+    >>> strategy = ResNetFreezeStrategy()
+    >>> backbone = nn.Sequential() # PyTorch backbone container
+    >>> counts = strategy.apply(backbone, unfreeze_from="layer4")
+"""
 
 from abc import ABC, abstractmethod
 
@@ -10,6 +20,10 @@ class FreezeStrategy(ABC):
 
     Provides positional block-based unfreezing control for fine-tuning pre-trained models.
     Subclasses define architecture-specific block ordering matching layer sequences in `nn.Sequential`.
+
+    Example:
+        >>> strategy = ResNetFreezeStrategy()
+        >>> print(strategy.block_order)
     """
 
     @property
@@ -35,6 +49,11 @@ class FreezeStrategy(ABC):
 
         Raises:
             ValueError: If `unfreeze_from` is not `"none"` and not present in `self.block_order`.
+
+        Example:
+            >>> strategy = ResNetFreezeStrategy()
+            >>> summary = strategy.apply(backbone, unfreeze_from="layer3")
+            >>> print(summary["trainable"], summary["total"])
         """
         if unfreeze_from != "none" and unfreeze_from not in self.block_order:
             raise ValueError(
@@ -62,7 +81,12 @@ class FreezeStrategy(ABC):
 
 
 class ResNetFreezeStrategy(FreezeStrategy):
-    """Concrete FreezeStrategy implementation for ResNet50 vision architectures."""
+    """Concrete FreezeStrategy implementation for ResNet50 vision architectures.
+
+    Example:
+        >>> strategy = ResNetFreezeStrategy()
+        >>> print(strategy.block_order[0])
+    """
 
     @property
     def block_order(self) -> list[str]:

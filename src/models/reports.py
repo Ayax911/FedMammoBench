@@ -1,4 +1,12 @@
-"""Dataclass definition for state_dict load reports and matching diagnostics."""
+"""Dataclass definition for state_dict load reports and matching diagnostics.
+
+Provides diagnostic feedback on checkpoint tensor loading results.
+
+Example:
+    >>> from src.models.reports import LoadReport
+    >>> report = LoadReport(matched=120, missing=["fc.weight"], unexpected=[])
+    >>> print(report.matched)
+"""
 
 from dataclasses import dataclass
 
@@ -14,6 +22,10 @@ class LoadReport:
 
     Raises:
         RuntimeError: Evaluated during `__post_init__` if `matched == 0`, indicating a total key mapping failure.
+
+    Example:
+        >>> report = LoadReport(matched=150, missing=[], unexpected=[])
+        >>> print(f"Successfully matched: {report.matched}")
     """
 
     matched: int
@@ -21,7 +33,11 @@ class LoadReport:
     unexpected: list[str]
 
     def __post_init__(self) -> None:
-        """Validates that at least one tensor successfully matched during state_dict loading."""
+        """Validates that at least one tensor successfully matched during state_dict loading.
+
+        Raises:
+            RuntimeError: If `matched == 0`, indicating zero key prefix overlap.
+        """
         if self.matched == 0:
             raise RuntimeError(
                 "0 tensors matched during checkpoint weight loading, although the "

@@ -19,6 +19,11 @@ class TransformBuilder:
         horizontal_flip_p: Probability of applying horizontal flip (used if `use_horizontal_flip=True`). Default is 0.5.
         normalize_mean: Per-channel normalization mean tuple `(R, G, B)`. Default is `(0.5, 0.5, 0.5)`.
         normalize_std: Per-channel normalization standard deviation tuple `(R, G, B)`. Default is `(0.5, 0.5, 0.5)`.
+
+    Example:
+        >>> from src.datasets.transform import TransformBuilder
+        >>> builder = TransformBuilder(image_size=(224, 224), use_horizontal_flip=True)
+        >>> pipeline = builder.build()
     """
 
     def __init__(
@@ -44,6 +49,9 @@ class TransformBuilder:
 
         Returns:
             transforms.Compose: Ordered torchvision transformation pipeline.
+
+        Example:
+            >>> tx = TransformBuilder(image_size=(512, 512)).build()
         """
         # Step 1: Spatial resolution resizing
         steps: list[Callable[[Any], Any]] = [transforms.Resize(self.image_size)]

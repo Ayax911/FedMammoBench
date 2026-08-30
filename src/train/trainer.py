@@ -1,7 +1,22 @@
-# train/trainer.py
-"""Orquestador del loop de entrenamiento. Es la única pieza de train/ con
-memoria entre épocas — compara la métrica de validación contra la mejor
-vista hasta ahora, y guarda el checkpoint solo cuando mejora."""
+"""Orquestador del loop de entrenamiento.
+
+Es la única pieza de `train/` con memoria entre épocas — compara la métrica
+de validación contra la mejor vista hasta ahora, y guarda el checkpoint solo
+cuando mejora.
+
+Ejemplo de uso:
+    >>> from src.train.trainer import Trainer
+    >>> trainer = Trainer(
+    ...     model=model,
+    ...     optimizer=optimizer,
+    ...     loss_spec=loss_spec,
+    ...     checkpoint_dir="runs/exp01/weights",
+    ...     run_dir="runs/exp01",
+    ...     device="cuda"
+    ... )
+    >>> best_ckpt = trainer.fit(train_loader, val_loader, epochs=10)
+"""
+
 from pathlib import Path
 
 import torch
@@ -17,6 +32,29 @@ from .loop import evaluate, train_one_epoch
 
 
 class Trainer:
+    """Orquestador multi-época para entrenamiento centralizado y local.
+
+    Guarda automáticamente el mejor checkpoint de pesos (`.pt`) según la métrica
+    de validación indicada (`metric_name`), e integra `MetricsLogger` para persisitir
+    métricas batch por batch en CSV, TensorBoard y opcionalmente W&B.
+
+    Attributes:
+        model: Modelo PyTorch completo (backbone + cabeza).
+        optimizer: Optimizador PyTorch.
+        loss_spec: Especificador de función de pérdida (`LossSpec`).
+        checkpoint_dir: Directorio para guardar checkpoints `.pt`.
+        run_dir: Directorio para guardar logs (`metrics.csv`, TensorBoard).
+        device: Dispositivo de cómputo (`"cpu"`, `"cuda"`).
+        scheduler: Scheduler opcional de learning rate.
+        metric_name: Nombre de la métrica a maximizar para guardar checkpoints (default `"auc"`).
+        wandb_project: Nombre opcional de proyecto en W&B.
+        wandb_run_name: Nombre opcional de corrida en W&B.
+
+    Example:
+        >>> trainer = Trainer(model, optimizer, loss_spec, "weights/", "runs/", "cuda")
+        >>> best_path = trainer.fit(train_loader, val_loader, epochs=5)
+    """
+
     def __init__(
         self,
         model: nn.Module,
@@ -30,20 +68,17 @@ class Trainer:
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
     ) -> None:
-        """
+        """Inicializa los componentes de entrenamiento y estado de mejor checkpoint.
+
         Args:
             model: modelo completo (backbone + cabeza ya unidos).
             optimizer: construido vía train/build.py (build_optimizer).
             loss_spec: construido vía train/build.py (build_loss). Encapsula
                 tanto el cálculo de la pérdida como la conversión de logits a
-                probabilidad de clase positiva, para que ni Trainer ni
-                train/loop.py necesiten un `if` sobre si el esquema de salida
-                es BCE (1 logit) o CrossEntropy (2 logits).
+                probabilidad de clase positiva.
             checkpoint_dir: carpeta donde se guardan los checkpoints.
             run_dir: carpeta donde MetricsLogger escribe metrics.csv y los
-                eventos de TensorBoard de esta corrida. Separado de
-                checkpoint_dir a propósito — son dos destinos distintos
-                aunque hoy coincidan en la práctica (runs/<RUN_NAME>/).
+                eventos de TensorBoard de esta corrida.
             device: dispositivo de entrenamiento ("cpu" o "cuda").
             scheduler: opcional — si se pasa, se llama scheduler.step() al
                 final de cada época.
@@ -67,8 +102,12 @@ class Trainer:
         self.best_metric: float = float("-inf")
         self.best_checkpoint_path: Path | None = None
 
-    def fit(self, train_loader: DataLoader[tuple[torch.Tensor, int]], 
-            val_loader: DataLoader[tuple[torch.Tensor, int]], epochs: int) -> Path:
+    def fit(
+        self,
+        train_loader: DataLoader[tuple[torch.Tensor, int]],
+        val_loader: DataLoader[tuple[torch.Tensor, int]],
+        epochs: int,
+    ) -> Path:
         """Corre el loop completo de épocas: entrena, valida, y guarda el
         checkpoint solo cuando la métrica de validación mejora.
 
@@ -78,13 +117,17 @@ class Trainer:
             epochs: cantidad de épocas a correr.
 
         Returns:
-            Ruta al mejor checkpoint según self.metric_name — NUNCA el de
+            Path: Ruta al mejor checkpoint según self.metric_name — NUNCA el de
             la última época. Este es el único valor que debe usarse para
             la evaluación final en test.
 
         Raises:
             RuntimeError: ninguna época produjo un checkpoint válido (por
                 ejemplo, si epochs == 0).
+
+        Example:
+            >>> best_path = trainer.fit(train_loader, val_loader, epochs=10)
+            >>> print(best_path)
         """
         with MetricsLogger(
             self.run_dir, wandb_project=self.wandb_project, wandb_run_name=self.wandb_run_name

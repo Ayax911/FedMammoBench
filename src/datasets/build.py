@@ -34,6 +34,21 @@ def builder_dataloader(
     Returns:
         dict[str, DataLoader[tuple[torch.Tensor, int]]]: Dictionary mapping split names
             (`"train"`, `"val"`, `"test"`) to their corresponding PyTorch DataLoaders.
+
+    Example:
+        >>> from src.datasets.manifest import Manifest
+        >>> from src.datasets.split import Split
+        >>> from src.datasets.transform import TransformBuilder
+        >>> from src.datasets.build import builder_dataloader
+        >>> manifest = Manifest("manifests/fedmammobench.csv", "data/")
+        >>> split = Split(manifest=manifest)
+        >>> loaders = builder_dataloader(
+        ...     split=split,
+        ...     train_transform_builder=TransformBuilder(),
+        ...     eval_transform_builder=TransformBuilder(),
+        ...     batch_size=32
+        ... )
+        >>> train_loader = loaders["train"]
     """
     # Compile torchvision transform pipelines
     train_transform = train_transform_builder.build()

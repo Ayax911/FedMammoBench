@@ -1,9 +1,15 @@
-"""Entrypoint: une config -> seed -> datasets -> models -> train en una sola
-corrida ejecutable. Es el único módulo que conoce todos los demás — nada le
-importa a él (regla de dependencias de REFACTOR.md §5).
+"""Punto de entrada principal CLI: integra config -> seed -> datasets -> models -> train.
 
-Uso:
-    python -m src.cli --config path/to/experiment.yaml
+Es el único módulo que conoce todos los demás — nada depende de él.
+
+Ejemplo de ejecución desde CLI:
+    $ python -m src.cli --config configs/exp01.yaml
+
+Ejemplo de uso programático en Python:
+    >>> from src.config import load_config
+    >>> from src.cli import run
+    >>> cfg = load_config("configs/exp01.yaml")
+    >>> run(cfg)
 """
 
 import argparse
@@ -23,11 +29,14 @@ from .train.trainer import Trainer
 
 
 def run(config: ExperimentConfig) -> None:
-    """Corre un experimento completo de punta a punta a partir de un
-    ExperimentConfig ya cargado y validado.
+    """Corre un experimento completo de punta a punta a partir de un ExperimentConfig.
 
     Args:
-        config: config del experimento — ver config.py.
+        config: Objeto `ExperimentConfig` ya validado desde YAML.
+
+    Example:
+        >>> config = load_config("configs/exp01.yaml")
+        >>> run(config)
     """
     # Primero que nada, antes de construir CUALQUIER otra cosa (datasets,
     # modelo, dataloaders) — ver seed.py.
@@ -109,7 +118,7 @@ def parse_args() -> argparse.Namespace:
     """Define y parsea los argumentos de línea de comandos.
 
     Returns:
-        argparse.Namespace: con --config, la ruta al YAML del experimento.
+        argparse.Namespace: Objeto con el argumento `--config` parseado.
     """
     parser = argparse.ArgumentParser(description="Corre un experimento centralizado de punta a punta.")
     parser.add_argument("--config", required=True, type=str, help="Ruta al YAML del experimento.")
@@ -117,6 +126,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Punto de entrada invocable al ejecutar el script directamente."""
     args = parse_args()
     config = load_config(args.config)
     run(config)

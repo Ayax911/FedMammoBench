@@ -1,4 +1,17 @@
-"""Factory orchestration for model architecture creation, weight loading, and block freezing."""
+"""Factory orchestration for model architecture creation, weight loading, and block freezing.
+
+Provides the primary entrypoint `build_model()` to instantiate encoder backbones,
+remap pretrained checkpoint keys, filter valid layers, and apply block freeze strategies.
+
+Example:
+    >>> from src.models.build import build_model
+    >>> backbone, report = build_model(
+    ...     name="resnet50_radimagenet",
+    ...     weights_path="checkpoints/RadImageNet-ResNet50_notop.pth",
+    ...     unfreeze_from="layer3",
+    ...     device="cpu"
+    ... )
+"""
 
 from dataclasses import dataclass
 from typing import Callable
@@ -10,7 +23,6 @@ from .freeze import FreezeStrategy, ResNetFreezeStrategy
 from .weights import load_weights, LoadReport
 
 
-
 @dataclass
 class ArchitectureSpec:
     """Encapsulates model-specific architecture parameters, weight remapping, and freeze rules.
@@ -20,6 +32,14 @@ class ArchitectureSpec:
         key_remap: Dictionary mapping custom checkpoint tensor key prefixes to standard PyTorch names.
         valid_prefixes: Tuple of layer name prefixes belonging to the encoder backbone.
         freeze_strategy: Strategy implementation handling block freezing and gradient unfreezing.
+
+    Example:
+        >>> spec = ArchitectureSpec(
+        ...     model_factory=lambda: resnet50(weights=None),
+        ...     key_remap={"backbone.0.": "conv1."},
+        ...     valid_prefixes=("conv1", "bn1"),
+        ...     freeze_strategy=ResNetFreezeStrategy()
+        ... )
     """
     model_factory: Callable[[], nn.Module]
     key_remap: dict[str, str]
@@ -66,6 +86,15 @@ def build_model(
 
     Raises:
         ValueError: If `name` is not registered in `_ARCHITECTURES`.
+
+    Example:
+        >>> backbone, report = build_model(
+        ...     name="resnet50_radimagenet",
+        ...     weights_path="checkpoints/RadImageNet-ResNet50_notop.pth",
+        ...     unfreeze_from="layer4",
+        ...     device="cpu"
+        ... )
+        >>> print(report.matched)
     """
     if name not in _ARCHITECTURES:
         raise ValueError(f"Unknown architecture: {name!r}. Registered options: {sorted(_ARCHITECTURES)}")

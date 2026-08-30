@@ -1,6 +1,12 @@
 """Utilidades de reproducibilidad: semilla global de una sola vez al inicio
 de la corrida, más la semilla por-worker y el generador determinista que el
-DataLoader de train necesita porque num_workers>0 spawnea procesos aparte."""
+DataLoader de train necesita porque `num_workers > 0` spawnea procesos aparte.
+
+Ejemplo de uso:
+    >>> from src.seed import set_global_seed, seed_worker, make_generator
+    >>> set_global_seed(42)
+    >>> gen = make_generator(42)
+"""
 
 import random
 
@@ -12,13 +18,16 @@ def set_global_seed(seed: int) -> None:
     """Fija la semilla en todas las fuentes de aleatoriedad del pipeline.
 
     Llamar UNA sola vez, al inicio de cada corrida, antes de construir
-    datasets/modelos/dataloaders. random, numpy y torch mantienen estados
-    de aleatoriedad independientes entre sí — y torch a su vez mantiene uno
+    datasets/modelos/dataloaders. `random`, `numpy` y `torch` mantienen estados
+    de aleatoriedad independientes entre sí — y `torch` a su vez mantiene uno
     separado para CPU y otro para CUDA — por eso hacen falta las cuatro
     llamadas en vez de una sola.
 
     Args:
-        seed: semilla a aplicar.
+        seed: Valor entero de la semilla a aplicar globalmente.
+
+    Example:
+        >>> set_global_seed(42)
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -27,17 +36,19 @@ def set_global_seed(seed: int) -> None:
 
 
 def seed_worker(worker_id: int) -> None:
-    """Pensado para pasar como worker_init_fn= al DataLoader de train.
+    """Función de inicialización para pasar a `worker_init_fn=` en `DataLoader`.
 
     PyTorch la llama una vez por worker, justo después de spawnear el
-    proceso. set_global_seed() ya corrió antes en el proceso principal, pero
-    cada worker (num_workers>0) es un proceso aparte con su propia copia del
+    proceso. `set_global_seed()` ya corrió antes en el proceso principal, pero
+    cada worker (`num_workers > 0`) es un proceso aparte con su propia copia del
     estado de random/numpy — sin esto, esa copia queda sin re-sembrar y el
     orden de augmentations por worker no es reproducible entre corridas.
 
     Args:
-        worker_id: índice del worker. No se usa directamente acá, pero
-            DataLoader exige que worker_init_fn acepte este parámetro.
+        worker_id: Índice del worker asignado por PyTorch DataLoader.
+
+    Example:
+        >>> loader = DataLoader(dataset, num_workers=2, worker_init_fn=seed_worker)
     """
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)
@@ -45,15 +56,20 @@ def seed_worker(worker_id: int) -> None:
 
 
 def make_generator(seed: int) -> torch.Generator:
-    """Generador determinista para pasar como generator= al DataLoader de
-    train — fija el orden del shuffle, independiente de en qué estado haya
-    quedado el RNG global de torch para cuando se construye el loader.
+    """Crea un generador determinista para pasar a `generator=` en `DataLoader`.
+
+    Fija el orden del shuffle, independiente de en qué estado haya
+    quedado el RNG global de PyTorch para cuando se construye el loader.
 
     Args:
-        seed: semilla del generador.
+        seed: Valor de semilla para inicializar el `torch.Generator`.
 
     Returns:
-        torch.Generator: listo para pasar a DataLoader(generator=...).
+        torch.Generator: Objeto generador configurado con la semilla dada.
+
+    Example:
+        >>> gen = make_generator(42)
+        >>> loader = DataLoader(dataset, shuffle=True, generator=gen)
     """
     g = torch.Generator()
     g.manual_seed(seed)  # pyright: ignore[reportUnknownMemberType]

@@ -1,3 +1,15 @@
+"""Funciones puras de entrenamiento y evaluación por época.
+
+Proporciona `train_one_epoch()` y `evaluate()`, respetando el congelamiento
+estadístico de capas BatchNorm congeladas y aislando el cálculo de pérdida y
+probabilidades mediante `LossSpec`.
+
+Ejemplo de uso:
+    >>> from src.train.loop import train_one_epoch, evaluate
+    >>> train_metrics = train_one_epoch(model, train_loader, optimizer, loss_spec, device="cpu")
+    >>> val_metrics = evaluate(model, val_loader, loss_spec, device="cpu")
+"""
+
 import torch
 import torch.nn as nn
 from torch.optim import Optimizer
@@ -16,17 +28,23 @@ def train_one_epoch(
 ) -> dict[str, float]:
     """Entrena el modelo durante una época completa.
 
+    Pone el modelo en `.train()`, mantiene congeladas las capas BatchNorm cuyas
+    variables no requieren gradiente (`_set_frozen_bn_eval`), realiza forward,
+    calcula la pérdida con `loss_spec.compute`, ejecuta backward y actualiza pesos.
+
     Args:
         model: modelo completo (backbone + cabeza).
         loader: DataLoader de entrenamiento.
-        optimizer: construido vía train/build.py.
-        loss_spec: construido vía train/build.py (build_loss). Encapsula el
-            esquema de salida (1 logit BCE vs 2 logits CrossEntropy) — esta
-            función nunca necesita saber cuál de los dos es.
-        device: dispositivo de entrenamiento.
+        optimizer: optimizador PyTorch (ej. AdamW).
+        loss_spec: especificación de pérdida construida con `build_loss()`.
+        device: dispositivo de cómputo (`"cpu"`, `"cuda"`).
 
     Returns:
-        {"loss": promedio de la pérdida sobre todos los batches}
+        dict[str, float]: Diccionario con la pérdida promedio `{"loss": float}`.
+
+    Example:
+        >>> train_metrics = train_one_epoch(model, train_loader, optimizer, loss_spec, "cuda")
+        >>> print(f"Train loss: {train_metrics['loss']:.4f}")
     """
     model.train()
     _set_frozen_bn_eval(model)
@@ -40,7 +58,7 @@ def train_one_epoch(
         optimizer.zero_grad()
         outputs = model(images)
         loss = loss_spec.compute(outputs, labels)
-        loss.backward() # pyright: ignore[reportUnknownMemberType]
+        loss.backward()  # pyright: ignore[reportUnknownMemberType]
         optimizer.step()
 
         total_loss += loss.item()
@@ -54,7 +72,8 @@ def _set_frozen_bn_eval(model: nn.Module) -> None:
     congelados (requires_grad=False), incluso después de model.train().
 
     Sin esto, BN congelado sigue actualizando running_mean/running_var con
-    datos de entrenamiento — el bug legacy documentado del proyecto."""
+    datos de entrenamiento — el bug legacy documentado del proyecto.
+    """
     for module in model.modules():
         if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
             if not any(p.requires_grad for p in module.parameters()):
@@ -69,19 +88,23 @@ def evaluate(
     device: str,
 ) -> dict[str, float]:
     """Evalúa el modelo sobre cualquier loader (val o test, indistintamente).
-    No calcula gradientes ni actualiza pesos.
+
+    Ejecuta el paso forward en modo `@torch.no_grad()`, actualiza el acumulador de
+    `torchmetrics` (Accuracy, AUC, Sensitivity, Specificity) y calcula la pérdida promedio.
 
     Args:
         model: modelo completo (backbone + cabeza).
         loader: DataLoader de validación o test.
-        loss_spec: construido vía train/build.py (build_loss). `loss_spec.probs`
-            reemplaza el softmax/sigmoid hardcodeado que solía vivir acá —
-            ver LossSpec en train/build.py para el porqué.
-        device: dispositivo de evaluación.
+        loss_spec: especificación de pérdida construida con `build_loss()`.
+        device: dispositivo de cómputo (`"cpu"`, `"cuda"`).
 
     Returns:
-        Dict con "loss" + accuracy, auc, sensitivity, specificity
-        (de build_metric_collection).
+        dict[str, float]: Diccionario con `"loss"` y métricas clínicas (`"accuracy"`,
+        `"auc"`, `"sensitivity"`, `"specificity"`).
+
+    Example:
+        >>> val_metrics = evaluate(model, val_loader, loss_spec, "cuda")
+        >>> print(f"AUC: {val_metrics['auc']:.4f}, Acc: {val_metrics['accuracy']:.4f}")
     """
     model.eval()
     metrics = build_metric_collection(device)

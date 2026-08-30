@@ -1,4 +1,18 @@
-"""Checkpoint weight loading, state_dict cleaning, key remapping, and model truncation utilities."""
+"""Checkpoint weight loading, state_dict cleaning, key remapping, and model truncation utilities.
+
+Provides low-level functions to inspect and map pretrained weights onto base PyTorch vision models.
+
+Example:
+    >>> from torchvision.models import resnet50
+    >>> from src.models.weights import load_weights
+    >>> model_factory = lambda: resnet50(weights=None)
+    >>> backbone, report = load_weights(
+    ...     model_factory=model_factory,
+    ...     weights_path="checkpoints/RadImageNet-ResNet50_notop.pth",
+    ...     key_remap={"backbone.0.": "conv1."},
+    ...     valid_prefixes=("conv1", "bn1", "layer1")
+    ... )
+"""
 
 from pathlib import Path
 from typing import Any, Callable, cast
@@ -37,6 +51,15 @@ def load_weights(
 
     Raises:
         RuntimeError: If zero tensors survive key remapping/filtering, or if no parameters match.
+
+    Example:
+        >>> backbone, report = load_weights(
+        ...     model_factory=lambda: resnet50(weights=None),
+        ...     weights_path="checkpoints/model.pth",
+        ...     key_remap={"backbone.0.": "conv1."},
+        ...     valid_prefixes=("conv1", "bn1", "layer1", "layer2", "layer3", "layer4")
+        ... )
+        >>> print(f"Matched tensors: {report.matched}")
     """
     model = model_factory()
 

@@ -1,5 +1,8 @@
+"""Standard multi-layer perceptron (MLP) classification head builder implementation."""
+
 import torch.nn as nn
 from ..head_builder import HeadBuilder
+
 
 class StandardMLPHead(HeadBuilder):
     """Standard multi-layer perceptron (MLP) classification head.
@@ -7,6 +10,10 @@ class StandardMLPHead(HeadBuilder):
     Applies the following architecture sequence:
         Flatten -> Linear(in_features, hidden_dim) -> BatchNorm1d(hidden_dim) 
         -> ReLU(inplace=True) -> Dropout(p=dropout) -> Linear(hidden_dim, num_classes)
+
+    Example:
+        >>> builder = StandardMLPHead(in_features=2048, hidden_dim=512, num_classes=1)
+        >>> head_module = builder.build()
     """
 
     def __init__(
@@ -29,6 +36,9 @@ class StandardMLPHead(HeadBuilder):
                 (train/build.py); num_classes=2 pairs with loss="cross_entropy"
                 instead — nothing enforces this match automatically, see
                 LossSpec's docstring in train/build.py.
+
+        Example:
+            >>> head_cfg = StandardMLPHead(in_features=2048, hidden_dim=256, dropout=0.3)
         """
         self.in_features = in_features
         self.hidden_dim = hidden_dim
@@ -41,6 +51,9 @@ class StandardMLPHead(HeadBuilder):
         Returns:
             nn.Sequential: Executable sequence of linear, normalization, activation,
                 dropout, and classification layers.
+
+        Example:
+            >>> head = StandardMLPHead(in_features=2048).build()
         """
         return nn.Sequential(
             # Flatten spatial dimensions [B, C, 1, 1] -> [B, C]

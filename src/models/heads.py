@@ -1,4 +1,12 @@
-"""Classification head factory registry and lookup utilities."""
+"""Classification head factory registry and lookup utilities.
+
+Provides central lookup and registration for classification head strategy classes.
+
+Example:
+    >>> from src.models.heads import get_head_strategy
+    >>> HeadClass = get_head_strategy("standard_mlp")
+    >>> head = HeadClass(in_features=2048, hidden_dim=512).build()
+"""
 
 from typing import Type
 
@@ -23,6 +31,11 @@ def get_head_strategy(name: str) -> Type[HeadBuilder]:
 
     Raises:
         ValueError: If the requested head strategy name is not registered in `_HEAD_STRATEGIES`.
+
+    Example:
+        >>> StrategyCls = get_head_strategy("standard_mlp")
+        >>> builder = StrategyCls(in_features=2048, num_classes=1)
+        >>> module = builder.build()
     """
     if name not in _HEAD_STRATEGIES:
         raise ValueError(

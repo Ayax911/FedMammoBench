@@ -1,15 +1,21 @@
 """Persistencia de métricas de entrenamiento — un registro en CSV y en
 TensorBoard por cada época, para poder graficar/comparar corridas después de
-que el proceso termine. Misma idea que runs/<RUN_NAME>/loss_history.csv en
+que el proceso termine. Misma idea que `runs/<RUN_NAME>/loss_history.csv` en
 la serie de notebooks, pero como código reusable en vez de celdas copiadas.
 
 W&B es un tercer destino opcional, no un backend separado (Strategy) --
 CSV y TensorBoard ya conviven como dos ramas dentro de esta misma clase, así
 que W&B suma como una tercera rama, no como una jerarquía nueva. Se activa
-solo si se pasa wandb_project; si no, `wandb` ni se importa. Reproduce el
+solo si se pasa `wandb_project`; si no, `wandb` ni se importa. Reproduce el
 mismo "degradar a offline sin bloquear nunca" que ya usan las celdas de W&B
 de los notebooks (ver exp23), pero automático en vez de una verificación
-manual antes de correr."""
+manual antes de correr.
+
+Ejemplo de uso:
+    >>> from src.tracking import MetricsLogger
+    >>> with MetricsLogger(run_dir="runs/exp01") as logger:
+    ...     logger.log(epoch=1, metrics={"train_loss": 0.5, "val_auc": 0.8})
+"""
 
 import csv
 from pathlib import Path
@@ -19,13 +25,14 @@ from torch.utils.tensorboard import SummaryWriter  # pyright: ignore[reportMissi
 
 
 def _wandb_credentials_cached() -> bool:
-    """Espeja el chequeo ya documentado en CLAUDE.md (`grep -q "api.wandb.ai"
-    ~/.netrc`) pero como código: nunca abre el archivo con otro fin que
-    confirmar que la entrada existe, nunca imprime ni devuelve su contenido.
+    """Espeja el chequeo ya documentado en CLAUDE.md (`grep -q "api.wandb.ai" ~/.netrc`).
+
+    Nunca abre el archivo con otro fin que confirmar que la entrada existe,
+    nunca imprime ni devuelve su contenido.
 
     Returns:
-        bool: True si hay una entrada de api.wandb.ai en ~/.netrc (sesión de
-            `wandb login` ya cacheada), False si no hay ~/.netrc o no la tiene.
+        bool: True si hay una entrada de `api.wandb.ai` en `~/.netrc` (sesión de
+        `wandb login` ya cacheada), False si no hay `~/.netrc` o no la tiene.
     """
     netrc_path = Path.home() / ".netrc"
     if not netrc_path.is_file():
@@ -34,11 +41,18 @@ def _wandb_credentials_cached() -> bool:
 
 
 class MetricsLogger:
-    """Escribe las métricas de cada época a metrics.csv, TensorBoard, y
-    opcionalmente W&B.
+    """Escribe las métricas de cada época a `metrics.csv`, TensorBoard, y opcionalmente W&B.
 
-    No calcula nada y no decide qué es "mejor" — eso ya lo hacen evaluate()
-    y Trainer. Esta clase solo persiste lo que se le pasa.
+    No calcula nada y no decide qué es "mejor" — eso ya lo hacen `evaluate()`
+    y `Trainer`. Esta clase solo persiste lo que se le pasa.
+
+    Attributes:
+        run_dir: Directorio base de la corrida donde se escriben los logs.
+
+    Example:
+        >>> logger = MetricsLogger(run_dir="runs/exp01")
+        >>> logger.log(1, {"train_loss": 0.4, "val_auc": 0.85})
+        >>> logger.close()
     """
 
     def __init__(
@@ -47,16 +61,15 @@ class MetricsLogger:
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
     ) -> None:
-        """Prepara el destino de metrics.csv, el writer de TensorBoard, y
-        (si se pide) una corrida de W&B.
+        """Prepara el destino de metrics.csv, el writer de TensorBoard, y (si se pide) W&B.
 
         Args:
-            run_dir: carpeta destino — se crea si no existe. metrics.csv y
+            run_dir: Carpeta destino — se crea si no existe. `metrics.csv` y
                 los eventos de TensorBoard quedan ambos dentro de ella.
-            wandb_project: nombre del proyecto de W&B. None (default) ->
+            wandb_project: Nombre del proyecto de W&B. None (default) ->
                 W&B queda completamente desactivado, `wandb` ni se importa.
-            wandb_run_name: nombre de esta corrida en W&B. Ignorado si
-                wandb_project es None.
+            wandb_run_name: Nombre de esta corrida en W&B. Ignorado si
+                `wandb_project` es None.
         """
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -82,22 +95,24 @@ class MetricsLogger:
             )
 
     def log(self, epoch: int, metrics: dict[str, float]) -> None:
-        """Escribe una fila de CSV y un scalar de TensorBoard por cada
-        entrada de metrics, para esta época.
+        """Escribe una fila de CSV y un scalar de TensorBoard por cada entrada de metrics.
 
         Args:
-            epoch: número de época — columna "epoch" del CSV y global_step
+            epoch: Número de época — columna "epoch" del CSV y global_step
                 de TensorBoard.
-            metrics: nombre de métrica -> valor, ya combinando train y val
-                en un solo dict (ej. {"train_loss": ..., "val_loss": ...,
-                "val_accuracy": ...}). Esta clase no distingue splits, solo
+            metrics: Nombre de métrica -> valor, ya combinando train y val
+                en un solo dict (ej. `{"train_loss": ..., "val_loss": ...,
+                "val_accuracy": ...}`). Esta clase no distingue splits, solo
                 persiste lo que recibe — la combinación es responsabilidad
-                de quien llama (Trainer.fit()).
+                de quien llama (`Trainer.fit()`).
 
         Raises:
-            ValueError: si metrics no trae exactamente las mismas claves
-                que la primera llamada a log() (csv.DictWriter exige
+            ValueError: Si `metrics` no trae exactamente las mismas claves
+                que la primera llamada a `log()` (`csv.DictWriter` exige
                 columnas consistentes entre filas).
+
+        Example:
+            >>> logger.log(1, {"train_loss": 0.45, "val_auc": 0.88})
         """
         row: dict[str, float | int] = {"epoch": epoch, **metrics}
 
@@ -116,8 +131,8 @@ class MetricsLogger:
     def close(self) -> None:
         """Cierra el archivo CSV, el SummaryWriter, y la corrida de W&B.
 
-        Llamar al final de fit(), incluso si algo falló a mitad de
-        entrenamiento — por eso también existe __exit__.
+        Llamar al final de `fit()`, incluso si algo falló a mitad de
+        entrenamiento — por eso también existe `__exit__`.
         """
         self._csv_file.close()
         self._tb_writer.close()  # pyright: ignore[reportUnknownMemberType]
