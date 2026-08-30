@@ -68,6 +68,7 @@ class TrainConfig(BaseModel):
     checkpoint_dir: Path
     run_dir: Path
     device: str = "cpu"
+    wandb_project: str | None = None  # None -> W&B desactivado, ver tracking.py
 
 
 class ExperimentConfig(BaseModel):
