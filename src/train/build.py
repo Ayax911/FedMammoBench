@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+from torch.optim.optimizer import ParamsT
 
 
 _OPTIMIZERS: dict[str, Callable[..., Optimizer]] = {
@@ -15,11 +17,14 @@ _OPTIMIZERS: dict[str, Callable[..., Optimizer]] = {
 }
 
 
-def build_optimizer(params, name: str, **hparams: Any) -> Optimizer:
+def build_optimizer(params: ParamsT, name: str, **hparams: Any) -> Optimizer:
     """Construye un optimizer por nombre, con los hiperparámetros que le pases.
 
     Args:
-        params: parámetros del modelo a optimizar (model.parameters()).
+        params: parámetros del modelo a optimizar. Acepta lo mismo que
+            Optimizer acepta nativamente — model.parameters() (un iterable
+            plano), o una lista de param groups (dicts con su propio "lr",
+            para LR discriminativo cabeza/backbone) — no solo el primer caso.
         name: clave en _OPTIMIZERS, ej. "adam".
         **hparams: hiperparámetros propios de ese optimizer (lr, weight_decay, etc.).
 
@@ -30,12 +35,12 @@ def build_optimizer(params, name: str, **hparams: Any) -> Optimizer:
         raise ValueError(f"Optimizer desconocido: {name!r}. Opciones: {sorted(_OPTIMIZERS)}")
     return _OPTIMIZERS[name](params, **hparams)
 
-_SCHEDULERS: dict[str, Callable[..., Any]] = {
+_SCHEDULERS: dict[str, Callable[..., LRScheduler]] = {
     "reduceonplateu": torch.optim.lr_scheduler.ReduceLROnPlateau,
     "cosine": torch.optim.lr_scheduler.CosineAnnealingLR,
 }
 
-def build_scheduler(optimizer: Optimizer, name: str, **hparams: Any) -> Callable[[Any], Any]:
+def build_scheduler(optimizer: Optimizer, name: str, **hparams: Any) -> LRScheduler:
     """Construye un scheduler por nombre, con los hiperparámetros que le pases.
 
     Args:
@@ -44,7 +49,8 @@ def build_scheduler(optimizer: Optimizer, name: str, **hparams: Any) -> Callable
         **hparams: hiperparámetros propios de ese scheduler (patience, mode, etc.).
 
     Returns:
-        Callable[[Any], Any]: el scheduler construido.
+        LRScheduler: el scheduler ya construido (instancia, no una fábrica) —
+            listo para pasarle a Trainer(scheduler=...).
 
     Raises:
         ValueError: name no reconocido.
