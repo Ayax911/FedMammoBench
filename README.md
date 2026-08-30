@@ -351,8 +351,10 @@ This repository follows a strict **4-Layer Documentation Architecture**:
 
 1. **Layer 1 (Project Level)**: Global workflow guides located in `README.md` and the [`docs/`](docs/) directory.
 2. **Layer 2 (Module Level)**: Specialized functional specifications located in each package subfolder:
+   - [`src/DOCS.md`](src/DOCS.md): Top-level src utilities, config management, tracking, and CLI.
    - [`src/datasets/DOCS.md`](src/datasets/DOCS.md): Data loading, transforms, and patient-disjoint splits.
    - [`src/models/DOCS.md`](src/models/DOCS.md): Architecture specs, weight remapping, and layer freezing.
+   - [`src/train/DOCS.md`](src/train/DOCS.md): Training loops, loss specs, schedulers, and Trainer orchestrator.
    - [`scripts/DOCS.md`](scripts/DOCS.md): Centralized, federated, and CLI execution scripts.
 3. **Layer 3 (Code Level)**: Fully typed, Google-style docstrings on all public functions, dataclasses, and module entrypoints.
 4. **Layer 4 (Inline Level)**: Inline code comments explaining domain rationale, state_dict key transformations, and clinical metrics.
@@ -363,9 +365,10 @@ This repository follows a strict **4-Layer Documentation Architecture**:
 
 ```
 src/
+├── DOCS.md            Top-level core utilities, config, tracking, and CLI entrypoint (see src/DOCS.md)
 ├── datasets/          Dataset loaders, transforms, manifests, and patient-aware partitioning (see src/datasets/DOCS.md)
 ├── models/            Architecture builders, RadImageNet weight loaders, and layer freeze strategies (see src/models/DOCS.md)
-└── train/             Training pipelines and FL orchestration
+└── train/             Training pipelines and loss specifications (see src/train/DOCS.md)
 
 scripts/               Execution scripts for centralized, federated gRPC, and evaluation workflows (see scripts/DOCS.md)
 docs/                  Detailed research, deployment, and methodology guides

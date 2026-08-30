@@ -1,150 +1,137 @@
-# Documentación de la carpeta
+# Documentación del Módulo de Entrenamiento (`src/train/`)
 
-`src/train/` construye optimizer/scheduler/loss por nombre, define el loop puro de
-entrenamiento/evaluación de una época, y orquesta el `fit()` de varias épocas guardando
-solo el mejor checkpoint. Flujo típico:
+`src/train/` es el subsistema encargado de construir optimizadores, schedulers y especificadores de funciones de pérdida (`LossSpec`), ejecutar las épocas puras de entrenamiento y evaluación manteniendo BatchNorm congelado cuando corresponde, y orquestar la corrida multi-época con `Trainer` guardando el mejor checkpoint según la métrica objetivo.
+
+---
+
+## Flujo Típico de Uso
 
 ```python
-optimizer = build_optimizer(model.parameters(), "adamw", lr=1e-4)
-loss_spec = build_loss("cross_entropy")
-scheduler = build_scheduler(optimizer, "cosine", T_max=20)
+from src.train.build import build_optimizer, build_scheduler, build_loss
+from src.train.trainer import Trainer
 
-trainer = Trainer(model, optimizer, loss_spec, checkpoint_dir="runs/exp/weights",
-                   device="cuda", scheduler=scheduler, metric_name="auc")
+# 1. Construir componentes de optimización y loss (BCE = 1 logit)
+optimizer = build_optimizer(model.parameters(), name="adamw", lr=1e-4, weight_decay=1e-2)
+loss_spec = build_loss(name="bce")
+scheduler = build_scheduler(optimizer, name="cosine", T_max=20)
+
+# 2. Instanciar Trainer
+trainer = Trainer(
+    model=model,
+    optimizer=optimizer,
+    loss_spec=loss_spec,
+    checkpoint_dir="runs/exp01/weights",
+    run_dir="runs/exp01",
+    device="cuda",
+    scheduler=scheduler,
+    metric_name="auc"
+)
+
+# 3. Correr el bucle de entrenamiento
 best_ckpt_path = trainer.fit(train_loader, val_loader, epochs=20)
+print(f"Entrenamiento finalizado. Mejor checkpoint en: {best_ckpt_path}")
 ```
 
-## build.py
+---
 
-### build_optimizer(params, name, **hparams) / build_scheduler(optimizer, name, **hparams)
+## Detalle por Archivo y Clase
 
-Dict dispatch simple: `name` es una clave en `_OPTIMIZERS`/`_SCHEDULERS`
-(`"adam"`/`"adamw"`; `"cosine"`/`"reduceonplateu"`), `**hparams` son los kwargs propios de
-esa clase de PyTorch (`lr`, `weight_decay`, `T_max`, `patience`, ...).
+### `build.py`
 
-Raises: `ValueError` si `name` no está registrado.
+#### `build_optimizer(params, name, **hparams)`
 
-### LossSpec
+Factory de optimizadores PyTorch (`"adam"`, `"adamw"`).
 
-Empareja, para un esquema de salida dado, la función de pérdida con la forma correcta
-de convertir logits crudos en la probabilidad de la clase positiva. Existe porque esa
-conversión depende de **cuántos logits emite la cabeza** — 1 con BCE, 2 con
-CrossEntropy — nunca del nombre de la loss ni de un flag aparte que se pueda
-desincronizar del modelo real construido en `src/models/`.
+#### `build_scheduler(optimizer, name, **hparams)`
 
-`train_one_epoch()`/`evaluate()` (`train/loop.py`) reciben un `LossSpec` en vez de una
-`nn.Module` suelta y llaman `spec.compute(...)` / `spec.probs(...)` sin ningún `if`
-propio. El único `if` de todo este mecanismo vive en `build_loss()` (ver abajo) y se
-evalúa **una vez, al construir el `LossSpec`** — no una vez por batch.
+Factory de schedulers de tasa de aprendizaje (`"cosine"`, `"reduceonplateau"`).
 
-Atributos:
-- `compute` (`Callable[[Tensor, Tensor], Tensor]`): `(outputs, labels) -> loss escalar`.
-  Ya sabe si tiene que castear/hacer `squeeze` de `outputs`/`labels` para el esquema
-  elegido — el caller nunca lo decide.
-- `probs` (`Callable[[Tensor], Tensor]`): `outputs -> probabilidad de la clase positiva`,
-  shape `[B]`. Solo lo usa `evaluate()`, para alimentar las métricas (AUC, etc.) —
-  nunca se usa para entrenar.
+#### `LossSpec` & `build_loss(name, **hparams)`
 
-### _make_bce(**hparams) -> LossSpec
+Empareja la función de pérdida con la conversión correcta de logits a probabilidades según el esquema de salida:
+* `"bce"`: 1 logit -> `BCEWithLogitsLoss` + `sigmoid(outputs.squeeze(1))`.
+* `"cross_entropy"`: 2 logits -> `CrossEntropyLoss` + `softmax(outputs, dim=1)[:, 1]`.
 
-Esquema de **1 logit**: `BCEWithLogitsLoss` + sigmoid. La cabeza debe emitir `[B, 1]`.
+##### Cómo usar `build.py`:
+```python
+import torch.nn as nn
+from src.train.build import build_optimizer, build_scheduler, build_loss
 
-- `compute`: `loss_fn(outputs.squeeze(1), labels.float())` — `squeeze(1)` deja
-  `outputs` en `[B]` para que calce con `labels` (que llega `[B]`, `Long`, desde el
-  `DataLoader` por defecto); `BCEWithLogitsLoss` exige además `labels` en `float`.
-- `probs`: `sigmoid(outputs.squeeze(1))`.
+model = nn.Linear(10, 1)
 
-### _make_cross_entropy(**hparams) -> LossSpec
+# Crear optimizador AdamW con lr=1e-4
+optimizer = build_optimizer(model.parameters(), "adamw", lr=1e-4, weight_decay=1e-4)
 
-Esquema de **2 logits**: `CrossEntropyLoss` + softmax. La cabeza debe emitir `[B, 2]`.
+# Crear scheduler CosineAnnealingLR
+scheduler = build_scheduler(optimizer, "cosine", T_max=10)
 
-- `compute`: `loss_fn(outputs, labels)` sin casteo — `CrossEntropyLoss` ya espera
-  `labels` como índice de clase `Long` `[B]`, que es justo lo que entrega el
-  `DataLoader`.
-- `probs`: `softmax(outputs, dim=1)[:, 1]` — la columna 1 es `malignant`
-  (ver `Manifest.normalize_labels()` en `src/datasets/manifest.py`: `benign=0`,
-  `malignant=1`).
+# Crear LossSpec para 1 logit (BCE)
+loss_spec = build_loss("bce")
+```
 
-### build_loss(name, **hparams) -> LossSpec
+---
 
-Factory: `name` es `"bce"` o `"cross_entropy"`, clave en `_LOSSES` (dict de nombre →
-factory de `LossSpec`, mismo patrón que `_OPTIMIZERS`/`_SCHEDULERS`).
+### `loop.py`
 
-**El nombre elegido debe ser consistente con `num_classes` de la cabeza del modelo**
-(`src/models/mlp_configs/standard_mlp.py`): `"bce"` espera una cabeza de 1 logit,
-`"cross_entropy"` una de 2. Esta función no puede verificar eso — no ve el modelo — así
-que un mismatch no falla acá: se manifiesta como un error de shape/dtype de PyTorch
-dentro de `LossSpec.compute()`, la primera vez que se llama con un batch real.
+#### `train_one_epoch(model, loader, optimizer, loss_spec, device)`
 
-Raises: `ValueError` si `name` no está en `_LOSSES`.
+Ejecuta una época de entrenamiento: pone el modelo en `.train()`, congela el comportamiento estadístico de las capas BatchNorm congeladas (`_set_frozen_bn_eval`), realiza forward, calcula loss con `loss_spec.compute`, backward y `optimizer.step()`.
 
-## loop.py
+#### `evaluate(model, loader, loss_spec, device)`
 
-Funciones puras — sin estado entre llamadas, sin memoria de la mejor época (eso vive en
-`Trainer`).
+Ejecuta evaluación bajo `@torch.no_grad()`: pone el modelo en `.eval()`, calcula loss y métricas clínicas (`accuracy`, `auc`, `sensitivity`, `specificity`) transformando logits con `loss_spec.probs`.
 
-### train_one_epoch(model, loader, optimizer, loss_spec, device) -> dict[str, float]
+##### Cómo usar `loop.py`:
+```python
+from src.train.loop import train_one_epoch, evaluate
+from src.train.build import build_loss, build_optimizer
 
-Una época completa de entrenamiento: `model.train()`, re-congela BN (ver
-`_set_frozen_bn_eval` abajo), y por cada batch hace forward → `loss_spec.compute()` →
-`backward()` → `optimizer.step()`.
+loss_spec = build_loss("bce")
+optimizer = build_optimizer(model.parameters(), "adamw", lr=1e-4)
 
-Returns: `{"loss": promedio de la pérdida sobre todos los batches}`.
+# Entrenar una época
+train_metrics = train_one_epoch(model, train_loader, optimizer, loss_spec, device="cuda")
+print(f"Pérdida en train: {train_metrics['loss']:.4f}")
 
-### _set_frozen_bn_eval(model)
+# Evaluar en conjunto de validación
+val_metrics = evaluate(model, val_loader, loss_spec, device="cuda")
+print(f"AUC en val: {val_metrics['auc']:.4f}, Accuracy: {val_metrics['accuracy']:.4f}")
+```
 
-Mantiene en modo `eval()` las capas `BatchNorm{1,2,3}d` cuyos parámetros están
-congelados (`requires_grad=False`), incluso después de `model.train()`. Sin esto, BN
-congelado sigue actualizando `running_mean`/`running_var` con datos de entrenamiento
-aunque γ/β no se actualicen — el bug legacy documentado del proyecto (ver `REFACTOR.md`
-§7 y `CLAUDE.md`).
+---
 
-### evaluate(model, loader, loss_spec, device) -> dict[str, float]
+### `trainer.py`
 
-Decorada con `@torch.no_grad()`. Evalúa sobre cualquier loader (val o test,
-indistintamente): `model.eval()`, y por batch, forward → `loss_spec.compute()` (para el
-loss reportado) → `loss_spec.probs()` (para las métricas) → `metrics.update(probs,
-labels)`.
+#### `Trainer`
 
-Returns: dict con `"loss"` + lo que devuelva `build_metric_collection()` (accuracy, auc,
-sensitivity, specificity), cada valor ya como `float` (`.item()`).
+Orquestador principal con memoria entre épocas. Mantiene seguimiento de la mejor época según `metric_name`, guarda el checkpoint con `save_checkpoint()` únicamente cuando la métrica mejora y registra los logs mediante `MetricsLogger`.
 
-## trainer.py
+##### Cómo usar `Trainer`:
+```python
+from src.train.trainer import Trainer
+from src.train.build import build_loss, build_optimizer
 
-### Trainer
+optimizer = build_optimizer(model.parameters(), "adamw", lr=1e-4)
+loss_spec = build_loss("bce")
 
-Única pieza de `train/` con memoria entre épocas: compara la métrica de validación
-contra la mejor vista hasta ahora, y guarda el checkpoint **solo cuando mejora**.
+trainer = Trainer(
+    model=model,
+    optimizer=optimizer,
+    loss_spec=loss_spec,
+    checkpoint_dir="runs/exp01/weights",
+    run_dir="runs/exp01",
+    device="cuda",
+    metric_name="auc"
+)
 
-Inputs (`__init__`):
-- `model` (`nn.Module`): backbone + cabeza ya unidos.
-- `optimizer` (`Optimizer`): construido vía `build_optimizer`.
-- `loss_spec` (`LossSpec`): construido vía `build_loss`. Encapsula tanto el cálculo de
-  la pérdida como la conversión de logits a probabilidad — ni `Trainer` ni
-  `train/loop.py` necesitan saber si el esquema activo es BCE o CrossEntropy.
-- `checkpoint_dir` (`str | Path`): carpeta donde se guardan los checkpoints.
-- `device` (`str`, default `"cpu"`).
-- `scheduler` (`LRScheduler | None`, default `None`): si se pasa, `scheduler.step()` se
-  llama al final de cada época.
-- `metric_name` (`str`, default `"auc"`): clave del dict que devuelve `evaluate()` a
-  **maximizar** para decidir el mejor checkpoint.
+best_path = trainer.fit(train_loader, val_loader, epochs=10)
+```
 
-#### fit(train_loader, val_loader, epochs) -> Path
+---
 
-Corre el loop completo de épocas. Por cada una: `train_one_epoch()`, `evaluate()`,
-`scheduler.step()` si hay scheduler, y si `val_metrics[metric_name]` mejora sobre
-`self.best_metric`, guarda `checkpoint_dir/best_epoch<N>.pt` vía `save_checkpoint()`.
+## Exportaciones (`__init__.py`)
 
-Returns: ruta al **mejor** checkpoint según `metric_name` — nunca el de la última
-época. Es el único valor que debe usarse para la evaluación final en test (ver bug
-legacy "evaluar con el checkpoint final en vez del mejor" en `REFACTOR.md` §7).
-
-Raises: `RuntimeError` si ninguna época produjo un checkpoint válido (p. ej.
-`epochs == 0`, o `val_loader` vacío).
-
-## Sin `__init__.py`
-
-A diferencia de `src/datasets/` y `src/models/`, esta carpeta todavía no tiene
-`__init__.py` — funciona igual como *namespace package* (PEP 420), pero nada se
-reexporta. Importar directo: `from src.train.build import build_loss, LossSpec` /
-`from src.train.trainer import Trainer`.
+`src/train/__init__.py` reexporta las utilidades principales:
+```python
+from src.train import Trainer, LossSpec, build_loss, build_optimizer, build_scheduler, train_one_epoch, evaluate
+```
