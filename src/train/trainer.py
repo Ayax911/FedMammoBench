@@ -11,6 +11,7 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 from ..checkpoint import save_checkpoint
+from ..tracking import MetricsLogger
 from .build import LossSpec
 from .loop import evaluate, train_one_epoch
 
@@ -22,6 +23,7 @@ class Trainer:
         optimizer: Optimizer,
         loss_spec: LossSpec,
         checkpoint_dir: str | Path,
+        run_dir: str | Path,
         device: str = "cpu",
         scheduler: LRScheduler | None = None,
         metric_name: str = "auc",
@@ -36,6 +38,10 @@ class Trainer:
                 train/loop.py necesiten un `if` sobre si el esquema de salida
                 es BCE (1 logit) o CrossEntropy (2 logits).
             checkpoint_dir: carpeta donde se guardan los checkpoints.
+            run_dir: carpeta donde MetricsLogger escribe metrics.csv y los
+                eventos de TensorBoard de esta corrida. Separado de
+                checkpoint_dir a propósito — son dos destinos distintos
+                aunque hoy coincidan en la práctica (runs/<RUN_NAME>/).
             device: dispositivo de entrenamiento ("cpu" o "cuda").
             scheduler: opcional — si se pasa, se llama scheduler.step() al
                 final de cada época.
@@ -46,6 +52,7 @@ class Trainer:
         self.optimizer = optimizer
         self.loss_spec = loss_spec
         self.checkpoint_dir = Path(checkpoint_dir)
+        self.run_dir = Path(run_dir)
         self.device = device
         self.scheduler = scheduler
         self.metric_name = metric_name
@@ -53,7 +60,8 @@ class Trainer:
         self.best_metric: float = float("-inf")
         self.best_checkpoint_path: Path | None = None
 
-    def fit(self, train_loader: DataLoader[tuple[torch.Tensor, int]], val_loader: DataLoader[tuple[torch.Tensor, int]], epochs: int) -> Path:
+    def fit(self, train_loader: DataLoader[tuple[torch.Tensor, int]], 
+            val_loader: DataLoader[tuple[torch.Tensor, int]], epochs: int) -> Path:
         """Corre el loop completo de épocas: entrena, valida, y guarda el
         checkpoint solo cuando la métrica de validación mejora.
 
@@ -71,30 +79,37 @@ class Trainer:
             RuntimeError: ninguna época produjo un checkpoint válido (por
                 ejemplo, si epochs == 0).
         """
-        for epoch in range(epochs):
-            train_metrics = train_one_epoch(
-                self.model, train_loader, self.optimizer, self.loss_spec, self.device
-            )
-            val_metrics = evaluate(self.model, val_loader, self.loss_spec, self.device)
-
-            if self.scheduler is not None:
-                self.scheduler.step()
-
-            current_metric = val_metrics[self.metric_name]
-            if current_metric > self.best_metric:
-                self.best_metric = current_metric
-                self.best_checkpoint_path = self.checkpoint_dir / f"best_epoch{epoch}.pt"
-                save_checkpoint(
-                    self.model,
-                    self.best_checkpoint_path,
-                    epoch=epoch,
-                    metric_value=current_metric,
+        with MetricsLogger(self.run_dir) as logger:
+            for epoch in range(epochs):
+                train_metrics = train_one_epoch(
+                    self.model, train_loader, self.optimizer, self.loss_spec, self.device
                 )
+                val_metrics = evaluate(self.model, val_loader, self.loss_spec, self.device)
 
-            print(
-                f"[epoch {epoch}] train_loss={train_metrics['loss']:.40} "
-                f"val_{self.metric_name}={current_metric:.4f} (best={self.best_metric:.4f})"
-            )
+                if self.scheduler is not None:
+                    self.scheduler.step()
+
+                current_metric = val_metrics[self.metric_name]
+                if current_metric > self.best_metric:
+                    self.best_metric = current_metric
+                    self.best_checkpoint_path = self.checkpoint_dir / f"best_epoch{epoch}.pt"
+                    save_checkpoint(
+                        self.model,
+                        self.best_checkpoint_path,
+                        epoch=epoch,
+                        metric_value=current_metric,
+                    )
+
+                # MetricsLogger no distingue splits — combinar acá, con
+                # prefijo, en un solo dict por época (ver tracking.py).
+                epoch_metrics = {f"train_{k}": v for k, v in train_metrics.items()}
+                epoch_metrics.update({f"val_{k}": v for k, v in val_metrics.items()})
+                logger.log(epoch, epoch_metrics)
+
+                print(
+                    f"[epoch {epoch}] train_loss={train_metrics['loss']:.4f} "
+                    f"val_{self.metric_name}={current_metric:.4f} (best={self.best_metric:.4f})"
+                )
 
         if self.best_checkpoint_path is None:
             raise RuntimeError(
