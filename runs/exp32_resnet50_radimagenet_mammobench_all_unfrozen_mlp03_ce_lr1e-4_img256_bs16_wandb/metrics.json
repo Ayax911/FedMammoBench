@@ -1,0 +1,64 @@
+{
+  "experiment": "exp32",
+  "block": 7,
+  "run_name": "exp32_resnet50_radimagenet_mammobench_all_unfrozen_mlp03_ce_lr1e-4_img256_bs16_wandb",
+  "unfrozen": "todo el backbone descongelado",
+  "unfreeze_idx": [
+    7,
+    6,
+    5,
+    4,
+    1,
+    0
+  ],
+  "seed": 42,
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.3,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 256,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 30,
+  "best_epoch": 10,
+  "best_val_loss": 0.43528114956856334,
+  "best_val_f1_macro": 0.7794405594405595,
+  "final_train_loss": 0.07858716323188183,
+  "final_val_loss": 0.8902498884554865,
+  "test": {
+    "accuracy": 0.7865707434052758,
+    "auc": 0.845659768356785,
+    "precision": 0.68,
+    "recall": 0.6750902527075813,
+    "f1": 0.677536231884058,
+    "confusion_matrix": [
+      [
+        469,
+        88
+      ],
+      [
+        90,
+        187
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "per_dataset_metrics_path": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp32_resnet50_radimagenet_mammobench_all_unfrozen_mlp03_ce_lr1e-4_img256_bs16_wandb/per_dataset/metrics_per_dataset.json",
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp32_resnet50_radimagenet_mammobench_all_unfrozen_mlp03_ce_lr1e-4_img256_bs16_wandb/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp32_resnet50_radimagenet_mammobench_all_unfrozen_mlp03_ce_lr1e-4_img256_bs16_wandb/last_model.pth"
+  }
+}

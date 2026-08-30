@@ -1,0 +1,106 @@
+_wandb:
+    value:
+        cli_version: 0.21.4
+        e:
+            2xo78q2qw5kploaei3xjv3pav0bh0y3h:
+                args:
+                    - -f
+                    - /tmp/tmp721kh4c5.json
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "195722883072"
+                        used: "137346232320"
+                executable: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/.venv/bin/python
+                git:
+                    commit: 345685ac0b16cce56ed7bc245cca86349329698a
+                    remote: git@github.com:Ayax911/Federal-Learning.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-c5b5be7b-8c3e-86ad-6240-79778baae0e8
+                host: labmirp-Precision-5860-Tower
+                memory:
+                    total: "134269358080"
+                os: Linux-7.0.0-28-generic-x86_64-with-glibc2.39
+                program: <python with no main file>
+                python: CPython 3.12.8
+                root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp48_inceptionv3_radimagenet_mammobench_frozen_mlp05_ce_lr1e-4_img299_bs16_balsampler_split702010
+                startedAt: "2026-08-26T00:45:06.051445Z"
+                writerId: 2xo78q2qw5kploaei3xjv3pav0bh0y3h
+        m: []
+        python_version: 3.12.8
+        t:
+            "1":
+                - 1
+                - 5
+                - 41
+                - 53
+            "2":
+                - 1
+                - 5
+                - 41
+                - 53
+            "3":
+                - 2
+                - 13
+                - 15
+                - 16
+                - 61
+                - 62
+            "4": 3.12.8
+            "5": 0.21.4
+            "8":
+                - 13
+            "12": 0.21.4
+            "13": linux-x86_64
+architecture:
+    value: inception_v3
+batch_size:
+    value: 16
+block:
+    value: 10
+class_weight:
+    value: null
+dropout:
+    value: 0.5
+exp_id:
+    value: exp48
+head:
+    value: mlp
+image_size:
+    value: 299
+loss:
+    value: CrossEntropyLoss
+lr:
+    value: 0.0001
+lr_backbone:
+    value: 0.0001
+manifest:
+    value: fedmammobench_70_20_10.csv
+num_epochs:
+    value: 100
+patience:
+    value: 20
+rotation_degrees:
+    value: 7
+sampler:
+    value: WeightedRandomSampler(source_dataset x clase)
+sampler_alpha:
+    value: 1
+seed:
+    value: 42
+split_scheme:
+    value: 70/20/10
+unfreeze_idx:
+    value: []
+unfrozen:
+    value: backbone completamente congelado
+weight_decay:
+    value: 0.0001

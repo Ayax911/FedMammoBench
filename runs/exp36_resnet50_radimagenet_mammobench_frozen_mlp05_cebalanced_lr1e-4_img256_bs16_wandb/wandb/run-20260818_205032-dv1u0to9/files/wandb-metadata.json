@@ -1,0 +1,41 @@
+{
+  "os":  "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.12.8",
+  "startedAt":  "2026-08-19T01:50:32.359253Z",
+  "args":  [
+    "-f",
+    "/tmp/tmpoicvw4y9.json"
+  ],
+  "program":  "<python with no main file>",
+  "git":  {
+    "remote":  "git@github.com:Ayax911/Federal-Learning.git",
+    "commit":  "e0b9f4a9fb1f2bbbc949b7f6f950a0eda211218a"
+  },
+  "root":  "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp36_resnet50_radimagenet_mammobench_frozen_mlp05_cebalanced_lr1e-4_img256_bs16_wandb",
+  "host":  "labmirp-Precision-5860-Tower",
+  "executable":  "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/.venv/bin/python",
+  "cpu_count":  6,
+  "cpu_count_logical":  12,
+  "gpu":  "NVIDIA RTX 6000 Ada Generation",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "195722883072",
+      "used":  "136529367040"
+    }
+  },
+  "memory":  {
+    "total":  "134269358080"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA RTX 6000 Ada Generation",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  18176,
+      "architecture":  "Ada",
+      "uuid":  "GPU-c5b5be7b-8c3e-86ad-6240-79778baae0e8"
+    }
+  ],
+  "cudaVersion":  "13.0",
+  "writerId":  "cw54c8notlwcqrh6ckzilq71n3mojhwu"
+}

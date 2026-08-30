@@ -1,0 +1,64 @@
+{
+  "experiment": "exp42",
+  "block": 9,
+  "run_name": "exp42_resnet50_radimagenet_mammobench_layer4_mlp05_ce_lr1e-4_img256_bs16_balsampler_split702010",
+  "unfrozen": "solo la \u00faltima capa (layer4) descongelada",
+  "unfreeze_idx": [
+    7
+  ],
+  "seed": 42,
+  "manifest": "fedmammobench_70_20_10.csv",
+  "split_scheme": "70/20/10",
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.5,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 256,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "class_weight": null,
+    "sampler": "WeightedRandomSampler(source_dataset x clase, replacement=True)",
+    "sampler_alpha": 1.0,
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 63,
+  "best_epoch": 43,
+  "best_val_loss": 0.5764027423358389,
+  "best_val_f1_macro": 0.7137394176662635,
+  "final_train_loss": 0.08856055534052647,
+  "final_val_loss": 0.9396159901474935,
+  "test": {
+    "accuracy": 0.7398081534772182,
+    "auc": 0.8034208530744252,
+    "precision": 0.625,
+    "recall": 0.5415162454873647,
+    "f1": 0.5802707930367504,
+    "confusion_matrix": [
+      [
+        467,
+        90
+      ],
+      [
+        127,
+        150
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "per_dataset_metrics_path": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp42_resnet50_radimagenet_mammobench_layer4_mlp05_ce_lr1e-4_img256_bs16_balsampler_split702010/per_dataset/metrics_per_dataset.json",
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp42_resnet50_radimagenet_mammobench_layer4_mlp05_ce_lr1e-4_img256_bs16_balsampler_split702010/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp42_resnet50_radimagenet_mammobench_layer4_mlp05_ce_lr1e-4_img256_bs16_balsampler_split702010/last_model.pth"
+  }
+}

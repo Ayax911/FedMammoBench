@@ -1,0 +1,60 @@
+{
+  "experiment": "exp38",
+  "block": 8,
+  "run_name": "exp38_resnet50_radimagenet_mammobench_frozen_mlp05_ce_lr1e-4_img256_bs16_balsampler",
+  "unfrozen": "backbone completamente congelado",
+  "unfreeze_idx": [],
+  "seed": 42,
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.5,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 256,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "class_weight": null,
+    "sampler": "WeightedRandomSampler(source_dataset x clase, replacement=True)",
+    "sampler_alpha": 1.0,
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 42,
+  "best_epoch": 22,
+  "best_val_loss": 0.526802363260737,
+  "best_val_f1_macro": 0.7000751052815107,
+  "final_train_loss": 0.32473502419172573,
+  "final_val_loss": 0.5362120847094733,
+  "test": {
+    "accuracy": 0.6858513189448441,
+    "auc": 0.7580838556215931,
+    "precision": 0.5330396475770925,
+    "recall": 0.4368231046931408,
+    "f1": 0.4801587301587302,
+    "confusion_matrix": [
+      [
+        451,
+        106
+      ],
+      [
+        156,
+        121
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "per_dataset_metrics_path": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp38_resnet50_radimagenet_mammobench_frozen_mlp05_ce_lr1e-4_img256_bs16_balsampler/per_dataset/metrics_per_dataset.json",
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp38_resnet50_radimagenet_mammobench_frozen_mlp05_ce_lr1e-4_img256_bs16_balsampler/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp38_resnet50_radimagenet_mammobench_frozen_mlp05_ce_lr1e-4_img256_bs16_balsampler/last_model.pth"
+  }
+}

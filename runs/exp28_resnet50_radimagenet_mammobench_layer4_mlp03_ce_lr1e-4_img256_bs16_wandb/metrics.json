@@ -1,0 +1,59 @@
+{
+  "experiment": "exp28",
+  "block": 7,
+  "run_name": "exp28_resnet50_radimagenet_mammobench_layer4_mlp03_ce_lr1e-4_img256_bs16_wandb",
+  "unfrozen": "solo la \u00faltima capa (layer4) descongelada",
+  "unfreeze_idx": [
+    7
+  ],
+  "seed": 42,
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.3,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 256,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 42,
+  "best_epoch": 22,
+  "best_val_loss": 0.4811541554430183,
+  "best_val_f1_macro": 0.7338556286531988,
+  "final_train_loss": 0.06547945996247179,
+  "final_val_loss": 1.172305204996622,
+  "test": {
+    "accuracy": 0.7434052757793765,
+    "auc": 0.8052745173019463,
+    "precision": 0.6363636363636364,
+    "recall": 0.5306859205776173,
+    "f1": 0.5787401574803149,
+    "confusion_matrix": [
+      [
+        473,
+        84
+      ],
+      [
+        130,
+        147
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "per_dataset_metrics_path": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp28_resnet50_radimagenet_mammobench_layer4_mlp03_ce_lr1e-4_img256_bs16_wandb/per_dataset/metrics_per_dataset.json",
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp28_resnet50_radimagenet_mammobench_layer4_mlp03_ce_lr1e-4_img256_bs16_wandb/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp28_resnet50_radimagenet_mammobench_layer4_mlp03_ce_lr1e-4_img256_bs16_wandb/last_model.pth"
+  }
+}

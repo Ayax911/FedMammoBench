@@ -1,0 +1,67 @@
+{
+  "experiment": "exp47",
+  "block": 10,
+  "run_name": "exp47_inceptionv3_radimagenet_mammobench_mixed7_mlp05_ce_lr1e-4_img299_bs16_balsampler_split702010",
+  "unfrozen": "solo la \u00faltima etapa (Mixed_7a/7b/7c) descongelada",
+  "unfreeze_idx": [
+    15,
+    16,
+    17
+  ],
+  "seed": 42,
+  "manifest": "fedmammobench_70_20_10.csv",
+  "split_scheme": "70/20/10",
+  "hyperparams": {
+    "head": "mlp",
+    "architecture": "inception_v3",
+    "dropout": 0.5,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 299,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "class_weight": null,
+    "sampler": "WeightedRandomSampler(source_dataset x clase, replacement=True)",
+    "sampler_alpha": 1.0,
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 46,
+  "best_epoch": 26,
+  "best_val_loss": 0.6012940065491768,
+  "best_val_f1_macro": 0.6769767055829137,
+  "final_train_loss": 0.17040798102843238,
+  "final_val_loss": 0.7342397037028734,
+  "test": {
+    "accuracy": 0.7038369304556354,
+    "auc": 0.7628994938070763,
+    "precision": 0.5524475524475524,
+    "recall": 0.5703971119133574,
+    "f1": 0.5612788632326821,
+    "confusion_matrix": [
+      [
+        429,
+        128
+      ],
+      [
+        119,
+        158
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "per_dataset_metrics_path": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp47_inceptionv3_radimagenet_mammobench_mixed7_mlp05_ce_lr1e-4_img299_bs16_balsampler_split702010/per_dataset/metrics_per_dataset.json",
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp47_inceptionv3_radimagenet_mammobench_mixed7_mlp05_ce_lr1e-4_img299_bs16_balsampler_split702010/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp47_inceptionv3_radimagenet_mammobench_mixed7_mlp05_ce_lr1e-4_img299_bs16_balsampler_split702010/last_model.pth"
+  }
+}

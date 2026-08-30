@@ -1,0 +1,61 @@
+{
+  "experiment": "exp36",
+  "block": 7,
+  "run_name": "exp36_resnet50_radimagenet_mammobench_frozen_mlp05_cebalanced_lr1e-4_img256_bs16_wandb",
+  "unfrozen": "backbone completamente congelado",
+  "unfreeze_idx": [],
+  "seed": 42,
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.5,
+    "lr": 0.0004,
+    "lr_backbone": 0.0004,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 256,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "class_weight": [
+      0.6829560995101929,
+      1.3170439004898071
+    ],
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 46,
+  "best_epoch": 26,
+  "best_val_loss": 0.4855904572133748,
+  "best_val_f1_macro": 0.739666050086259,
+  "final_train_loss": 0.45589644114415234,
+  "final_val_loss": 0.5154506839671225,
+  "test": {
+    "accuracy": 0.7314148681055156,
+    "auc": 0.8096299801022757,
+    "precision": 0.5805471124620061,
+    "recall": 0.6895306859205776,
+    "f1": 0.6303630363036303,
+    "confusion_matrix": [
+      [
+        419,
+        138
+      ],
+      [
+        86,
+        191
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "per_dataset_metrics_path": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp36_resnet50_radimagenet_mammobench_frozen_mlp05_cebalanced_lr1e-4_img256_bs16_wandb/per_dataset/metrics_per_dataset.json",
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp36_resnet50_radimagenet_mammobench_frozen_mlp05_cebalanced_lr1e-4_img256_bs16_wandb/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp36_resnet50_radimagenet_mammobench_frozen_mlp05_cebalanced_lr1e-4_img256_bs16_wandb/last_model.pth"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "experiment": "exp30",
+  "block": 7,
+  "run_name": "exp30_resnet50_radimagenet_mammobench_layer4_layer3_mlp03_ce_lr1e-4_img256_bs16_wandb",
+  "unfrozen": "\u00faltima y pen\u00faltima capa (layer4 + layer3) descongeladas",
+  "unfreeze_idx": [
+    7,
+    6
+  ],
+  "seed": 42,
+  "hyperparams": {
+    "head": "mlp",
+    "dropout": 0.3,
+    "lr": 0.0001,
+    "lr_backbone": 0.0001,
+    "weight_decay": 0.0001,
+    "batch_size": 16,
+    "num_epochs": 100,
+    "patience": 20,
+    "image_size": 256,
+    "optimizer": "AdamW",
+    "loss": "CrossEntropyLoss",
+    "scheduler": "CosineAnnealingLR",
+    "augmentation": "RandomRotation(7) + RandomHorizontalFlip(p=0.5)",
+    "seed": 42,
+    "best_checkpoint_metric": "val_f1_macro"
+  },
+  "epochs_run": 29,
+  "best_epoch": 9,
+  "best_val_loss": 0.4517893634455384,
+  "best_val_f1_macro": 0.7817665135644185,
+  "final_train_loss": 0.07340911705978215,
+  "final_val_loss": 1.0098540443694493,
+  "test": {
+    "accuracy": 0.7589928057553957,
+    "auc": 0.8392562010253486,
+    "precision": 0.6623931623931624,
+    "recall": 0.5595667870036101,
+    "f1": 0.6066536203522505,
+    "confusion_matrix": [
+      [
+        478,
+        79
+      ],
+      [
+        122,
+        155
+      ]
+    ],
+    "class_names": [
+      "Benign",
+      "Malignant"
+    ]
+  },
+  "per_dataset_metrics_path": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp30_resnet50_radimagenet_mammobench_layer4_layer3_mlp03_ce_lr1e-4_img256_bs16_wandb/per_dataset/metrics_per_dataset.json",
+  "checkpoints": {
+    "best": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp30_resnet50_radimagenet_mammobench_layer4_layer3_mlp03_ce_lr1e-4_img256_bs16_wandb/best_model.pth",
+    "last": "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/Federal-Learning/runs/exp30_resnet50_radimagenet_mammobench_layer4_layer3_mlp03_ce_lr1e-4_img256_bs16_wandb/last_model.pth"
+  }
+}
