@@ -52,8 +52,19 @@ def run(config: ExperimentConfig) -> None:
     manifest = Manifest(manifest_path=config.data.manifest_path, image_root=config.data.image_root)
     split = Split(manifest=manifest)
 
+    # use_rotation se deriva de rotation_degrees > 0 en vez de ser un flag
+    # aparte -- un solo lugar decide si rota, no dos que puedan divergir.
+    aug = config.data.augmentation
     train_transform_builder = TransformBuilder(
-        image_size=config.data.image_size, use_horizontal_flip=True, use_rotation=True
+        image_size=config.data.image_size,
+        use_horizontal_flip=aug.horizontal_flip,
+        horizontal_flip_p=aug.horizontal_flip_p,
+        use_rotation=aug.rotation_degrees > 0,
+        rotation_degrees=aug.rotation_degrees,
+        use_vertical_flip=aug.vertical_flip,
+        vertical_flip_p=aug.vertical_flip_p,
+        use_blur=aug.blur,
+        blur_p=aug.blur_p,
     )
     eval_transform_builder = TransformBuilder(image_size=config.data.image_size)
     loaders = builder_dataloader(

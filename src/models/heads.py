@@ -11,11 +11,19 @@ Example:
 from typing import Type
 
 from .head_builder import HeadBuilder
+from .mlp_configs.configurable_mlp import ConfigurableMLPHead
 from .mlp_configs.standard_mlp import StandardMLPHead
 
-# Internal registry mapping head strategy names to their uninstantiated builder classes
+# Internal registry mapping head strategy names to their uninstantiated builder classes.
+#
+# "standard_mlp" reproduces the fixed head of the exp01-19 notebook series
+# (one hidden layer, always BatchNorm1d). "configurable_mlp" reproduces the
+# INC project's head (classification_images/models/mlp_models.py): N
+# arbitrary hidden layers, selectable activation, no BatchNorm1d by default
+# -- see src/models/mlp_configs/configurable_mlp.py and PHASES.md phase 5.
 _HEAD_STRATEGIES: dict[str, Type[HeadBuilder]] = {
     "standard_mlp": StandardMLPHead,
+    "configurable_mlp": ConfigurableMLPHead,
 }
 
 
@@ -24,7 +32,7 @@ def get_head_strategy(name: str) -> Type[HeadBuilder]:
 
     Args:
         name: Name key of the head strategy registered in `_HEAD_STRATEGIES`
-            (e.g., `"standard_mlp"`).
+            (e.g., `"standard_mlp"`, `"configurable_mlp"`).
 
     Returns:
         Type[HeadBuilder]: The class (builder factory) of the matching head strategy.

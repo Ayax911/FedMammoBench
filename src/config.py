@@ -62,6 +62,46 @@ class NamedComponentConfig(BaseModel):
     hparams: dict[str, Any] = Field(default_factory=dict)
 
 
+class AugmentationConfig(BaseModel):
+    """Configuración de augmentación de imágenes del train split (`datasets/transform.py`).
+
+    Todos los defaults reproducen exactamente el comportamiento previo a
+    esta opción (`src/cli.py` construía el `TransformBuilder` de train con
+    `use_horizontal_flip=True, use_rotation=True` hardcodeados y
+    `rotation_degrees` en su default de `TransformBuilder`, sin flip
+    vertical ni blur) — un `DataConfig` que no mencione `augmentation` en
+    YAML se comporta igual que antes de que este modelo existiera.
+
+    `vertical_flip` y `blur` están portados del proyecto INC
+    (`classification_images/dataloaders/dataloader_images.py`), que además
+    de flip horizontal y rotación aplica `RandomVerticalFlip(p=0.2)` y un
+    blur gaussiano aleatorio — ver PHASES.md fase 5.
+
+    Attributes:
+        horizontal_flip: si aplicar flip horizontal aleatorio.
+        horizontal_flip_p: probabilidad del flip horizontal.
+        rotation_degrees: grados máximos de rotación aleatoria. `0`
+            desactiva la rotación.
+        vertical_flip: si aplicar flip vertical aleatorio.
+        vertical_flip_p: probabilidad del flip vertical.
+        blur: si aplicar blur gaussiano aleatorio.
+        blur_p: probabilidad de aplicar el blur cuando `blur=True`.
+
+    Example:
+        >>> aug_cfg = AugmentationConfig(rotation_degrees=7, vertical_flip=True)
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    horizontal_flip: bool = True
+    horizontal_flip_p: float = 0.5
+    rotation_degrees: int = 15
+    vertical_flip: bool = False
+    vertical_flip_p: float = 0.5
+    blur: bool = False
+    blur_p: float = 0.3
+
+
 class DataConfig(BaseModel):
     """Configuración para carga de datos, splits y DataLoaders (`datasets/`).
 
@@ -72,6 +112,9 @@ class DataConfig(BaseModel):
         num_workers: Número de subprocesos paralelos para carga de datos (default: 1).
         seed: Semilla aleatoria para reproducibilidad de shuffles y augmentations (default: 42).
         image_size: Dimensiones (alto, ancho) para resize de imágenes (default: (224, 224)).
+        augmentation: Configuración de augmentación del train split — ver
+            `AugmentationConfig`. val/test nunca se augmentan
+            (`src/cli.py` construye su `TransformBuilder` sin pasarle esto).
 
     Example:
         >>> data_cfg = DataConfig(
@@ -89,6 +132,7 @@ class DataConfig(BaseModel):
     num_workers: int = 1
     seed: int = 42
     image_size: tuple[int, int] = (224, 224)
+    augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
 
 
 class TrainConfig(BaseModel):
