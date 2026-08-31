@@ -121,3 +121,76 @@ Las cinco llamadas pasan; `FocalLoss(alpha=...).to("cpu")` confirma que
 `"cpu"`) para cualquier código que aún no pase el parámetro. Losses sin
 `weight`/`pos_weight`/`alpha` (el caso común hasta ahora) no cambian de
 comportamiento.
+
+---
+
+## Fase 3 — EarlyStopping y el fix del "siempre maximiza"
+
+Rama: `phase3-early-stopping`. Depende de fase 1 (necesita `f1`/`precision`
+en `src/metrics.py` para que `metric_name: f1` tenga sentido).
+
+### Añadido
+
+- **[`src/train/early_stopping.py`](src/train/early_stopping.py)** —
+  `EarlyStopping(patience, min_delta, mode)`, `dataclass` sin I/O:
+  `step(value) -> bool` (¿esta época mejoró?) + atributos `best_value`,
+  `counter`, `should_stop`. A diferencia del `EarlyStopping` del proyecto
+  INC (`classification_images/early_stopping.py`), no guarda checkpoints
+  dentro de `__call__` — esa responsabilidad se queda enteramente en
+  `Trainer.fit()`, que ya la tenía.
+  **Decisión de diseño no listada explícitamente en el análisis previo:**
+  el mismo objeto resuelve dos problemas a la vez —"¿hay que guardar
+  checkpoint?" y "¿hay que parar?"— porque ambos dependen exactamente del
+  mismo `mode` (`max`/`min`). Tenerlos separados habría duplicado la
+  lógica de comparación en dos sitios que podrían desincronizarse.
+
+### Modificado
+
+- **[`src/train/trainer.py`](src/train/trainer.py)** — `Trainer` gana
+  `metric_mode`, `patience`, `min_delta`, y construye internamente
+  `self.tracker = EarlyStopping(...)`. `fit()` reemplaza el
+  `if current_metric > self.best_metric` hardcodeado (que **siempre
+  maximizaba**, sin importar la métrica — bug ya señalado en el análisis
+  previo) por `self.tracker.step(current_metric)`, y añade el `break` de
+  early stopping. `self.best_metric` queda como propiedad de solo lectura
+  que delega a `self.tracker.best_value`, para no romper código que ya lo
+  leyera.
+- **[`src/config.py`](src/config.py)** — `TrainConfig` gana `metric_mode:
+  str = "max"`, `patience: int | None = None`, `min_delta: float = 0.0`.
+  Todos con default que reproduce el comportamiento previo exacto
+  (siempre maximizaba, nunca paraba antes de tiempo) para YAML que no los
+  mencione.
+- **[`src/cli.py`](src/cli.py)** — pasa los tres campos nuevos de
+  `config.train` al constructor de `Trainer`.
+- **[`src/train/__init__.py`](src/train/__init__.py)** — reexporta
+  `EarlyStopping`.
+
+### Verificación (runtime real)
+
+1. **Unit tests de `EarlyStopping`** (modo `max`, modo `min`, `patience=None`
+   nunca dispara, `mode` inválido lanza `ValueError`) — los cuatro casos
+   pasan.
+2. **`Trainer.fit()` end-to-end** con un MLP sintético de 2 capas sobre
+   datos aleatorios (`torch.manual_seed(0)`), tres casos:
+   - `patience=1, min_delta=1.0` (imposible de satisfacer) → confirma
+     `tracker.should_stop=True` y que el loop corta antes de `epochs=20`
+     (se detiene en la época 1), guardando igual un checkpoint válido.
+   - `metric_name="loss", metric_mode="min"` → confirma que `best_metric`
+     sigue bajando época a época. **Esto es la prueba directa del fix**:
+     con el código anterior (`current_metric > self.best_metric`), una loss
+     que *baja* nunca hubiera vuelto a superar el mejor valor tras la
+     época 0, y el checkpoint se habría congelado ahí — con el fix,
+     seguido baja limpiamente por 5 épocas.
+   - Sin pasar `patience`/`metric_mode` (defaults) → corre las `epochs`
+     completas sin activar `should_stop`, igual que el comportamiento
+     previo a esta fase.
+3. **`TrainConfig` validado desde YAML real**, con y sin los campos nuevos
+   — ambos casos validan, y el caso sin campos nuevos recupera exactamente
+   los defaults de compatibilidad (`max`, `None`, `0.0`).
+
+### Compatibilidad
+
+Un `ExperimentConfig` que no mencione `metric_mode`/`patience`/`min_delta`
+se comporta exactamente igual que antes de esta fase — la única diferencia
+observable es que, si `metric_name` fuera alguna vez `"loss"`, ahora
+selecciona la *mejor* época en vez de congelarse en la primera.
