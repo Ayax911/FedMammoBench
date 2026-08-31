@@ -3,10 +3,15 @@
 # Narrower on purpose than feature/radimagenet's requirements.txt: this
 # branch's current scope is centralized training only (see REFACTOR.md).
 # flwr/ray (federated), opencv/albumentations/pydicom/scikit-learn
-# (unused so far -- src/ transforms go through torchvision only), wandb
-# (stays notebook-only, see CLAUDE.md), matplotlib/tqdm (no plotting in
-# src/ yet) are all deliberately left out. Add them back only once
-# something under src/ actually imports them, not preemptively.
+# (unused so far -- src/ transforms go through torchvision only, and
+# confusion-matrix/ROC use torchmetrics instead, see reporting.py), wandb
+# (stays notebook-only, see CLAUDE.md), tqdm (no progress bars in src/ yet)
+# are all deliberately left out. Add them back only once something under
+# src/ actually imports them, not preemptively.
+#
+# matplotlib WAS added (PHASES.md fase 4) -- src/reporting.py plots the
+# test-set confusion matrix and ROC curve, the only thing in src/ that
+# needs it.
 #
 # For CUDA wheels, install torch + torchvision separately from
 # https://download.pytorch.org/whl/<cuXXX> BEFORE installing the rest:
@@ -28,6 +33,11 @@ pillow>=12.0,<13.0
 pydantic>=2.13,<3.0
 PyYAML>=6.0,<7.0
 tensorboard>=2.21,<3.0
+
+# --- Reporting ---
+# src/reporting.py: matriz de confusión + curva ROC del test set
+# (PHASES.md fase 4). Backend "Agg" -- no requiere display/X11.
+matplotlib>=3.11,<4.0
 
 # Optional -- only imported at runtime if train.wandb_project is set in the
 # experiment YAML (see tracking.py's lazy `import wandb`). Safe to omit if
