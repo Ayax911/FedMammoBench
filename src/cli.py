@@ -91,7 +91,7 @@ def run(config: ExperimentConfig) -> None:
         if config.scheduler is not None
         else None
     )
-    loss_spec = build_loss(config.loss.name, **config.loss.hparams)
+    loss_spec = build_loss(config.loss.name, device=config.train.device, **config.loss.hparams)
 
     trainer = Trainer(
         model,

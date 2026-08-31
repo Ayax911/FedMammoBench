@@ -19,6 +19,8 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim.optimizer import ParamsT
 
+from .focal_loss import FocalLoss
+
 
 _OPTIMIZERS: dict[str, Callable[..., Optimizer]] = {
     "adam": torch.optim.Adam,
@@ -85,8 +87,8 @@ class LossSpec:
     """Une, para un esquema de salida dado, la función de pérdida con la
     forma correcta de convertir logits crudos en la probabilidad de la clase
     positiva. Existe porque esa conversión depende de cuántos logits emite
-    la cabeza (1 con BCE, 2 con CrossEntropy) — nunca del nombre de la loss
-    ni de un flag aparte que se pueda desincronizar del modelo real.
+    la cabeza (1 con BCE, 2 con CrossEntropy/Focal) — nunca del nombre de la
+    loss ni de un flag aparte que se pueda desincronizar del modelo real.
 
     `train_one_epoch()`/`evaluate()` (train/loop.py) reciben un `LossSpec`
     en vez de una `nn.Module` suelta y llaman `spec.compute(...)` /
@@ -111,29 +113,65 @@ class LossSpec:
     probs: Callable[[Tensor], Tensor]
 
 
-def _make_bce(**hparams: Any) -> LossSpec:
+def _make_bce(*, device: str = "cpu", **hparams: Any) -> LossSpec:
     """Esquema de 1 logit: BCEWithLogitsLoss + sigmoid.
 
     La cabeza debe emitir `[B, 1]`. `squeeze(1)` lo deja en `[B]` para que
     calce con `labels` (que llega `[B]`, `Long` desde el DataLoader);
     BCEWithLogitsLoss además exige `labels` en `float`, de ahí el `.float()`.
+
+    `pos_weight`, si se pasa, llega desde YAML como una lista de Python (no
+    hay tensores en YAML) — se convierte a `torch.Tensor` en el device
+    correcto antes de construir la loss. Sin esta conversión,
+    `BCEWithLogitsLoss(pos_weight=[...])` lanza `TypeError` al intentar
+    registrar una lista como buffer (ver PHASES.md fase 2).
     """
-    loss_fn = nn.BCEWithLogitsLoss(**hparams)
+    if "pos_weight" in hparams:
+        hparams = {**hparams, "pos_weight": torch.as_tensor(hparams["pos_weight"], dtype=torch.float32, device=device)}
+
+    loss_fn = nn.BCEWithLogitsLoss(**hparams).to(device)
     return LossSpec(
         compute=lambda outputs, labels: loss_fn(outputs.squeeze(1), labels.float()),
         probs=lambda outputs: torch.sigmoid(outputs.squeeze(1)),
     )
 
 
-def _make_cross_entropy(**hparams: Any) -> LossSpec:
+def _make_cross_entropy(*, device: str = "cpu", **hparams: Any) -> LossSpec:
     """Esquema de 2 logits: CrossEntropyLoss + softmax.
 
     La cabeza debe emitir `[B, 2]`. CrossEntropyLoss ya espera `labels`
     como índice de clase `Long` `[B]` — que es justo lo que entrega el
     DataLoader por defecto, sin casteo. `probs` toma la columna 1
     (`malignant`, ver `Manifest.normalize_labels`) del softmax.
+
+    `weight` (pesos por clase `[negativo, positivo]`, ver el `class_balance`
+    del proyecto INC), si se pasa, llega desde YAML como lista de Python y
+    se convierte a `torch.Tensor` en el device correcto antes de construir
+    la loss — mismo motivo que `pos_weight` en `_make_bce` (PHASES.md fase 2).
     """
-    loss_fn = nn.CrossEntropyLoss(**hparams)
+    if "weight" in hparams:
+        hparams = {**hparams, "weight": torch.as_tensor(hparams["weight"], dtype=torch.float32, device=device)}
+
+    loss_fn = nn.CrossEntropyLoss(**hparams).to(device)
+    return LossSpec(
+        compute=lambda outputs, labels: loss_fn(outputs, labels),
+        probs=lambda outputs: torch.softmax(outputs, dim=1)[:, 1],
+    )
+
+
+def _make_focal(*, device: str = "cpu", **hparams: Any) -> LossSpec:
+    """Esquema de 2 logits con Focal Loss (ver `train/focal_loss.py`).
+
+    Portado del proyecto INC — reduce el peso de ejemplos ya bien
+    clasificados y admite ponderación por clase vía `alpha`, útil para el
+    desbalance ~66/34 (benigno/maligno) de `fedmammobench.csv`. `alpha`,
+    igual que `weight`/`pos_weight` en las otras dos losses, llega desde
+    YAML como lista y se convierte a tensor en el device correcto.
+    """
+    if "alpha" in hparams:
+        hparams = {**hparams, "alpha": torch.as_tensor(hparams["alpha"], dtype=torch.float32, device=device)}
+
+    loss_fn = FocalLoss(**hparams).to(device)
     return LossSpec(
         compute=lambda outputs, labels: loss_fn(outputs, labels),
         probs=lambda outputs: torch.softmax(outputs, dim=1)[:, 1],
@@ -143,21 +181,27 @@ def _make_cross_entropy(**hparams: Any) -> LossSpec:
 _LOSSES: dict[str, Callable[..., LossSpec]] = {
     "bce": _make_bce,
     "cross_entropy": _make_cross_entropy,
+    "focal": _make_focal,
 }
 
 
-def build_loss(name: str, **hparams: Any) -> LossSpec:
+def build_loss(name: str, *, device: str = "cpu", **hparams: Any) -> LossSpec:
     """Construye un LossSpec por nombre, con los hiperparámetros que le pases.
 
     El nombre elegido debe ser consistente con `num_classes` de la cabeza
-    del modelo: "bce" espera una cabeza de 1 logit, "cross_entropy" una de 2.
-    Esta función no puede verificar eso (no ve el modelo) — el mismatch se
-    manifiesta como un error de shape/dtype de PyTorch dentro de
+    del modelo: "bce" espera una cabeza de 1 logit, "cross_entropy"/"focal"
+    una de 2. Esta función no puede verificar eso (no ve el modelo) — el
+    mismatch se manifiesta como un error de shape/dtype de PyTorch dentro de
     `LossSpec.compute()`, no aquí.
 
     Args:
-        name: clave en _LOSSES, "bce" o "cross_entropy".
-        **hparams: hiperparámetros propios de la función de pérdida (weight, reduction, etc.).
+        name: clave en _LOSSES: "bce", "cross_entropy" o "focal".
+        device: dispositivo al que mover la loss y cualquier hparam que
+            llegue como tensor de pesos (`weight`, `pos_weight`, `alpha`).
+            Debe coincidir con el device del modelo — mismo patrón que
+            `build_metric_collection(device=...)` en `src/metrics.py`.
+        **hparams: hiperparámetros propios de la función de pérdida (weight,
+            pos_weight, alpha, gamma, reduction, etc. según el esquema).
 
     Returns:
         LossSpec: el par (compute, probs) ya cerrado sobre la loss construida.
@@ -166,8 +210,9 @@ def build_loss(name: str, **hparams: Any) -> LossSpec:
         ValueError: name no reconocido.
 
     Example:
-        >>> loss_spec = build_loss("bce")
+        >>> loss_spec = build_loss("bce", device="cuda")
+        >>> loss_spec = build_loss("cross_entropy", weight=[2.0, 1.0], device="cuda")
     """
     if name not in _LOSSES:
         raise ValueError(f"Loss desconocida: {name!r}. Opciones: {sorted(_LOSSES)}")
-    return _LOSSES[name](**hparams)
+    return _LOSSES[name](device=device, **hparams)
