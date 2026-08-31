@@ -156,10 +156,14 @@ def run(config: ExperimentConfig) -> None:
 
     y_true, y_pred, y_prob = predict_on_loader(model, loaders["test"], loss_spec, config.train.device)
 
-    save_metrics_json(test_metrics, config.train.run_dir / "metrics.json")
-    save_predictions_csv(y_true, y_pred, y_prob, config.train.run_dir / "predictions.csv")
-    plot_confusion_matrix(y_true, y_pred, config.train.run_dir / "plots" / "confusion_matrix.png")
-    plot_roc_curve(y_true, y_prob, config.train.run_dir / "plots" / "roc_curve.png")
+    # Todo lo que sale de test -- métricas, predicciones y sus dos gráficas --
+    # va junto en su propia carpeta, separado de plots/ (que solo tiene
+    # loss_curve.png, de entrenamiento) para no mezclar ambos niveles.
+    test_dir = config.train.run_dir / "test"
+    save_metrics_json(test_metrics, test_dir / "metrics.json")
+    save_predictions_csv(y_true, y_pred, y_prob, test_dir / "predictions.csv")
+    plot_confusion_matrix(y_true, y_pred, test_dir / "confusion_matrix.png")
+    plot_roc_curve(y_true, y_prob, test_dir / "roc_curve.png")
 
 
 def parse_args() -> argparse.Namespace:

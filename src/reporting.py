@@ -14,13 +14,19 @@ hace el INC — para no añadir una dependencia nueva solo por dos funciones.
 `matplotlib` sí es una dependencia nueva (ver `requirements.txt`); nada más
 en `src/` necesita graficar.
 
+Todo lo que sale de la evaluación de test (metrics.json, predictions.csv,
+confusion_matrix.png, roc_curve.png) va a `run_dir/test/` -- una sola
+carpeta para no repartir gráficas y predicciones de test entre `run_dir/`
+y `run_dir/plots/`. `plots/` queda solo para lo que no es de test
+(`loss_curve.png`, que se grafica antes de tocar el set de test).
+
 Ejemplo de uso:
     >>> from src.reporting import save_metrics_json, save_predictions_csv, plot_confusion_matrix, plot_loss_curve, plot_roc_curve
-    >>> save_metrics_json(test_metrics, run_dir / "metrics.json")
-    >>> save_predictions_csv(y_true, y_pred, y_prob, run_dir / "predictions.csv")
-    >>> plot_confusion_matrix(y_true, y_pred, run_dir / "plots" / "confusion_matrix.png")
     >>> plot_loss_curve(train_hist, val_hist, run_dir / "plots" / "loss_curve.png", best_epoch=7)
-    >>> plot_roc_curve(y_true, y_prob, run_dir / "plots" / "roc_curve.png")
+    >>> save_metrics_json(test_metrics, run_dir / "test" / "metrics.json")
+    >>> save_predictions_csv(y_true, y_pred, y_prob, run_dir / "test" / "predictions.csv")
+    >>> plot_confusion_matrix(y_true, y_pred, run_dir / "test" / "confusion_matrix.png")
+    >>> plot_roc_curve(y_true, y_prob, run_dir / "test" / "roc_curve.png")
 """
 
 import csv
@@ -67,7 +73,7 @@ def save_predictions_csv(
 
     Example:
         >>> y_true, y_pred, y_prob = predict_on_loader(model, loaders["test"], loss_spec, device)
-        >>> save_predictions_csv(y_true, y_pred, y_prob, "runs/exp01/predictions.csv")
+        >>> save_predictions_csv(y_true, y_pred, y_prob, "runs/exp01/test/predictions.csv")
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,7 +99,7 @@ def plot_confusion_matrix(
         class_names: nombres para los ejes, en orden `(clase 0, clase 1)`.
 
     Example:
-        >>> plot_confusion_matrix(y_true, y_pred, "runs/exp01/plots/confusion_matrix.png")
+        >>> plot_confusion_matrix(y_true, y_pred, "runs/exp01/test/confusion_matrix.png")
     """
     cm = BinaryConfusionMatrix()(torch.tensor(y_pred), torch.tensor(y_true)).numpy()
 
@@ -128,9 +134,12 @@ def plot_loss_curve(
     gráfico de diagnóstico principal, y el único que faltaba por completo
     en este pipeline pese a que `metrics.csv` ya guardaba los datos.
 
-    A diferencia del notebook, el eje Y no se fija a `(0, 1)`: con
-    `CrossEntropyLoss` ponderada la pérdida arranca por encima de 1 y
-    recortarla esconde justo las primeras épocas.
+    El eje Y arranca siempre en 0 y llega como mínimo a 1 — así las corridas
+    se comparan de un vistazo sin importar en qué rango cayó la pérdida de
+    esa corrida en particular. No es un `ax.set_ylim(0, 1)` fijo como en el
+    notebook: si algún valor supera 1 (`CrossEntropyLoss` ponderada arranca
+    por encima de 1 en las primeras épocas), el techo sube para no
+    recortarlo — nunca al revés.
 
     Args:
         train_loss: pérdida media de entrenamiento por época, en orden.
@@ -174,6 +183,9 @@ def plot_loss_curve(
             lw=1,
             label=f"Mejor época ({best_epoch + 1})",
         )
+    # Techo mínimo 1 -- ver docstring. max(train_loss)/max(val_loss) ya
+    # garantizan no-vacío (chequeado arriba), así que esto no puede lanzar.
+    ax.set_ylim(0, max(1.0, max(train_loss), max(val_loss)))  # pyright: ignore[reportUnknownMemberType]
     ax.set_xlabel("Época")  # pyright: ignore[reportUnknownMemberType]
     ax.set_ylabel("Loss")  # pyright: ignore[reportUnknownMemberType]
     ax.set_title("Pérdida de entrenamiento vs. validación")  # pyright: ignore[reportUnknownMemberType]
@@ -194,7 +206,7 @@ def plot_roc_curve(y_true: list[int], y_prob: list[float], path: str | Path) -> 
             crea si no existe.
 
     Example:
-        >>> plot_roc_curve(y_true, y_prob, "runs/exp01/plots/roc_curve.png")
+        >>> plot_roc_curve(y_true, y_prob, "runs/exp01/test/roc_curve.png")
     """
     fpr, tpr, _ = BinaryROC()(torch.tensor(y_prob), torch.tensor(y_true))
     roc_auc = torch.trapz(tpr, fpr).item()
