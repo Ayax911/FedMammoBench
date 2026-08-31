@@ -1,0 +1,57 @@
+
+experiment_id: exp01_resnet_layer4_
+
+architecture:
+  name: resnet50_radimagenet
+  weights_path: checkpoints/RadImageNet-ResNet50_notop.pth
+  unfreeze_from: layer4
+
+head:
+  name: standard_mlp
+  hparams:
+    in_features: 2048   
+    hidden_dim: 512
+    dropout: 0.5
+    num_classes: 2      
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 0.0001
+    weight_decay: 0.01
+
+scheduler:
+  name: cosine          
+  hparams:
+    T_max: 50
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]
+
+data:
+  manifest_path: manifests/fedmammobench.csv
+  image_root: data/images   # raíz contra la que se resuelven las rutas relativas del manifest
+  batch_size: 32
+  num_workers: 4
+  seed: 42
+  image_size: [224, 224]
+  augmentation:              # solo aplica al split de train; val/test nunca se augmentan
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 10      
+    vertical_flip: false
+    blur: false
+
+train:
+  epochs: 50
+  metric_name: f1      # métrica de validación trackeada para el mejor checkpoint
+  metric_mode: max       # "max" (auc/f1/accuracy/sensitivity/specificity/precision) | "min" (loss)
+  patience: 10            # épocas sin mejora antes de early stopping; null desactiva
+  min_delta: 0.0
+  save_every: 10           # checkpoint periódico cada N épocas; null desactiva
+  checkpoint_dir: runs/exp_example_01/weights
+  run_dir: runs/exp_example_01
+  device: cuda              # "cpu" si no hay GPU
+  wandb_project: fedmammobench2.0        # nombre del proyecto W&B, o null para desactivarlo

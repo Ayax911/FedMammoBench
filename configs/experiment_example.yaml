@@ -1,0 +1,77 @@
+# Ejemplo de configuración de experimento centralizado — ResNet50 + RadImageNet,
+# cabeza MLP estándar, congelando todo el backbone salvo layer4.
+#
+# Validar sin correr nada:
+#   .venv/bin/python -c "from src.config import load_config; c = load_config('configs/experiment_example.yaml'); print(c.experiment_id)"
+#
+# Correr de punta a punta:
+#   .venv/bin/python -m src.cli --config configs/experiment_example.yaml
+
+experiment_id: exp_example_01
+
+# Backbone encoder (src/models/build.py). "resnet50_radimagenet" es la única
+# arquitectura registrada hoy.
+architecture:
+  name: resnet50_radimagenet
+  weights_path: checkpoints/RadImageNet-ResNet50_notop.pth
+  # Bloque desde el cual descongelar gradientes, en orden:
+  # conv1 < bn1 < relu < maxpool < layer1 < layer2 < layer3 < layer4 < avgpool
+  # "none" congela todo el backbone.
+  unfreeze_from: layer4
+
+# Cabeza de clasificación (src/models/heads.py). "standard_mlp" o "configurable_mlp".
+head:
+  name: standard_mlp
+  hparams:
+    in_features: 2048   # salida de ResNet50 tras global average pooling
+    hidden_dim: 512
+    dropout: 0.5
+    num_classes: 1      # 1 logit -> debe combinarse con loss.name: bce (ver abajo)
+
+# Optimizador (src/train/build.py). "adam" o "adamw".
+optimizer:
+  name: adamw
+  hparams:
+    lr: 0.0001
+    weight_decay: 0.01
+
+# Scheduler de LR — opcional. Borrar el bloque completo (o poner "null") para no usar ninguno.
+scheduler:
+  name: cosine          # o "reduceonplateu"
+  hparams:
+    T_max: 50
+
+# Función de pérdida (src/train/build.py). "bce" (1 logit), "cross_entropy" (2 logits)
+# o "focal" (2 logits). Debe calzar con head.hparams.num_classes.
+loss:
+  name: bce
+  hparams:
+    pos_weight: [1.9]   # opcional: compensa el desbalance ~66/34 benigno/maligno
+
+# Datos y DataLoaders (src/datasets/).
+data:
+  manifest_path: manifests/fedmammobench.csv
+  image_root: data/images   # raíz contra la que se resuelven las rutas relativas del manifest
+  batch_size: 32
+  num_workers: 4
+  seed: 42
+  image_size: [224, 224]
+  augmentation:              # solo aplica al split de train; val/test nunca se augmentan
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15      # 0 desactiva la rotación
+    vertical_flip: false
+    blur: false
+
+# Bucle de entrenamiento y persistencia (src/train/trainer.py).
+train:
+  epochs: 50
+  metric_name: auc      # métrica de validación trackeada para el mejor checkpoint
+  metric_mode: max       # "max" (auc/f1/accuracy/sensitivity/specificity/precision) | "min" (loss)
+  patience: 10            # épocas sin mejora antes de early stopping; null desactiva
+  min_delta: 0.0
+  save_every: 10           # checkpoint periódico cada N épocas; null desactiva
+  checkpoint_dir: runs/exp_example_01/weights
+  run_dir: runs/exp_example_01
+  device: cuda              # "cpu" si no hay GPU
+  wandb_project: null        # nombre del proyecto W&B, o null para desactivarlo
