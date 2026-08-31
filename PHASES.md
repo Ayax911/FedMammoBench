@@ -273,3 +273,87 @@ src.cli` ahora escribe archivos nuevos en `run_dir` (`metrics.json`,
 `predictions.csv`, `plots/`) que antes no existían. Nada de lo que ya se
 escribía (`config.yaml`, `metrics.csv` de `MetricsLogger`, checkpoints)
 cambia de formato o ubicación.
+
+---
+
+## Fase 5 — Cabeza MLP configurable + augmentación (flip vertical, blur)
+
+Rama: `phase5-head-augmentation`. Independiente de las fases 2-4 en
+contenido, solo depende de fase 1 por orden de merge.
+
+### Añadido
+
+- **[`src/models/mlp_configs/configurable_mlp.py`](src/models/mlp_configs/configurable_mlp.py)**
+  — `ConfigurableMLPHead(HeadBuilder)`: `hidden_layers: list[int]`
+  arbitraria, `activation` elegible por nombre (`relu`, `leakyrelu`,
+  `sigmoid`, `tanh`, `gelu`, `linear`), `use_batchnorm: bool = False`.
+  Complementa a `StandardMLPHead` (no la reemplaza — ambas quedan
+  registradas). Reproduce la cabeza `2048 → 1024 → 256` con GELU y
+  dropout 0.5 del proyecto INC (`classification_images/models/mlp_models.py`),
+  que `StandardMLPHead` (una sola capa oculta fija, `BatchNorm1d` siempre)
+  no podía expresar.
+
+### Modificado
+
+- **[`src/models/heads.py`](src/models/heads.py)** — registra
+  `"configurable_mlp"` en `_HEAD_STRATEGIES` junto a `"standard_mlp"`.
+- **[`src/datasets/transform.py`](src/datasets/transform.py)** —
+  `TransformBuilder` gana `use_vertical_flip`/`vertical_flip_p` y
+  `use_blur`/`blur_p`/`blur_kernel_size`/`blur_sigma`, portados de
+  `RandomVerticalFlip` y el `RandomGaussianBlur` casero del proyecto INC
+  (`classification_images/dataloaders/dataloader_images.py`). El blur se
+  implementa con `transforms.RandomApply([GaussianBlur(...)], p=...)` de
+  torchvision en vez de portar la clase `nn.Module` propia del INC — el
+  building block ya existe en la librería. Orden de augmentación
+  preservado como PIL-first (Resize → flips/rotación/blur → ToTensor →
+  Normalize), a diferencia del INC que hace `ToTensor` primero — ambos
+  órdenes son válidos con torchvision, se mantiene la convención existente
+  del repo en vez de adoptar la del INC.
+- **[`src/config.py`](src/config.py)** — nuevo modelo `AugmentationConfig`
+  (`horizontal_flip`, `horizontal_flip_p`, `rotation_degrees`,
+  `vertical_flip`, `vertical_flip_p`, `blur`, `blur_p`), anidado en
+  `DataConfig.augmentation`. Todos los defaults reproducen exactamente lo
+  que `src/cli.py` tenía hardcodeado (`use_horizontal_flip=True,
+  use_rotation=True`, sin flip vertical ni blur, `rotation_degrees` en el
+  default de `TransformBuilder`) — antes de esta fase, ninguno de esos
+  parámetros era alcanzable desde YAML.
+- **[`src/cli.py`](src/cli.py)** — el `TransformBuilder` de train ahora se
+  construye a partir de `config.data.augmentation` en vez de literales
+  hardcodeados; `use_rotation` se deriva de `rotation_degrees > 0` (una
+  sola fuente de verdad, no dos flags que puedan desincronizarse).
+
+### Verificación (runtime real)
+
+- **`ConfigurableMLPHead` con la arquitectura exacta del INC**
+  (`in_features=2048, hidden_layers=[2048, 1024, 256], activation="gelu",
+  dropout=0.5, num_classes=2, use_batchnorm=False`): `build()` produce la
+  secuencia de 11 capas esperada (`Flatten → [Linear→GELU→Dropout]×3 →
+  Linear`), un forward real con `torch.randn(4, 2048, 1, 1)` da salida
+  `[4, 2]`, y se confirma que no hay ningún `BatchNorm1d` en el módulo.
+- Casos borde: `hidden_layers=[]` produce un único `Linear` (sale `[2, 2]`
+  con entrada `[2, 64]`); `use_batchnorm=True` sí inserta `BatchNorm1d`;
+  `dropout=0.0` omite la capa `Dropout` por completo (no un `Dropout(p=0)`
+  inerte); `activation="bogus"` lanza `ValueError`.
+- Ambas cabezas (`"standard_mlp"`, `"configurable_mlp"`) resuelven
+  correctamente vía `get_head_strategy()`.
+- **`TransformBuilder`** con las cuatro augmentaciones activas
+  (`use_horizontal_flip, use_rotation, use_vertical_flip, use_blur`) sobre
+  una imagen PIL sintética real: el pipeline resultante trae
+  `RandomVerticalFlip` y `RandomApply` (el blur) en el orden esperado, y
+  produce un tensor `[3, 64, 64]` sin excepciones. El pipeline por defecto
+  (sin ningún flag) sigue siendo exactamente `[Resize, ToTensor,
+  Normalize]`, igual que antes de esta fase.
+- **`AugmentationConfig()` sin argumentos** reproduce los defaults exactos
+  que `cli.py` tenía hardcodeados antes de esta fase.
+- **`ExperimentConfig` completo, dos casos**: un YAML "old-style" sin
+  bloque `augmentation` ni campos nuevos de `train` valida igual que antes;
+  un YAML equivalente al experimento del proyecto INC
+  (`configurable_mlp` con `hidden_layers: [2048, 1024, 256]`,
+  `cross_entropy` con `weight: [2.0, 1.0]`, augmentación completa,
+  `metric_name: f1`, `patience: 50`) valida de punta a punta.
+
+### Compatibilidad
+
+Un `ExperimentConfig` que no mencione `head.name: configurable_mlp` ni
+`data.augmentation` se comporta exactamente igual que antes de esta fase —
+verificado explícitamente arriba, no solo argumentado.
