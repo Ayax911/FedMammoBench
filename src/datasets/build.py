@@ -65,6 +65,15 @@ def builder_dataloader(
             train_ds,
             batch_size=batch_size,
             shuffle=True,
+            # Obligatorio -- la cabeza (StandardMLPHead/ConfigurableMLPHead
+            # con use_batchnorm=True) usa BatchNorm1d, que lanza excepción
+            # con un batch de una sola muestra. Sin esto, cualquier
+            # combinación de len(train_df) % batch_size == 1 revienta a
+            # mitad de época (REFACTOR.md §6; ver PHASES.md fase 1).
+            # val/test nunca lo necesitan: siempre corren en eval() y
+            # _set_frozen_bn_eval()/model.eval() no actualiza running
+            # stats, así que un batch de 1 no es un problema ahí.
+            drop_last=True,
             num_workers=num_workers,
             worker_init_fn=seed_worker,
             generator=make_generator(seed),

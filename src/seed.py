@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 
-def set_global_seed(seed: int) -> None:
+def set_global_seed(seed: int, cudnn_deterministic: bool = True) -> None:
     """Fija la semilla en todas las fuentes de aleatoriedad del pipeline.
 
     Llamar UNA sola vez, al inicio de cada corrida, antes de construir
@@ -23,8 +23,19 @@ def set_global_seed(seed: int) -> None:
     separado para CPU y otro para CUDA — por eso hacen falta las cuatro
     llamadas en vez de una sola.
 
+    `cudnn_deterministic=True` (default) además fija
+    `torch.backends.cudnn.deterministic = True` y `benchmark = False`. Sin
+    esto, cuDNN puede elegir algoritmos de convolución no deterministas por
+    rendimiento — dos corridas con la misma semilla pueden dar resultados
+    distintos en GPU, lo que hace imposible verificar que una reimplementación
+    reproduce un baseline (ver PHASES.md fase 1). El coste es ~10-20% más
+    lento en GPU; desactivar solo si se necesita velocidad y no
+    reproducibilidad bit-a-bit.
+
     Args:
         seed: Valor entero de la semilla a aplicar globalmente.
+        cudnn_deterministic: si True, además fuerza cuDNN a modo determinista.
+            Sin efecto si no hay GPU disponible.
 
     Example:
         >>> set_global_seed(42)
@@ -33,6 +44,10 @@ def set_global_seed(seed: int) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)  # pyright: ignore[reportUnknownMemberType]
     torch.cuda.manual_seed_all(seed)  # pyright: ignore[reportUnknownMemberType]
+
+    if cudnn_deterministic:
+        torch.backends.cudnn.deterministic = True  # pyright: ignore[reportUnknownMemberType]
+        torch.backends.cudnn.benchmark = False  # pyright: ignore[reportUnknownMemberType]
 
 
 def seed_worker(worker_id: int) -> None:
