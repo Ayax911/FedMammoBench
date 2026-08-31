@@ -23,8 +23,15 @@ from .datasets.split import Split
 from .datasets.transform import TransformBuilder
 from .models.build import build_model
 from .models.heads import get_head_strategy
+from .reporting import (
+    plot_confusion_matrix,
+    plot_roc_curve,
+    save_metrics_json,
+    save_predictions_csv,
+)
 from .seed import set_global_seed
 from .train.build import build_loss, build_optimizer, build_scheduler
+from .train.evaluation import evaluate_checkpoint, predict_on_loader
 from .train.trainer import Trainer
 
 
@@ -115,6 +122,22 @@ def run(config: ExperimentConfig) -> None:
 
     best_checkpoint = trainer.fit(loaders["train"], loaders["val"], epochs=config.train.epochs)
     print(f"Mejor checkpoint: {best_checkpoint}")
+
+    # Evaluación final en test -- SIEMPRE con el mejor checkpoint que acaba
+    # de devolver fit(), nunca con el estado final del modelo ni con una
+    # bandera de config aparte que pueda desincronizarse de cuál fue
+    # realmente el mejor (ver docstring de Trainer.fit()).
+    test_metrics = evaluate_checkpoint(
+        model, best_checkpoint, loaders["test"], loss_spec, config.train.device
+    )
+    print(f"Test ({config.train.metric_name}={test_metrics[config.train.metric_name]:.4f}): {test_metrics}")
+
+    y_true, y_pred, y_prob = predict_on_loader(model, loaders["test"], loss_spec, config.train.device)
+
+    save_metrics_json(test_metrics, config.train.run_dir / "metrics.json")
+    save_predictions_csv(y_true, y_pred, y_prob, config.train.run_dir / "predictions.csv")
+    plot_confusion_matrix(y_true, y_pred, config.train.run_dir / "plots" / "confusion_matrix.png")
+    plot_roc_curve(y_true, y_prob, config.train.run_dir / "plots" / "roc_curve.png")
 
 
 def parse_args() -> argparse.Namespace:
