@@ -152,6 +152,10 @@ class TrainConfig(BaseModel):
         min_delta: mejora mínima para contar como mejora real, tanto para
             guardar checkpoint como para el contador de `patience`. Default
             `0.0`. El proyecto INC usa `0.005` sobre F1 de validación.
+        save_every: si se fija, guarda un checkpoint periódico cada
+            `save_every` épocas (independiente del mejor checkpoint), como
+            `--save_every 10` implícito en el proyecto INC. `None`
+            (default) no guarda checkpoints periódicos.
         checkpoint_dir: Directorio destino para archivos de peso `.pt`.
         run_dir: Directorio destino para archivos de logs (`metrics.csv`, TensorBoard).
         device: Dispositivo de cómputo (ej. `"cpu"`, `"cuda"`).
@@ -163,6 +167,7 @@ class TrainConfig(BaseModel):
         ...     metric_name="f1",
         ...     patience=50,
         ...     min_delta=0.005,
+        ...     save_every=10,
         ...     checkpoint_dir=Path("runs/exp01/weights"),
         ...     run_dir=Path("runs/exp01"),
         ...     device="cuda"
@@ -176,6 +181,7 @@ class TrainConfig(BaseModel):
     metric_mode: str = "max"
     patience: int | None = None
     min_delta: float = 0.0
+    save_every: int | None = None
     checkpoint_dir: Path
     run_dir: Path
     device: str = "cpu"

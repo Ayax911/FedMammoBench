@@ -357,3 +357,97 @@ contenido, solo depende de fase 1 por orden de merge.
 Un `ExperimentConfig` que no mencione `head.name: configurable_mlp` ni
 `data.augmentation` se comporta exactamente igual que antes de esta fase —
 verificado explícitamente arriba, no solo argumentado.
+
+---
+
+## Fase 6 — Checkpoints periódicos, desglose backbone/cabeza, duración por época
+
+Rama: `phase6-checkpoint-tracking`. Última fase de código de esta
+integración — mejoras de observabilidad, no bloqueantes.
+
+### Modificado
+
+- **[`src/checkpoint.py`](src/checkpoint.py)** — `save_checkpoint()` gana
+  `extra_state_dicts: dict[str, nn.Module] | None = None`. Cuando se pasa,
+  guarda además cada submódulo por separado
+  (`<path.stem>_<nombre><path.suffix>`), junto al checkpoint principal.
+  Generaliza `Best_Model_image.pth`/`Best_Model_classifier.pth` del
+  proyecto INC — pensado para cuando llegue la fase federada, donde solo
+  el backbone se agrega entre nodos: tener el checkpoint ya partido evita
+  reconstruir esa separación después.
+- **[`src/train/trainer.py`](src/train/trainer.py)** — `Trainer` gana
+  `save_every: int | None = None` (checkpoints periódicos
+  `epoch{N}.pt`, independientes del mejor). Además:
+  - `_split_state_dicts()`: si `self.model` es `nn.Sequential(backbone,
+    head)` (la forma exacta en la que `src/cli.py` ensambla el modelo),
+    devuelve `{"backbone": ..., "head": ...}` para pasarlo a
+    `save_checkpoint(extra_state_dicts=...)` en cada mejor checkpoint.
+    Cualquier otra forma de modelo devuelve `None` — el desglose es una
+    conveniencia, no un requisito.
+  - Cada época registra `duration_seconds` (via `time.time()`) en el dict
+    que se pasa a `MetricsLogger.log()` — sin cambios en `MetricsLogger`
+    en sí, que ya persiste lo que reciba.
+- **[`src/config.py`](src/config.py)** — `TrainConfig` gana `save_every:
+  int | None = None`, portado del guardado periódico implícito del
+  proyecto INC (`training.py`, cada 10 épocas).
+- **[`src/cli.py`](src/cli.py)** — pasa `config.train.save_every` al
+  constructor de `Trainer`.
+
+### Añadido
+
+Nada nuevo en esta fase — son extensiones de módulos ya existentes.
+
+### Verificación (runtime real)
+
+Entrenamiento de 6 épocas con `save_every=2` sobre un modelo
+`nn.Sequential(nn.Sequential(Linear, ReLU), Linear)` (la forma exacta
+`backbone + head` que ensambla `cli.py`):
+
+- Checkpoints periódicos `epoch0.pt`, `epoch2.pt`, `epoch4.pt` existen
+  (cada 2 épocas, como se pidió).
+- Para el mejor checkpoint, existen `best_epoch3_backbone.pt` y
+  `best_epoch3_head.pt` junto al `.pt` principal.
+- Esos dos archivos **cargan de verdad** con `load_state_dict()` en
+  submódulos frescos idénticos en forma — no solo "el archivo existe", sino
+  que el `state_dict` que contienen es válido para esa arquitectura.
+- `metrics.csv` de la corrida trae `duration_seconds` en cada fila, todas
+  no negativas.
+
+### Compatibilidad
+
+`save_every=None` (default) no guarda ningún checkpoint periódico, igual
+que antes de esta fase. `extra_state_dicts=None` (default) en
+`save_checkpoint()` no guarda ningún archivo adicional. Un modelo que no
+sea `nn.Sequential` de longitud 2 nunca activa el desglose backbone/cabeza
+— no falla, `_split_state_dicts()` simplemente devuelve `None`.
+
+---
+
+## Fuera de alcance de esta integración (deliberado)
+
+Del análisis original, dos puntos quedan fuera de estas seis fases:
+
+- **B4 — equivalencia `num_freeze` (INC) ↔ `unfreeze_from` (FedMammoBench).**
+  Es un análisis, no código: el proyecto INC congela por índice de
+  parámetro (`freeze_layers(model, num_freeze=80)`,
+  `classification_images/models/image_models.py`) mientras FedMammoBench
+  congela por nombre de bloque (`ResNetFreezeStrategy.block_order`). Para
+  saber a qué `unfreeze_from` equivale `num_freeze=80` hace falta
+  instanciar un `resnet50` real y contar `len(list(m.parameters()))`
+  acumulado por bloque — esta sesión no tiene pesos de RadImageNet
+  disponibles para reproducir el experimento exacto del INC, solo un venv
+  de scratch para verificar lógica con tensores sintéticos. Queda como
+  tarea abierta, no resuelta por omisión.
+- **C4 — inspección visual del batch** (`show_batch_images()` del INC,
+  guarda un PNG de muestras del train loader con sus etiquetas al
+  arrancar). Prioridad baja en el análisis original; no implementado.
+
+### Cierre de fases
+
+Con esta fase termina la implementación planeada. `develop` tiene las seis
+fases mergeadas con `--no-ff`; `main` no fue tocado. Antes de fusionar
+`develop` a `main`, validar contra un experimento real (pesos RadImageNet +
+`manifests/fedmammobench.csv`) — todo lo de arriba se verificó con modelos
+y datos sintéticos en un venv de scratch, nunca contra el pipeline completo
+con datos reales, porque ese entorno no está disponible en esta sesión (ver
+`CLAUDE.md`: sin venv, sin dependencias instaladas en el repo).

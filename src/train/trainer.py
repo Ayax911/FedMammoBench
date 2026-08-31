@@ -18,6 +18,7 @@ Ejemplo de uso:
     >>> best_ckpt = trainer.fit(train_loader, val_loader, epochs=10)
 """
 
+import time
 from pathlib import Path
 
 import torch
@@ -51,6 +52,8 @@ class Trainer:
         metric_name: Nombre de la métrica a trackear para guardar checkpoints (default `"auc"`).
         tracker: `EarlyStopping` que decide, cada época, si `metric_name`
             mejoró (según `metric_mode`) y si hay que detener el entrenamiento.
+        save_every: si no es `None`, cada cuántas épocas guardar un
+            checkpoint periódico además del mejor.
         wandb_project: Nombre opcional de proyecto en W&B.
         wandb_run_name: Nombre opcional de corrida en W&B.
 
@@ -72,6 +75,7 @@ class Trainer:
         metric_mode: str = "max",
         patience: int | None = None,
         min_delta: float = 0.0,
+        save_every: int | None = None,
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
     ) -> None:
@@ -104,6 +108,9 @@ class Trainer:
                 real, tanto para guardar checkpoint como para resetear el
                 contador de `patience`. Default `0.0`. El proyecto INC usa
                 `0.005` sobre F1 de validación.
+            save_every: si no es `None`, guarda un checkpoint periódico
+                (`epoch{N}.pt`, independiente del mejor) cada `save_every`
+                épocas. `None` (default) no guarda ninguno.
             wandb_project: opcional — pasado directo a MetricsLogger. None
                 (default) desactiva W&B por completo.
             wandb_run_name: opcional — nombre de esta corrida en W&B.
@@ -116,6 +123,7 @@ class Trainer:
         self.device = device
         self.scheduler = scheduler
         self.metric_name = metric_name
+        self.save_every = save_every
         self.wandb_project = wandb_project
         self.wandb_run_name = wandb_run_name
 
@@ -126,6 +134,18 @@ class Trainer:
     def best_metric(self) -> float:
         """Mejor valor de `metric_name` visto hasta ahora (delegado a `self.tracker`)."""
         return self.tracker.best_value
+
+    def _split_state_dicts(self) -> dict[str, nn.Module] | None:
+        """Backbone/cabeza por separado si `self.model` es `nn.Sequential(backbone, head)`.
+
+        Devuelve `None` para cualquier otra forma de modelo — el desglose es
+        una conveniencia (por ejemplo, para lo federado, donde solo el
+        backbone se agrega entre nodos), no un requisito. Ver
+        `checkpoint.save_checkpoint`'s `extra_state_dicts`.
+        """
+        if isinstance(self.model, nn.Sequential) and len(self.model) == 2:
+            return {"backbone": self.model[0], "head": self.model[1]}
+        return None
 
     def fit(
         self,
@@ -160,6 +180,8 @@ class Trainer:
             self.run_dir, wandb_project=self.wandb_project, wandb_run_name=self.wandb_run_name
         ) as logger:
             for epoch in range(epochs):
+                epoch_start = time.time()
+
                 train_metrics = train_one_epoch(
                     self.model, train_loader, self.optimizer, self.loss_spec, self.device
                 )
@@ -177,17 +199,28 @@ class Trainer:
                         self.best_checkpoint_path,
                         epoch=epoch,
                         metric_value=current_metric,
+                        extra_state_dicts=self._split_state_dicts(),
+                    )
+
+                if self.save_every is not None and epoch % self.save_every == 0:
+                    save_checkpoint(
+                        self.model,
+                        self.checkpoint_dir / f"epoch{epoch}.pt",
+                        epoch=epoch,
+                        metric_value=current_metric,
                     )
 
                 # MetricsLogger no distingue splits — combinar acá, con
                 # prefijo, en un solo dict por época (ver tracking.py).
                 epoch_metrics = {f"train_{k}": v for k, v in train_metrics.items()}
                 epoch_metrics.update({f"val_{k}": v for k, v in val_metrics.items()})
+                epoch_metrics["duration_seconds"] = round(time.time() - epoch_start, 2)
                 logger.log(epoch, epoch_metrics)
 
                 print(
                     f"[epoch {epoch}] train_loss={train_metrics['loss']:.4f} "
-                    f"val_{self.metric_name}={current_metric:.4f} (best={self.tracker.best_value:.4f})"
+                    f"val_{self.metric_name}={current_metric:.4f} (best={self.tracker.best_value:.4f}) "
+                    f"[{epoch_metrics['duration_seconds']:.1f}s]"
                 )
 
                 if self.tracker.should_stop:
