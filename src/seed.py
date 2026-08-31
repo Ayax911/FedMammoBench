@@ -43,11 +43,11 @@ def set_global_seed(seed: int, cudnn_deterministic: bool = True) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)  # pyright: ignore[reportUnknownMemberType]
-    torch.cuda.manual_seed_all(seed)  # pyright: ignore[reportUnknownMemberType]
+    torch.cuda.manual_seed_all(seed)
 
     if cudnn_deterministic:
-        torch.backends.cudnn.deterministic = True  # pyright: ignore[reportUnknownMemberType]
-        torch.backends.cudnn.benchmark = False  # pyright: ignore[reportUnknownMemberType]
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 
 def seed_worker(worker_id: int) -> None:
@@ -87,5 +87,5 @@ def make_generator(seed: int) -> torch.Generator:
         >>> loader = DataLoader(dataset, shuffle=True, generator=gen)
     """
     g = torch.Generator()
-    g.manual_seed(seed)  # pyright: ignore[reportUnknownMemberType]
+    g.manual_seed(seed)
     return g

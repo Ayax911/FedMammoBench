@@ -21,7 +21,7 @@ import csv
 from pathlib import Path
 from types import TracebackType
 
-from torch.utils.tensorboard import SummaryWriter  # pyright: ignore[reportMissingTypeStubs]
+from torch.utils.tensorboard import SummaryWriter
 
 
 def _wandb_credentials_cached() -> bool:
@@ -135,7 +135,7 @@ class MetricsLogger:
         entrenamiento — por eso también existe `__exit__`.
         """
         self._csv_file.close()
-        self._tb_writer.close()  # pyright: ignore[reportUnknownMemberType]
+        self._tb_writer.close()
         if self._wandb_run is not None:
             self._wandb_run.finish()
 

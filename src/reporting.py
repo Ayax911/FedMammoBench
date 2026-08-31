@@ -100,18 +100,18 @@ def plot_confusion_matrix(
     path.parent.mkdir(parents=True, exist_ok=True)
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(cm, cmap="Blues")
+    im = ax.imshow(cm, cmap="Blues")  # pyright: ignore[reportUnknownMemberType]
     for i in range(2):
         for j in range(2):
-            ax.text(j, i, str(int(cm[i, j])), ha="center", va="center", color="black")
-    ax.set_xticks([0, 1], labels=class_names)
-    ax.set_yticks([0, 1], labels=class_names)
-    ax.set_xlabel("Predicho")
-    ax.set_ylabel("Real")
-    ax.set_title("Matriz de confusión")
-    fig.colorbar(im, ax=ax)
+            ax.text(j, i, str(int(cm[i, j])), ha="center", va="center", color="black")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_xticks([0, 1], labels=class_names)  # pyright: ignore[reportUnknownMemberType]
+    ax.set_yticks([0, 1], labels=class_names)  # pyright: ignore[reportUnknownMemberType]
+    ax.set_xlabel("Predicho")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_ylabel("Real")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_title("Matriz de confusión")  # pyright: ignore[reportUnknownMemberType]
+    fig.colorbar(im, ax=ax)  # pyright: ignore[reportUnknownMemberType]
     fig.tight_layout()
-    fig.savefig(path, dpi=200)
+    fig.savefig(path, dpi=200)  # pyright: ignore[reportUnknownMemberType]
     plt.close(fig)
 
 
@@ -134,12 +134,12 @@ def plot_roc_curve(y_true: list[int], y_prob: list[float], path: str | Path) -> 
     path.parent.mkdir(parents=True, exist_ok=True)
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    ax.plot(fpr.numpy(), tpr.numpy(), label=f"ROC (AUC = {roc_auc:.3f})")
-    ax.plot([0, 1], [0, 1], "k--", label="Aleatorio")
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("Curva ROC")
-    ax.legend(loc="lower right")
+    ax.plot(fpr.numpy(), tpr.numpy(), label=f"ROC (AUC = {roc_auc:.3f})")  # pyright: ignore[reportUnknownMemberType]
+    ax.plot([0, 1], [0, 1], "k--", label="Aleatorio")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_xlabel("False Positive Rate")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_ylabel("True Positive Rate")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_title("Curva ROC")  # pyright: ignore[reportUnknownMemberType]
+    ax.legend(loc="lower right")  # pyright: ignore[reportUnknownMemberType]
     fig.tight_layout()
-    fig.savefig(path, dpi=200)
+    fig.savefig(path, dpi=200)  # pyright: ignore[reportUnknownMemberType]
     plt.close(fig)

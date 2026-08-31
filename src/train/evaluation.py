@@ -111,7 +111,7 @@ def predict_on_loader(
         probs = loss_spec.probs(outputs)
 
         y_true.extend(labels.detach().cpu().tolist())
-        y_prob.extend(probs.detach().cpu().tolist())
-        y_pred.extend((probs >= 0.5).long().detach().cpu().tolist())
+        y_prob.extend(probs.detach().cpu().tolist())  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        y_pred.extend((probs >= 0.5).long().detach().cpu().tolist())  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
     return y_true, y_pred, y_prob
