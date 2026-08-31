@@ -123,6 +123,7 @@ def run(config: ExperimentConfig) -> None:
         metric_mode=config.train.metric_mode,
         patience=config.train.patience,
         min_delta=config.train.min_delta,
+        save_every=config.train.save_every,
         wandb_project=config.train.wandb_project,
         wandb_run_name=config.experiment_id,
     )

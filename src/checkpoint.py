@@ -24,6 +24,7 @@ def save_checkpoint(
     *,
     epoch: int,
     metric_value: float,
+    extra_state_dicts: dict[str, nn.Module] | None = None,
 ) -> None:
     """Guarda el state_dict del modelo junto con metadata de la corrida en formato PyTorch.
 
@@ -32,9 +33,21 @@ def save_checkpoint(
         path: Ruta destino del archivo de pesos `.pt`. Se crea el directorio padre si no existe.
         epoch: Número de época en que se generó el checkpoint.
         metric_value: Valor numérico de la métrica de validación en esa época (para auditoría).
+        extra_state_dicts: submódulos adicionales a guardar por separado,
+            nombre -> módulo (ej. `{"backbone": model[0], "head": model[1]}`).
+            Cada uno se guarda como `<path.stem>_<nombre><path.suffix>`, junto
+            al archivo principal. Pensado para separar backbone/cabeza sin
+            reconstruir esa partición después — útil de cara a lo federado,
+            donde solo el backbone se agrega entre nodos. `None` (default)
+            no guarda nada adicional, igual que antes de este parámetro.
 
     Example:
         >>> save_checkpoint(model, "weights/best.pt", epoch=10, metric_value=0.912)
+        >>> # con desglose backbone/cabeza (model = nn.Sequential(backbone, head)):
+        >>> save_checkpoint(
+        ...     model, "weights/best.pt", epoch=10, metric_value=0.912,
+        ...     extra_state_dicts={"backbone": model[0], "head": model[1]},
+        ... )
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,6 +55,11 @@ def save_checkpoint(
         {"model_state_dict": model.state_dict(), "epoch": epoch, "metric_value": metric_value},
         path,
     )
+
+    if extra_state_dicts is not None:
+        for name, submodule in extra_state_dicts.items():
+            extra_path = path.with_name(f"{path.stem}_{name}{path.suffix}")
+            torch.save(submodule.state_dict(), extra_path)
 
 
 def load_checkpoint(
