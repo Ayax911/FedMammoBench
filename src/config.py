@@ -95,8 +95,19 @@ class TrainConfig(BaseModel):
     """Configuración del bucle de entrenamiento y persistencia (`train/trainer.py`).
 
     Attributes:
-        epochs: Número total de épocas a entrenar.
-        metric_name: Nombre de la métrica de validación a maximizar para guardar el mejor checkpoint (default: `"auc"`).
+        epochs: Número máximo de épocas a entrenar (puede terminar antes por
+            early stopping si `patience` está fijado).
+        metric_name: Nombre de la métrica de validación a trackear para
+            guardar el mejor checkpoint (default: `"auc"`).
+        metric_mode: `"max"` si más `metric_name` es mejor (auc, f1,
+            accuracy, sensitivity, specificity, precision), `"min"` si menos
+            es mejor (loss). Default `"max"`.
+        patience: épocas sin mejora antes de activar early stopping. `None`
+            (default) desactiva la parada temprana. Portado del
+            `--patience_early` del proyecto INC.
+        min_delta: mejora mínima para contar como mejora real, tanto para
+            guardar checkpoint como para el contador de `patience`. Default
+            `0.0`. El proyecto INC usa `0.005` sobre F1 de validación.
         checkpoint_dir: Directorio destino para archivos de peso `.pt`.
         run_dir: Directorio destino para archivos de logs (`metrics.csv`, TensorBoard).
         device: Dispositivo de cómputo (ej. `"cpu"`, `"cuda"`).
@@ -104,7 +115,10 @@ class TrainConfig(BaseModel):
 
     Example:
         >>> train_cfg = TrainConfig(
-        ...     epochs=20,
+        ...     epochs=200,
+        ...     metric_name="f1",
+        ...     patience=50,
+        ...     min_delta=0.005,
         ...     checkpoint_dir=Path("runs/exp01/weights"),
         ...     run_dir=Path("runs/exp01"),
         ...     device="cuda"
@@ -115,6 +129,9 @@ class TrainConfig(BaseModel):
 
     epochs: int
     metric_name: str = "auc"
+    metric_mode: str = "max"
+    patience: int | None = None
+    min_delta: float = 0.0
     checkpoint_dir: Path
     run_dir: Path
     device: str = "cpu"

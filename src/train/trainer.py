@@ -1,8 +1,9 @@
 """Orquestador del loop de entrenamiento.
 
-Es la única pieza de `train/` con memoria entre épocas — compara la métrica
-de validación contra la mejor vista hasta ahora, y guarda el checkpoint solo
-cuando mejora.
+Es la única pieza de `train/` con memoria entre épocas — delega en
+`EarlyStopping` (`train/early_stopping.py`) la comparación de la métrica de
+validación contra la mejor vista hasta ahora, y guarda el checkpoint solo
+cuando esa comparación dice que mejoró.
 
 Ejemplo de uso:
     >>> from src.train.trainer import Trainer
@@ -28,6 +29,7 @@ from torch.utils.data import DataLoader
 from ..checkpoint import save_checkpoint
 from ..tracking import MetricsLogger
 from .build import LossSpec
+from .early_stopping import EarlyStopping
 from .loop import evaluate, train_one_epoch
 
 
@@ -46,7 +48,9 @@ class Trainer:
         run_dir: Directorio para guardar logs (`metrics.csv`, TensorBoard).
         device: Dispositivo de cómputo (`"cpu"`, `"cuda"`).
         scheduler: Scheduler opcional de learning rate.
-        metric_name: Nombre de la métrica a maximizar para guardar checkpoints (default `"auc"`).
+        metric_name: Nombre de la métrica a trackear para guardar checkpoints (default `"auc"`).
+        tracker: `EarlyStopping` que decide, cada época, si `metric_name`
+            mejoró (según `metric_mode`) y si hay que detener el entrenamiento.
         wandb_project: Nombre opcional de proyecto en W&B.
         wandb_run_name: Nombre opcional de corrida en W&B.
 
@@ -65,6 +69,9 @@ class Trainer:
         device: str = "cpu",
         scheduler: LRScheduler | None = None,
         metric_name: str = "auc",
+        metric_mode: str = "max",
+        patience: int | None = None,
+        min_delta: float = 0.0,
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
     ) -> None:
@@ -82,8 +89,21 @@ class Trainer:
             device: dispositivo de entrenamiento ("cpu" o "cuda").
             scheduler: opcional — si se pasa, se llama scheduler.step() al
                 final de cada época.
-            metric_name: clave del dict que devuelve evaluate() a maximizar
+            metric_name: clave del dict que devuelve evaluate() a trackear
                 para decidir el mejor checkpoint. Default "auc".
+            metric_mode: "max" si más `metric_name` es mejor (auc, f1,
+                accuracy, sensitivity, specificity, precision — el caso
+                común), "min" si menos es mejor (loss). Antes de este
+                parámetro, `Trainer` siempre maximizaba sin importar la
+                métrica — ver PHASES.md fase 3.
+            patience: épocas sin mejora antes de detener el entrenamiento
+                temprano. `None` (default) desactiva la parada temprana y
+                corre las `epochs` completas, igual que antes de esta
+                opción existir.
+            min_delta: mejora mínima para que una época cuente como mejora
+                real, tanto para guardar checkpoint como para resetear el
+                contador de `patience`. Default `0.0`. El proyecto INC usa
+                `0.005` sobre F1 de validación.
             wandb_project: opcional — pasado directo a MetricsLogger. None
                 (default) desactiva W&B por completo.
             wandb_run_name: opcional — nombre de esta corrida en W&B.
@@ -99,8 +119,13 @@ class Trainer:
         self.wandb_project = wandb_project
         self.wandb_run_name = wandb_run_name
 
-        self.best_metric: float = float("-inf")
+        self.tracker = EarlyStopping(patience=patience, min_delta=min_delta, mode=metric_mode)
         self.best_checkpoint_path: Path | None = None
+
+    @property
+    def best_metric(self) -> float:
+        """Mejor valor de `metric_name` visto hasta ahora (delegado a `self.tracker`)."""
+        return self.tracker.best_value
 
     def fit(
         self,
@@ -109,12 +134,14 @@ class Trainer:
         epochs: int,
     ) -> Path:
         """Corre el loop completo de épocas: entrena, valida, y guarda el
-        checkpoint solo cuando la métrica de validación mejora.
+        checkpoint solo cuando la métrica de validación mejora. Si se
+        configuró `patience`, puede terminar antes de `epochs` por early
+        stopping (ver `self.tracker`, `train/early_stopping.py`).
 
         Args:
             train_loader: DataLoader de entrenamiento (shuffle=True).
             val_loader: DataLoader de validación (shuffle=False).
-            epochs: cantidad de épocas a correr.
+            epochs: cantidad máxima de épocas a correr.
 
         Returns:
             Path: Ruta al mejor checkpoint según self.metric_name — NUNCA el de
@@ -142,8 +169,8 @@ class Trainer:
                     self.scheduler.step()
 
                 current_metric = val_metrics[self.metric_name]
-                if current_metric > self.best_metric:
-                    self.best_metric = current_metric
+                improved = self.tracker.step(current_metric)
+                if improved:
                     self.best_checkpoint_path = self.checkpoint_dir / f"best_epoch{epoch}.pt"
                     save_checkpoint(
                         self.model,
@@ -160,8 +187,15 @@ class Trainer:
 
                 print(
                     f"[epoch {epoch}] train_loss={train_metrics['loss']:.4f} "
-                    f"val_{self.metric_name}={current_metric:.4f} (best={self.best_metric:.4f})"
+                    f"val_{self.metric_name}={current_metric:.4f} (best={self.tracker.best_value:.4f})"
                 )
+
+                if self.tracker.should_stop:
+                    print(
+                        f"Early stopping activado en época {epoch} "
+                        f"(sin mejora en {self.tracker.patience} épocas)"
+                    )
+                    break
 
         if self.best_checkpoint_path is None:
             raise RuntimeError(
