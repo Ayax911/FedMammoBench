@@ -142,10 +142,16 @@ class TrainConfig(BaseModel):
         epochs: Número máximo de épocas a entrenar (puede terminar antes por
             early stopping si `patience` está fijado).
         metric_name: Nombre de la métrica de validación a trackear para
-            guardar el mejor checkpoint (default: `"auc"`).
+            guardar el mejor checkpoint (default: `"auc"`). Debe ser una
+            clave de `build_metric_collection()` (`src/metrics.py`) o
+            `"loss"`. Para reproducir la serie de notebooks el criterio es
+            `"f1_macro"`, no `"f1"` — este último mide solo la clase
+            positiva y se clava en 0.0 cuando el modelo no predice ningún
+            maligno, lo que dispara el early stopping antes de tiempo (ver
+            la nota del módulo `src/metrics.py`).
         metric_mode: `"max"` si más `metric_name` es mejor (auc, f1,
-            accuracy, sensitivity, specificity, precision), `"min"` si menos
-            es mejor (loss). Default `"max"`.
+            f1_macro, accuracy, sensitivity, specificity, precision),
+            `"min"` si menos es mejor (loss). Default `"max"`.
         patience: épocas sin mejora antes de activar early stopping. `None`
             (default) desactiva la parada temprana. Portado del
             `--patience_early` del proyecto INC.

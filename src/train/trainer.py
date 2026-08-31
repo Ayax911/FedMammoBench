@@ -24,7 +24,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LRScheduler
+from torch.optim.lr_scheduler import LRScheduler, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
 from ..checkpoint import save_checkpoint
@@ -54,6 +54,11 @@ class Trainer:
             mejoró (según `metric_mode`) y si hay que detener el entrenamiento.
         save_every: si no es `None`, cada cuántas épocas guardar un
             checkpoint periódico además del mejor.
+        best_epoch: índice (base 0) de la época que produjo el mejor
+            checkpoint, o `None` si `fit()` todavía no corrió.
+        history: una entrada por época con las mismas claves que se
+            escriben en `metrics.csv` (`train_*`, `val_*`,
+            `duration_seconds`). Poblado por `fit()`.
         wandb_project: Nombre opcional de proyecto en W&B.
         wandb_run_name: Nombre opcional de corrida en W&B.
 
@@ -129,6 +134,11 @@ class Trainer:
 
         self.tracker = EarlyStopping(patience=patience, min_delta=min_delta, mode=metric_mode)
         self.best_checkpoint_path: Path | None = None
+        # Historial en memoria además de metrics.csv: `src/cli.py` lo necesita
+        # para graficar la curva de pérdida sin volver a parsear el CSV que
+        # MetricsLogger acaba de escribir.
+        self.best_epoch: int | None = None
+        self.history: list[dict[str, float]] = []
 
     @property
     def best_metric(self) -> float:
@@ -187,12 +197,23 @@ class Trainer:
                 )
                 val_metrics = evaluate(self.model, val_loader, self.loss_spec, self.device)
 
-                if self.scheduler is not None:
+                current_metric = val_metrics[self.metric_name]
+
+                # ReduceLROnPlateau necesita la métrica para decidir si bajar el
+                # LR; el resto de schedulers avanza solo por número de época y
+                # rechaza el argumento. Sin este reparto, `scheduler.step()` a
+                # secas rompía con TypeError toda config que eligiera
+                # "reduceonplateu" (ver train/build.py:_SCHEDULERS).
+                # Ojo: el `mode` de ReduceLROnPlateau se fija en el YAML y debe
+                # coincidir con `metric_mode` — nada los sincroniza.
+                if isinstance(self.scheduler, ReduceLROnPlateau):
+                    self.scheduler.step(current_metric)
+                elif self.scheduler is not None:
                     self.scheduler.step()
 
-                current_metric = val_metrics[self.metric_name]
                 improved = self.tracker.step(current_metric)
                 if improved:
+                    self.best_epoch = epoch
                     self.best_checkpoint_path = self.checkpoint_dir / f"best_epoch{epoch}.pt"
                     save_checkpoint(
                         self.model,
@@ -215,6 +236,7 @@ class Trainer:
                 epoch_metrics = {f"train_{k}": v for k, v in train_metrics.items()}
                 epoch_metrics.update({f"val_{k}": v for k, v in val_metrics.items()})
                 epoch_metrics["duration_seconds"] = round(time.time() - epoch_start, 2)
+                self.history.append(epoch_metrics)
                 logger.log(epoch, epoch_metrics)
 
                 print(
