@@ -40,6 +40,12 @@ scheduler:
   name: cosine          # o "reduceonplateu"
   hparams:
     T_max: 50
+    # Notación científica: SIEMPRE con punto decimal en la mantisa
+    # (1.0e-7, no 1e-7). PyYAML no reconoce "1e-7" como float y lo carga
+    # como string, que revienta recién dentro del scheduler.
+    eta_min: 1.0e-7
+# Con "reduceonplateu", su hparam "mode" debe coincidir con train.metric_mode
+# de abajo — nada los sincroniza automáticamente.
 
 # Función de pérdida (src/train/build.py). "bce" (1 logit), "cross_entropy" (2 logits)
 # o "focal" (2 logits). Debe calzar con head.hparams.num_classes.
@@ -66,8 +72,13 @@ data:
 # Bucle de entrenamiento y persistencia (src/train/trainer.py).
 train:
   epochs: 50
-  metric_name: auc      # métrica de validación trackeada para el mejor checkpoint
-  metric_mode: max       # "max" (auc/f1/accuracy/sensitivity/specificity/precision) | "min" (loss)
+  # Métrica de validación trackeada para el mejor checkpoint y el early stopping.
+  # Para reproducir la serie de notebooks: "f1_macro" (promedio de ambas clases).
+  # NO usar "f1" a secas -- mide solo la clase positiva, vale 0.0 exacto mientras
+  # el modelo no prediga ningún maligno, y esa racha de ceros dispara el early
+  # stopping dejando como "mejor" el checkpoint de la época 0.
+  metric_name: f1_macro
+  metric_mode: max       # "max" (auc/f1/f1_macro/accuracy/sensitivity/specificity/precision) | "min" (loss)
   patience: 10            # épocas sin mejora antes de early stopping; null desactiva
   min_delta: 0.0
   save_every: 10           # checkpoint periódico cada N épocas; null desactiva

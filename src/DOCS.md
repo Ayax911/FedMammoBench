@@ -92,7 +92,10 @@ print(f"Cargado checkpoint de la época {metadata['epoch']} (AUC: {metadata['met
 
 Centraliza las métricas de evaluación para clasificación binaria de mamografías usando `torchmetrics`.
 
-* **`build_metric_collection(device="cpu")`**: Retorna una `MetricCollection` con `accuracy`, `auc`, `sensitivity` (recall positivo) y `specificity`.
+* **`build_metric_collection(device="cpu")`**: Retorna una `MetricCollection` con `accuracy`, `auc`, `sensitivity` (recall positivo), `specificity`, `f1`, `f1_macro` y `precision`. Todas se actualizan con la misma llamada `update(probs, labels)`, donde `probs` es la probabilidad de la clase positiva con shape `[B]`.
+* **`BinaryMacroF1Score(threshold=0.5)`**: F1-macro binario (promedio del F1 de ambas clases), equivalente a `sklearn.metrics.f1_score(..., average="macro")` — el criterio de mejor checkpoint de la serie de notebooks. torchmetrics no trae un equivalente binario: `MulticlassF1Score` espera `[B, C]` o etiquetas enteras, no la probabilidad `[B]` con la que se alimenta esta colección.
+
+> **`"f1"` vs `"f1_macro"` en `train.metric_name`.** `f1` (`BinaryF1Score`) mide **solo la clase positiva** y vale `0.0` exacto mientras el modelo no prediga ningún maligno — el estado normal de las primeras épocas con el backbone congelado y el desbalance ~66/34 del manifest. Como `EarlyStopping` exige mejora estricta, esa racha de ceros no resetea el contador de paciencia: con `patience: 10` la corrida se detiene en la época 10 y `fit()` devuelve el checkpoint de la **época 0**, o sea un modelo sin entrenar. Usar `f1_macro` para reproducir los notebooks.
 
 #### Cómo usar `metrics.py`:
 ```python
