@@ -15,10 +15,11 @@ hace el INC — para no añadir una dependencia nueva solo por dos funciones.
 en `src/` necesita graficar.
 
 Ejemplo de uso:
-    >>> from src.reporting import save_metrics_json, save_predictions_csv, plot_confusion_matrix, plot_roc_curve
+    >>> from src.reporting import save_metrics_json, save_predictions_csv, plot_confusion_matrix, plot_loss_curve, plot_roc_curve
     >>> save_metrics_json(test_metrics, run_dir / "metrics.json")
     >>> save_predictions_csv(y_true, y_pred, y_prob, run_dir / "predictions.csv")
     >>> plot_confusion_matrix(y_true, y_pred, run_dir / "plots" / "confusion_matrix.png")
+    >>> plot_loss_curve(train_hist, val_hist, run_dir / "plots" / "loss_curve.png", best_epoch=7)
     >>> plot_roc_curve(y_true, y_prob, run_dir / "plots" / "roc_curve.png")
 """
 
@@ -110,6 +111,74 @@ def plot_confusion_matrix(
     ax.set_ylabel("Real")  # pyright: ignore[reportUnknownMemberType]
     ax.set_title("Matriz de confusión")  # pyright: ignore[reportUnknownMemberType]
     fig.colorbar(im, ax=ax)  # pyright: ignore[reportUnknownMemberType]
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)  # pyright: ignore[reportUnknownMemberType]
+    plt.close(fig)
+
+
+def plot_loss_curve(
+    train_loss: list[float],
+    val_loss: list[float],
+    path: str | Path,
+    best_epoch: int | None = None,
+) -> None:
+    """Grafica pérdida de entrenamiento vs. validación por época.
+
+    Equivalente al `plots/loss_curve.png` de la serie de notebooks — el
+    gráfico de diagnóstico principal, y el único que faltaba por completo
+    en este pipeline pese a que `metrics.csv` ya guardaba los datos.
+
+    A diferencia del notebook, el eje Y no se fija a `(0, 1)`: con
+    `CrossEntropyLoss` ponderada la pérdida arranca por encima de 1 y
+    recortarla esconde justo las primeras épocas.
+
+    Args:
+        train_loss: pérdida media de entrenamiento por época, en orden.
+        val_loss: pérdida media de validación por época, mismo largo que
+            `train_loss`.
+        path: ruta destino de la imagen `.png`. El directorio padre se
+            crea si no existe.
+        best_epoch: índice (base 0) de la época del mejor checkpoint. Si
+            se pasa, se marca con una línea vertical. `None` no dibuja nada.
+
+    Raises:
+        ValueError: si `train_loss` y `val_loss` tienen distinto largo, o
+            si están vacíos.
+
+    Example:
+        >>> plot_loss_curve(train_hist, val_hist, "runs/exp01/plots/loss_curve.png", best_epoch=7)
+    """
+    if len(train_loss) != len(val_loss):
+        raise ValueError(
+            f"train_loss y val_loss deben tener el mismo largo — "
+            f"recibidos {len(train_loss)} y {len(val_loss)}"
+        )
+    if not train_loss:
+        raise ValueError("No hay ninguna época que graficar (historial vacío).")
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Épocas en base 1 para el eje, aunque best_epoch llegue en base 0 (como
+    # lo numera Trainer.fit()) -- el +1 se aplica una sola vez, acá.
+    epochs = range(1, len(train_loss) + 1)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(epochs, train_loss, label="Training loss", color="#1f77b4")  # pyright: ignore[reportUnknownMemberType]
+    ax.plot(epochs, val_loss, label="Validation loss", color="#d62728")  # pyright: ignore[reportUnknownMemberType]
+    if best_epoch is not None:
+        ax.axvline(  # pyright: ignore[reportUnknownMemberType]
+            best_epoch + 1,
+            linestyle="--",
+            color="gray",
+            lw=1,
+            label=f"Mejor época ({best_epoch + 1})",
+        )
+    ax.set_xlabel("Época")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_ylabel("Loss")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_title("Pérdida de entrenamiento vs. validación")  # pyright: ignore[reportUnknownMemberType]
+    ax.grid(True, linestyle="--", alpha=0.4)  # pyright: ignore[reportUnknownMemberType]
+    ax.legend()  # pyright: ignore[reportUnknownMemberType]
     fig.tight_layout()
     fig.savefig(path, dpi=200)  # pyright: ignore[reportUnknownMemberType]
     plt.close(fig)

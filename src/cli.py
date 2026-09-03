@@ -25,6 +25,7 @@ from .models.build import build_model
 from .models.heads import get_head_strategy
 from .reporting import (
     plot_confusion_matrix,
+    plot_loss_curve,
     plot_roc_curve,
     save_metrics_json,
     save_predictions_csv,
@@ -134,6 +135,15 @@ def run(config: ExperimentConfig) -> None:
 
     best_checkpoint = trainer.fit(loaders["train"], loaders["val"], epochs=config.train.epochs)
     print(f"Mejor checkpoint: {best_checkpoint}")
+
+    # Curva de pérdida: se grafica desde trainer.history (mismo contenido que
+    # metrics.csv) antes de tocar test, porque solo depende del entrenamiento.
+    plot_loss_curve(
+        [epoch_metrics["train_loss"] for epoch_metrics in trainer.history],
+        [epoch_metrics["val_loss"] for epoch_metrics in trainer.history],
+        config.train.run_dir / "plots" / "loss_curve.png",
+        best_epoch=trainer.best_epoch,
+    )
 
     # Evaluación final en test -- SIEMPRE con el mejor checkpoint que acaba
     # de devolver fit(), nunca con el estado final del modelo ni con una
