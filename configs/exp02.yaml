@@ -1,5 +1,5 @@
 
-experiment_id: exp01_resnet_layer4_test
+experiment_id: Classification_Images_HL1024-512_lr1e-4_dr0.2
 
 architecture:
   name: resnet50_radimagenet
@@ -7,52 +7,55 @@ architecture:
   unfreeze_from: layer4
 
 head:
-  name: standard_mlp
+  name: configurable_mlp
   hparams:
-    in_features: 2048   
-    hidden_dim: 512
-    dropout: 0.5
-    num_classes: 2      
+    in_features: 2048
+    hidden_layers: [1024, 512]
+    activation: leakyrelu
+    dropout: 0.2
+    num_classes: 2     
 
 optimizer:
-  name: adamw
+  name: adam
   hparams:
-    lr: 0.0001
-    weight_decay: 0.01
+    lr: 1.0e-4          
+    betas: [0.5, 0.999]
 
 scheduler:
-  name: cosine          
+  name: cosine
   hparams:
-    T_max: 50
-    eta_min: 1.0e-7
+    T_max: 200
+    eta_min: 1.0e-6  
 
 loss:
   name: cross_entropy
   hparams:
-    weight: [0.7593, 1.4642]
+    weight: [3.22, 0.59]
 
 data:
-  manifest_path: manifests/fedmammobench.csv
-  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench
-  batch_size: 32
+  manifest_path: manifests/dataset_split_formatted.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/data
+  batch_size: 64
   num_workers: 4
   seed: 42
   image_size: [224, 224]
   augmentation:              # solo aplica al split de train; val/test nunca se augmentan
     horizontal_flip: true
     horizontal_flip_p: 0.5
-    rotation_degrees: 10      
-    vertical_flip: false
-    blur: false
+    rotation_degrees: 15      
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
 
 train:
-  epochs: 50
+  epochs: 200
   metric_name: f1_macro      # métrica de validación trackeada para el mejor checkpoint
   metric_mode: max       # "max" (auc/f1/accuracy/sensitivity/specificity/precision) | "min" (loss)
-  patience: 20            # épocas sin mejora antes de early stopping; null desactiva
-  min_delta: 0.0
+  patience: 100            # épocas sin mejora antes de early stopping; null desactiva
+  min_delta: 0.005
   save_every: 10           # checkpoint periódico cada N épocas; null desactiva
-  checkpoint_dir: runs/exp01_resnet_layer4_test/weights
-  run_dir: runs/exp01_resnet_layer4_test
+  checkpoint_dir: runs/Classification_Images_HL1024-512_lr1e-4_dr0.2/weights
+  run_dir: runs/Classification_Images_HL1024-512_lr1e-4_dr0.2
   device: cuda              # "cpu" si no hay GPU
   wandb_project: fedmammobench2.0        # nombre del proyecto W&B, o null para desactivarlo
