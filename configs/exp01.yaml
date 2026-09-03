@@ -1,9 +1,9 @@
 
-experiment_id: exp01_resnet_layer4_
+experiment_id: exp01_resnet_layer4_test
 
 architecture:
   name: resnet50_radimagenet
-  weights_path: checkpoints/RadImageNet-ResNet50_notop.pth
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
   unfreeze_from: layer4
 
 head:
@@ -24,6 +24,7 @@ scheduler:
   name: cosine          
   hparams:
     T_max: 50
+    eta_min: 1.0e-7
 
 loss:
   name: cross_entropy
@@ -32,7 +33,7 @@ loss:
 
 data:
   manifest_path: manifests/fedmammobench.csv
-  image_root: data/images   # raíz contra la que se resuelven las rutas relativas del manifest
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench
   batch_size: 32
   num_workers: 4
   seed: 42

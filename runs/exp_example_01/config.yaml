@@ -1,0 +1,57 @@
+experiment_id: exp01_resnet_layer4_test
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal
+    Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: layer4
+head:
+  name: standard_mlp
+  hparams:
+    in_features: 2048
+    hidden_dim: 512
+    dropout: 0.5
+    num_classes: 2
+optimizer:
+  name: adamw
+  hparams:
+    lr: 0.0001
+    weight_decay: 0.01
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 50
+    eta_min: 1.0e-07
+loss:
+  name: cross_entropy
+  hparams:
+    weight:
+    - 0.7593
+    - 1.4642
+data:
+  manifest_path: manifests/fedmammobench.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench
+  batch_size: 32
+  num_workers: 4
+  seed: 42
+  image_size:
+  - 224
+  - 224
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 10
+    vertical_flip: false
+    vertical_flip_p: 0.5
+    blur: false
+    blur_p: 0.3
+train:
+  epochs: 50
+  metric_name: f1
+  metric_mode: max
+  patience: 10
+  min_delta: 0.0
+  save_every: 10
+  checkpoint_dir: runs/exp_example_01/weights
+  run_dir: runs/exp_example_01
+  device: cuda
+  wandb_project: fedmammobench2.0
