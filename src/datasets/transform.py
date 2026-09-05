@@ -29,8 +29,15 @@ class TransformBuilder:
         blur_p: Probability of applying the blur (used if `use_blur=True`). Default is 0.3.
         blur_kernel_size: Kernel size for `GaussianBlur`. Default is 3.
         blur_sigma: `(min, max)` range for `GaussianBlur`'s sigma. Default is `(0.1, 0.6)`.
-        normalize_mean: Per-channel normalization mean tuple `(R, G, B)`. Default is `(0.5, 0.5, 0.5)`.
-        normalize_std: Per-channel normalization standard deviation tuple `(R, G, B)`. Default is `(0.5, 0.5, 0.5)`.
+        normalize_mean: Per-channel normalization mean tuple. Default is `(0.5, 0.5, 0.5)`
+            (3-channel, for images `MammoBenchDataset` converts to `"RGB"` before this
+            pipeline runs). Length must match the channel count `Normalize` will see: 3 for
+            standard RGB-converted images, but 1 (e.g. `(0.0,)`) for pre-normalized
+            single-channel float TIFFs (PIL mode `"F"`), since those skip `.convert()` and
+            stay 1-channel through this whole pipeline -- `MammoBenchDataset` only expands
+            them to 3 channels *after* `transform` (and therefore after `Normalize`) runs.
+        normalize_std: Per-channel normalization standard deviation tuple, same length
+            constraint as `normalize_mean`. Default is `(0.5, 0.5, 0.5)`.
 
     Example:
         >>> from src.datasets.transform import TransformBuilder
