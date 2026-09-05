@@ -44,6 +44,7 @@ class ConfigurableMLPHead(HeadBuilder):
         dropout: float = 0.5,
         num_classes: int = 2,
         use_batchnorm: bool = False,
+        negative_slope: float = 0.01,
     ) -> None:
         """Inicializa los parámetros de la cabeza configurable.
 
@@ -66,6 +67,12 @@ class ConfigurableMLPHead(HeadBuilder):
                 `Linear` oculto, como `StandardMLPHead`. El proyecto INC no
                 lo usa — default `False`; activarlo es una variante propia,
                 no parte de la reproducción.
+            negative_slope: pendiente de la rama negativa, SOLO para
+                `activation="leakyrelu"` (se ignora en las demás). Default
+                `0.01`, el de `nn.LeakyReLU`. El proyecto INC usa `0.2`
+                (`classification_images/models/mlp_models.py:get_activation`
+                devuelve `nn.LeakyReLU(0.2)`), así que reproducirlo exige
+                pasar `negative_slope: 0.2` explícitamente.
 
         Raises:
             ValueError: si `activation` no está en las opciones soportadas.
@@ -81,6 +88,7 @@ class ConfigurableMLPHead(HeadBuilder):
         self.dropout = dropout
         self.num_classes = num_classes
         self.use_batchnorm = use_batchnorm
+        self.negative_slope = negative_slope
 
     def build(self) -> nn.Sequential:
         """Ensambla la cabeza según la configuración.
@@ -96,11 +104,17 @@ class ConfigurableMLPHead(HeadBuilder):
         layers: list[nn.Module] = [nn.Flatten()]
         prev_size = self.in_features
 
+        # `negative_slope` solo existe en LeakyReLU; el resto de activaciones
+        # se construyen sin argumentos.
+        activation_kwargs = (
+            {"negative_slope": self.negative_slope} if self.activation == "leakyrelu" else {}
+        )
+
         for hidden_size in self.hidden_layers:
             layers.append(nn.Linear(prev_size, hidden_size))
             if self.use_batchnorm:
                 layers.append(nn.BatchNorm1d(hidden_size))
-            layers.append(_ACTIVATIONS[self.activation]())
+            layers.append(_ACTIVATIONS[self.activation](**activation_kwargs))
             if self.dropout > 0:
                 layers.append(nn.Dropout(p=self.dropout))
             prev_size = hidden_size
