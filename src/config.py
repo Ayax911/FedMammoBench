@@ -115,6 +115,19 @@ class DataConfig(BaseModel):
         augmentation: Configuración de augmentación del train split — ver
             `AugmentationConfig`. val/test nunca se augmentan
             (`src/cli.py` construye su `TransformBuilder` sin pasarle esto).
+        normalize_mean: media por canal `(R, G, B)` de `transforms.Normalize`,
+            aplicada tanto en train como en val/test. Default `(0.5, 0.5, 0.5)`,
+            el mismo que traía hardcodeado `TransformBuilder` antes de que
+            este campo existiera — un YAML que no lo mencione se comporta
+            igual que antes.
+        normalize_std: desviación estándar por canal `(R, G, B)` de
+            `transforms.Normalize`. Default `(0.5, 0.5, 0.5)`.
+
+            `mean=(0,0,0)` + `std=(1,1,1)` deja los píxeles en `[0, 1]`, es
+            decir desactiva la normalización — que es exactamente lo que
+            hace el proyecto INC, cuyo `dataloader_images.py` aplica solo
+            `ToTensor()` sin ningún `Normalize`. Úsalo para reproducirlo;
+            el default `0.5/0.5` (rango `[-1, 1]`) NO es equivalente.
 
     Example:
         >>> data_cfg = DataConfig(
@@ -133,6 +146,8 @@ class DataConfig(BaseModel):
     seed: int = 42
     image_size: tuple[int, int] = (224, 224)
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
+    normalize_mean: tuple[float, float, float] = (0.5, 0.5, 0.5)
+    normalize_std: tuple[float, float, float] = (0.5, 0.5, 0.5)
 
 
 class TrainConfig(BaseModel):
