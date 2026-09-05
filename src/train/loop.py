@@ -2,7 +2,11 @@
 
 Proporciona `train_one_epoch()` y `evaluate()`, respetando el congelamiento
 estadístico de capas BatchNorm congeladas y aislando el cálculo de pérdida y
-probabilidades mediante `LossSpec`.
+probabilidades mediante `LossSpec`. Ambas devuelven exactamente las mismas
+claves (`"loss"` + las siete de `build_metric_collection()`) -- así
+`Trainer.fit()` puede combinarlas con prefijo `train_`/`val_` en un solo
+dict por época sin casos especiales, y graficarse en pares train-vs-val
+(ver `reporting.py:plot_metric_curve()`).
 
 Ejemplo de uso:
     >>> from src.train.loop import train_one_epoch, evaluate
@@ -47,16 +51,25 @@ def train_one_epoch(
             pesos estén congelados.
 
     Returns:
-        dict[str, float]: Diccionario con la pérdida promedio `{"loss": float}`.
+        dict[str, float]: mismas claves que `evaluate()` -- `"loss"` +
+        métricas clínicas (`"accuracy"`, `"auc"`, `"sensitivity"`,
+        `"specificity"`, `"f1"`, `"f1_macro"`, `"precision"`) -- acumuladas
+        sobre las predicciones de entrenamiento de esta época, no solo la
+        pérdida. Antes de esto, `train_one_epoch()` solo devolvía `"loss"`;
+        `Trainer.fit()` ya prefija cada clave con `train_` al combinarlas en
+        `trainer.history` (ver `Trainer.fit()`), así que agregar claves acá
+        las hace aparecer automáticamente ahí, en `metrics.csv`, TensorBoard
+        y W&B (`MetricsLogger.log()`) sin tocar nada más.
 
     Example:
         >>> train_metrics = train_one_epoch(model, train_loader, optimizer, loss_spec, "cuda")
-        >>> print(f"Train loss: {train_metrics['loss']:.4f}")
+        >>> print(f"Train loss: {train_metrics['loss']:.4f}, AUC: {train_metrics['auc']:.4f}")
     """
     model.train()
     if freeze_bn_stats:
         _set_frozen_bn_eval(model)
 
+    metrics = build_metric_collection(device)
     total_loss = 0.0
     n_batches = 0
 
@@ -69,10 +82,21 @@ def train_one_epoch(
         loss.backward()  # pyright: ignore[reportUnknownMemberType]
         optimizer.step()
 
+        # Sin gradiente -- el paso de optimización ya terminó, esto solo
+        # acumula estado para las métricas (mismo patrón que evaluate()).
+        # outputs sigue con su grafo de autograd intacto en este punto;
+        # .detach() antes de loss_spec.probs() evita retenerlo un batch de
+        # más innecesariamente.
+        with torch.no_grad():
+            probs = loss_spec.probs(outputs.detach())
+            metrics.update(probs, labels)
+
         total_loss += loss.item()
         n_batches += 1
 
-    return {"loss": total_loss / n_batches}
+    result = {k: v.item() for k, v in metrics.compute().items()}
+    result["loss"] = total_loss / n_batches
+    return result
 
 
 def _set_frozen_bn_eval(model: nn.Module) -> None:
