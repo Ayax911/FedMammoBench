@@ -11,15 +11,30 @@ mismo "degradar a offline sin bloquear nunca" que ya usan las celdas de W&B
 de los notebooks (ver exp23), pero automático en vez de una verificación
 manual antes de correr.
 
+Más allá de `log()` (una fila por época), `log_image()`/`log_summary()`/
+`log_table()` cubren lo que produce `cli.run()` después de `fit()` --
+plots ya guardados en disco, métricas de test de una sola medición, y
+`predictions.csv` -- para que la corrida de W&B tenga los mismos artefactos
+que `run_dir/`, no solo las curvas por época. Las tres son no-op si
+`wandb_project` es None, igual que `log()`.
+
+`cli.run()` es dueño de la corrida de W&B: la abre antes de construir
+`Trainer` y la cierra después de terminar la evaluación de test, para que
+un solo `with MetricsLogger(...)` cubra entrenamiento + test (`Trainer.fit()`
+ya no abre ni cierra su propia corrida si se le inyecta un `logger`).
+
 Ejemplo de uso:
     >>> from src.tracking import MetricsLogger
     >>> with MetricsLogger(run_dir="runs/exp01") as logger:
     ...     logger.log(epoch=1, metrics={"train_loss": 0.5, "val_auc": 0.8})
+    ...     logger.log_image("plots/loss_curve", "runs/exp01/plots/loss_curve.png")
+    ...     logger.log_summary({"test_auc": 0.91})
 """
 
 import csv
 from pathlib import Path
 from types import TracebackType
+from typing import Any
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -60,6 +75,7 @@ class MetricsLogger:
         run_dir: str | Path,
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         """Prepara el destino de metrics.csv, el writer de TensorBoard, y (si se pide) W&B.
 
@@ -70,6 +86,10 @@ class MetricsLogger:
                 W&B queda completamente desactivado, `wandb` ni se importa.
             wandb_run_name: Nombre de esta corrida en W&B. Ignorado si
                 `wandb_project` es None.
+            config: Hiperparámetros de la corrida (típicamente
+                `ExperimentConfig.model_dump(mode="json")`) para que W&B
+                pueda agrupar/filtrar corridas por config. Ignorado si
+                `wandb_project` es None; nunca se escribe a CSV ni TensorBoard.
         """
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +112,7 @@ class MetricsLogger:
                 name=wandb_run_name,
                 dir=str(self.run_dir),
                 mode=mode,
+                config=config,
             )
 
     def log(self, epoch: int, metrics: dict[str, float]) -> None:
@@ -127,6 +148,66 @@ class MetricsLogger:
 
         if self._wandb_run is not None:
             self._wandb_run.log(metrics, step=epoch)
+
+    def log_image(self, name: str, path: str | Path) -> None:
+        """Sube un PNG ya guardado en disco (`src/reporting.py`) a W&B. No-op sin W&B activo.
+
+        Deliberadamente sin `step=` -- se llama después de la última época
+        (curva de pérdida, matriz de confusión, ROC son todos productos de
+        `cli.run()` posteriores a `fit()`), así que un `step` menor a
+        `epochs - 1` haría que W&B descarte el log por ir "hacia atrás" en
+        la serie. Sin `step`, W&B lo trata como un evento suelto ligado al
+        summary de la corrida, no a un punto de la serie por época.
+
+        Args:
+            name: clave bajo la que aparece en W&B (ej. `"plots/loss_curve"`
+                -- el prefijo con `/` agrupa el panel en la UI).
+            path: ruta local del PNG ya generado (`plot_loss_curve()`,
+                `plot_confusion_matrix()`, `plot_roc_curve()`).
+
+        Example:
+            >>> logger.log_image("plots/loss_curve", run_dir / "plots" / "loss_curve.png")
+        """
+        if self._wandb_run is not None:
+            import wandb
+
+            self._wandb_run.log({name: wandb.Image(str(path))})
+
+    def log_summary(self, metrics: dict[str, float]) -> None:
+        """Registra métricas de una sola medición (test) en el summary de la corrida, no en una serie.
+
+        A diferencia de `log()` -- pensado para una fila por época -- esto
+        es para valores que solo se calculan una vez, al final (métricas de
+        test de `train/evaluation.py`, o las derivadas de la matriz de
+        confusión de `compute_confusion_matrix_metrics()`). Ir a `summary`
+        en vez de `log()` evita que W&B las trate como un punto más de la
+        serie de entrenamiento (que ya terminó en la época final).
+
+        Args:
+            metrics: nombre de métrica -> valor.
+
+        Example:
+            >>> logger.log_summary({f"test_{k}": v for k, v in test_metrics.items()})
+        """
+        if self._wandb_run is not None:
+            self._wandb_run.summary.update(metrics)
+
+    def log_table(self, name: str, csv_path: str | Path) -> None:
+        """Sube un CSV ya guardado en disco (`save_predictions_csv()`) como tabla explorable en W&B.
+
+        Args:
+            name: clave bajo la que aparece en W&B (ej. `"test/predictions"`).
+            csv_path: ruta local del CSV (columnas `y_true`/`y_pred`/`y_prob`,
+                ver `save_predictions_csv()`).
+
+        Example:
+            >>> logger.log_table("test/predictions", test_dir / "predictions.csv")
+        """
+        if self._wandb_run is not None:
+            import pandas as pd
+            import wandb
+
+            self._wandb_run.log({name: wandb.Table(dataframe=pd.read_csv(csv_path))})
 
     def close(self) -> None:
         """Cierra el archivo CSV, el SummaryWriter, y la corrida de W&B.
