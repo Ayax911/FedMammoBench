@@ -75,11 +75,13 @@ loss_spec = build_loss("bce")
 
 #### `train_one_epoch(model, loader, optimizer, loss_spec, device)`
 
-Ejecuta una época de entrenamiento: pone el modelo en `.train()`, congela el comportamiento estadístico de las capas BatchNorm congeladas (`_set_frozen_bn_eval`), realiza forward, calcula loss con `loss_spec.compute`, backward y `optimizer.step()`.
+Ejecuta una época de entrenamiento: pone el modelo en `.train()`, congela el comportamiento estadístico de las capas BatchNorm congeladas (`_set_frozen_bn_eval`), realiza forward, calcula loss con `loss_spec.compute`, backward y `optimizer.step()`. Además acumula, bajo `torch.no_grad()` y sin afectar el backward, las mismas siete métricas clínicas que `evaluate()` (`accuracy`, `auc`, `sensitivity`, `specificity`, `f1`, `f1_macro`, `precision`) sobre las predicciones de entrenamiento de la época -- devuelve las mismas claves que `evaluate()`, no solo `"loss"`.
 
 #### `evaluate(model, loader, loss_spec, device)`
 
-Ejecuta evaluación bajo `@torch.no_grad()`: pone el modelo en `.eval()`, calcula loss y métricas clínicas (`accuracy`, `auc`, `sensitivity`, `specificity`) transformando logits con `loss_spec.probs`.
+Ejecuta evaluación bajo `@torch.no_grad()`: pone el modelo en `.eval()`, calcula loss y las siete métricas clínicas de `build_metric_collection()` (`accuracy`, `auc`, `sensitivity`, `specificity`, `f1`, `f1_macro`, `precision`) transformando logits con `loss_spec.probs`.
+
+`train_one_epoch()` y `evaluate()` devuelven exactamente las mismas claves a propósito: `Trainer.fit()` las combina con prefijo `train_`/`val_` en un solo dict por época (`trainer.history`), y `reporting.py:plot_metric_curve()` grafica cada una como train-vs-val por época (ver `cli.py`).
 
 ##### Cómo usar `loop.py`:
 ```python
@@ -91,7 +93,7 @@ optimizer = build_optimizer(model.parameters(), "adamw", lr=1e-4)
 
 # Entrenar una época
 train_metrics = train_one_epoch(model, train_loader, optimizer, loss_spec, device="cuda")
-print(f"Pérdida en train: {train_metrics['loss']:.4f}")
+print(f"Pérdida en train: {train_metrics['loss']:.4f}, AUC en train: {train_metrics['auc']:.4f}")
 
 # Evaluar en conjunto de validación
 val_metrics = evaluate(model, val_loader, loss_spec, device="cuda")

@@ -159,26 +159,42 @@ loader = DataLoader(
 
 Logger unificado que registra métricas en archivo CSV (`metrics.csv`), eventos de TensorBoard y opcionalmente integra con Weights & Biases (W&B) sin bloquear si no hay conectividad.
 
-* **`MetricsLogger`**: Maneja los streams de salida para persistencia de métricas por época.
-  - `log(epoch, metrics)`: Escribe una fila en el CSV y scalars en TensorBoard / W&B.
-  - `close()`: Libera descriptores de archivo y cierra sesiones.
+* **`MetricsLogger`**: Maneja los streams de salida para persistencia de métricas por época y de test.
+  - `log(epoch, metrics)`: Escribe una fila en el CSV y scalars en TensorBoard / W&B (una por época).
+  - `log_image(name, path)`: Sube un PNG ya guardado en disco (plots de `reporting.py`) al summary de W&B. No-op sin W&B.
+  - `log_summary(metrics)`: Registra métricas de una sola medición (test) en el summary de la corrida, no en la serie por época. No-op sin W&B.
+  - `log_table(name, csv_path)`: Sube un CSV (ej. `predictions.csv`) como tabla explorable en W&B. No-op sin W&B.
+  - `close()`: Libera descriptores de archivo y cierra sesiones (`wandb.finish()` incluido).
+
+`cli.run()` es dueño de la corrida de W&B: la abre antes de construir `Trainer` y la cierra después de la evaluación de test, para que entrenamiento y test queden en la misma corrida (`Trainer.fit()` ya no abre/cierra su propia corrida si se le inyecta un `logger` — ver `train/DOCS.md`).
 
 #### Cómo usar `tracking.py`:
 ```python
 from src.tracking import MetricsLogger
 
-# Usar como gestor de contexto (Context Manager) para garantizar el cierre correcto
-with MetricsLogger(run_dir="runs/exp_01", wandb_project="Federal-Learning", wandb_run_name="exp_01") as logger:
+# Usar como gestor de contexto (Context Manager) para garantizar el cierre correcto.
+# config= adjunta los hiperparámetros de la corrida (ExperimentConfig.model_dump())
+# para poder filtrar/agrupar corridas por config en la UI de W&B.
+with MetricsLogger(
+    run_dir="runs/exp_01",
+    wandb_project="Federal-Learning",
+    wandb_run_name="exp_01",
+    config={"lr": 1e-4, "unfreeze_idx": [7]},
+) as logger:
     for epoch in range(1, 5):
-        # Medir loss y métricas en train y val
         epoch_metrics = {
             "train_loss": 0.45 / epoch,
             "val_loss": 0.50 / epoch,
             "val_auc": 0.75 + (epoch * 0.04),
             "val_accuracy": 0.80 + (epoch * 0.02)
         }
-        # Registrar métricas de la época
         logger.log(epoch, epoch_metrics)
+
+    # Después de entrenar: plots, métricas de test y predictions.csv, todo
+    # en la misma corrida de W&B (ver src/cli.py y src/reporting.py).
+    logger.log_image("plots/loss_curve", "runs/exp_01/plots/loss_curve.png")
+    logger.log_summary({"test_auc": 0.91})
+    logger.log_table("test/predictions", "runs/exp_01/test/predictions.csv")
 ```
 
 ---
