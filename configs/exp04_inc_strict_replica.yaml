@@ -1,0 +1,114 @@
+# Réplica ESTRICTA del experimento INC "Classification Images_HL1024-512_lr1e-4_dr0.2".
+#
+# exp03 ya corrigió el bug de freeze de exp02 (`unfreeze_from: none` en vez de
+# `layer4`), pero una auditoría línea a línea del pipeline del INC contra este
+# encontró cuatro divergencias más que exp03 no cubría. exp04 = exp03 + esas
+# cuatro. exp03 se conserva tal cual para poder medir el efecto de cada una.
+#
+# Divergencias que corrige respecto de exp03 (ver auditoría):
+#
+#   1. NORMALIZACIÓN. `dataloader_images.py` del INC aplica solo `ToTensor()`
+#      -- los píxeles quedan en [0, 1]. `TransformBuilder` de este repo añadía
+#      `Normalize(0.5, 0.5)` -> [-1, 1], y no era configurable desde YAML.
+#      `normalize_mean: [0,0,0]` + `normalize_std: [1,1,1]` = identidad, que es
+#      lo que hace el INC.
+#
+#   2. BATCHNORM DEL BACKBONE CONGELADO. El INC nunca re-evalúa las BN, así que
+#      con `model.train()` sus `running_mean`/`running_var` siguen
+#      actualizándose durante todo el entrenamiento aunque los pesos estén
+#      congelados: el backbone SÍ se adapta a mamografía. Este repo lo impedía
+#      con `_set_frozen_bn_eval()`. `freeze_bn_stats: false` reproduce el INC.
+#
+#   3. PENDIENTE DE LEAKYRELU. `get_activation("leakyrelu")` del INC devuelve
+#      `nn.LeakyReLU(0.2)`; acá se instanciaba `nn.LeakyReLU()` con el default
+#      0.01 -- 20x de diferencia en las dos activaciones de la cabeza.
+#
+#   4. MÉTRICA DE MEJOR CHECKPOINT. El INC elige el mejor modelo por
+#      `Val_F1-Score` binario (solo clase maligna), no por F1-macro. Acá es
+#      seguro usar "f1": la advertencia de src/metrics.py (F1 binario clavado
+#      en 0.0) aplica al manifest con 66/34, pero en dataset_split_formatted.csv
+#      maligno es el 84% del train (669/792), así que el F1 binario arranca
+#      alto y varía suavemente.
+#
+# QUEDA UNA DIVERGENCIA NO REPRODUCIBLE POR CONFIG, a propósito: el INC calcula
+# las métricas de test POR BATCH y las promedia (`np.mean` sobre 4 batches de
+# 227 muestras), lo que hace que la especificidad de un batch sin benignos
+# cuente como 0.0 -- de ahí el `std=0.43` de su `test_summary.csv`. Este repo
+# las calcula globalmente sobre el test completo, que es lo estadísticamente
+# correcto. NO se replica el promedio por batch; para comparar contra el INC se
+# recalculan las métricas de SU checkpoint, globalmente, con
+# `../inc_repro_data/eval_inc_checkpoint_global.py` (vive fuera de este repo
+# porque necesita el código del INC y el env conda `inc-combined`).
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp04_inc_strict_replica.yaml
+
+experiment_id: exp04_inc_strict_replica
+
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  # Backbone 100% congelado = num_freeze=159 del INC (verificado: el backbone
+  # sin `fc` tiene exactamente 159 tensores de parámetros).
+  unfreeze_from: none
+
+head:
+  name: configurable_mlp   # N capas ocultas + activación elegible, sin BatchNorm1d -- como mlp_models.py del INC
+  hparams:
+    in_features: 2048            # salida de ResNet50 tras global average pooling
+    hidden_layers: [1024, 512]   # --hidden_layers 1024 512
+    activation: leakyrelu        # --activation LeakyReLU
+    negative_slope: 0.2          # (3) nn.LeakyReLU(0.2) del INC, NO el default 0.01
+    dropout: 0.2                 # --dropout 0.2
+    num_classes: 2               # --output_size 2
+
+optimizer:
+  name: adam                 # torch.optim.Adam en training.py del INC
+  hparams:
+    lr: 1.0e-4                # --lr 0.0001
+    betas: [0.5, 0.999]       # --b1 0.5 --b2 0.999
+
+scheduler:
+  name: cosine                # CosineAnnealingLR(T_max=n_epochs, eta_min=min_lr)
+  hparams:
+    T_max: 200                 # = n_epochs
+    eta_min: 1.0e-6             # --min_lr 1e-06
+
+# El INC llama "BCE" (--loss BCE) a lo que losses.py construye en realidad:
+# nn.CrossEntropyLoss(weight=[neg_weight, pos_weight]) sobre 2 logits.
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [3.22, 0.59]      # [neg_weight, pos_weight] del config.txt
+
+data:
+  manifest_path: manifests/dataset_split_formatted.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/data
+  batch_size: 64              # --batch_size 64
+  num_workers: 4
+  seed: 42                    # main.py del INC hace set_random_seed(42)
+  image_size: [224, 224]
+  # (1) Identidad: deja los píxeles en [0,1], como el ToTensor() pelado del INC.
+  normalize_mean: [0.0, 0.0, 0.0]
+  normalize_std: [1.0, 1.0, 1.0]
+  augmentation:                # replica dataloader_images.py del INC
+    horizontal_flip: true
+    horizontal_flip_p: 0.5      # RandomHorizontalFlip(p=0.5)
+    rotation_degrees: 15        # RandomRotation(degrees=15)
+    vertical_flip: true
+    vertical_flip_p: 0.2        # RandomVerticalFlip(p=0.2)
+    blur: true
+    blur_p: 0.3                 # RandomGaussianBlur(p=0.3, kernel_size=3, sigma=(0.1,0.6))
+
+train:
+  epochs: 200                   # --n_epochs 200
+  metric_name: f1               # (4) Val_F1-Score binario, como el early stopping del INC
+  metric_mode: max
+  patience: 100                  # --patience_early 100
+  min_delta: 0.005               # delta por defecto de su EarlyStopping
+  save_every: 10
+  freeze_bn_stats: false         # (2) deja derivar las running stats, como el INC
+  checkpoint_dir: runs/exp04_inc_strict_replica/weights
+  run_dir: runs/exp04_inc_strict_replica
+  device: cuda
+  wandb_project: fedmammobench2.0
