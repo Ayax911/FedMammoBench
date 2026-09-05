@@ -1,0 +1,5 @@
+# Data, not structure — 6 CSVs, 264K–2.0M each (fedmammobench.csv is 8,341 rows)
+manifests/
+
+# Tool output
+graphify-out/
