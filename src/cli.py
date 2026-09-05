@@ -66,8 +66,17 @@ def run(config: ExperimentConfig) -> None:
         vertical_flip_p=aug.vertical_flip_p,
         use_blur=aug.blur,
         blur_p=aug.blur_p,
+        normalize_mean=config.data.normalize_mean,
+        normalize_std=config.data.normalize_std,
     )
-    eval_transform_builder = TransformBuilder(image_size=config.data.image_size)
+    # La normalización va también acá: es preprocesamiento, no augmentación —
+    # si train y eval normalizaran distinto, el modelo vería dos
+    # distribuciones de entrada diferentes.
+    eval_transform_builder = TransformBuilder(
+        image_size=config.data.image_size,
+        normalize_mean=config.data.normalize_mean,
+        normalize_std=config.data.normalize_std,
+    )
     loaders = builder_dataloader(
         split,
         train_transform_builder,
