@@ -1,0 +1,82 @@
+# exp05_fedmammobench_full_weighted -- Modelo de exp04 sobre el dataset completo
+# de FedMammoBench (8341 imágenes en TIFF 224x224, norm_neg1_1) con pérdida CrossEntropy
+# ponderada para compensar el desbalance de clases (66% benigno / 34% maligno).
+#
+# Las 4 correcciones de exp04 se conservan:
+#   (1) normalize/resize omitidos (las imágenes ya están preprocesadas en [-1, 1] a 224x224)
+#   (2) freeze_bn_stats: false
+#   (3) LeakyReLU negative_slope: 0.2
+#   (4) métrica de early stopping: f1_macro (obligatorio con el desbalance 66/34)
+#
+# Pesos de la loss: total/(2*n_clase)
+#   neg (benigno) = 6671 / (2 * 4393) = 0.7593
+#   pos (maligno) = 6671 / (2 * 2278) = 1.4642
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp05_fedmammobench_full_weighted.yaml
+
+experiment_id: exp05_fedmammobench_full_weighted
+
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: none          # backbone 100% congelado = num_freeze=159 del INC
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [1024, 512]
+    activation: leakyrelu
+    negative_slope: 0.2         # nn.LeakyReLU(0.2) del INC
+    dropout: 0.2
+    num_classes: 2
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 1.0e-4
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]   # Ponderación por clase para balancear el 66/34
+
+data:
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null              # Las imágenes ya están a 224x224 en disco
+  normalize_mean: null          # Las imágenes ya están normalizadas en [-1, 1]
+  normalize_std: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+
+train:
+  epochs: 200
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  freeze_bn_stats: false
+  checkpoint_dir: runs/exp05_fedmammobench_full_weighted/weights
+  run_dir: runs/exp05_fedmammobench_full_weighted
+  device: cuda
+  wandb_project: fedmammobench2.0
+

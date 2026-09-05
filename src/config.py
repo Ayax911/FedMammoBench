@@ -144,10 +144,10 @@ class DataConfig(BaseModel):
     batch_size: int = 16
     num_workers: int = 1
     seed: int = 42
-    image_size: tuple[int, int] = (224, 224)
+    image_size: tuple[int, int] | None = (224, 224)
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
-    normalize_mean: tuple[float, float, float] = (0.5, 0.5, 0.5)
-    normalize_std: tuple[float, float, float] = (0.5, 0.5, 0.5)
+    normalize_mean: tuple[float, ...] | None = (0.5, 0.5, 0.5)
+    normalize_std: tuple[float, ...] | None = (0.5, 0.5, 0.5)
 
 
 class TrainConfig(BaseModel):

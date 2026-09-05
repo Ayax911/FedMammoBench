@@ -47,7 +47,7 @@ class TransformBuilder:
 
     def __init__(
         self,
-        image_size: tuple[int, int] = (224, 224),
+        image_size: tuple[int, int] | None = (224, 224),
         use_horizontal_flip: bool = False,
         use_rotation: bool = False,
         rotation_degrees: int = 15,
@@ -58,8 +58,8 @@ class TransformBuilder:
         blur_p: float = 0.3,
         blur_kernel_size: int = 3,
         blur_sigma: tuple[float, float] = (0.1, 0.6),
-        normalize_mean: tuple[float, float, float] = (0.5, 0.5, 0.5),
-        normalize_std: tuple[float, float, float] = (0.5, 0.5, 0.5),
+        normalize_mean: tuple[float, ...] | None = (0.5, 0.5, 0.5),
+        normalize_std: tuple[float, ...] | None = (0.5, 0.5, 0.5),
     ) -> None:
         self.image_size = image_size
         self.use_horizontal_flip = use_horizontal_flip
@@ -84,8 +84,11 @@ class TransformBuilder:
         Example:
             >>> tx = TransformBuilder(image_size=(512, 512)).build()
         """
-        # Step 1: Spatial resolution resizing
-        steps: list[Callable[[Any], Any]] = [transforms.Resize(self.image_size)]
+        steps: list[Callable[[Any], Any]] = []
+
+        # Step 1: Spatial resolution resizing (skipped if image_size is None)
+        if self.image_size is not None:
+            steps.append(transforms.Resize(self.image_size))
 
         # Step 2: Conditional training data augmentations (order matches the
         # INC project's dataloader_images.py, minus the ToTensor-first
@@ -108,9 +111,11 @@ class TransformBuilder:
                 )
             )
 
-        # Step 3: PyTorch tensor conversion [0, 255] -> [0.0, 1.0]
+        # Step 3: PyTorch tensor conversion [0, 255] -> [0.0, 1.0] (mode 'F' preserved as float32)
         steps.append(transforms.ToTensor())
-        # Step 4: Channel normalization (x - mean) / std
-        steps.append(transforms.Normalize(mean=self.normalize_mean, std=self.normalize_std))
+
+        # Step 4: Channel normalization (x - mean) / std (skipped if None)
+        if self.normalize_mean is not None and self.normalize_std is not None:
+            steps.append(transforms.Normalize(mean=self.normalize_mean, std=self.normalize_std))
 
         return transforms.Compose(steps)
