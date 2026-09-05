@@ -134,6 +134,7 @@ def run(config: ExperimentConfig) -> None:
         patience=config.train.patience,
         min_delta=config.train.min_delta,
         save_every=config.train.save_every,
+        freeze_bn_stats=config.train.freeze_bn_stats,
         wandb_project=config.train.wandb_project,
         wandb_run_name=config.experiment_id,
     )

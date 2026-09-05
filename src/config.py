@@ -180,6 +180,17 @@ class TrainConfig(BaseModel):
         checkpoint_dir: Directorio destino para archivos de peso `.pt`.
         run_dir: Directorio destino para archivos de logs (`metrics.csv`, TensorBoard).
         device: Dispositivo de cómputo (ej. `"cpu"`, `"cuda"`).
+        freeze_bn_stats: si `True` (default), las capas BatchNorm cuyos
+            parámetros están congelados se mantienen en `eval()` durante el
+            entrenamiento, así sus `running_mean`/`running_var` NO se
+            actualizan (`train/loop.py:_set_frozen_bn_eval`).
+
+            `False` reproduce el comportamiento del proyecto INC, que nunca
+            las re-evalúa: con `model.train()` las estadísticas del backbone
+            siguen adaptándose a los datos de entrenamiento aunque los pesos
+            estén congelados. Con el backbone 100% congelado esa es la
+            diferencia entre un backbone que efectivamente cambia (INC) y
+            uno que se queda con las estadísticas de RadImageNet (default).
         wandb_project: Nombre opcional del proyecto en Weights & Biases (None desactiva W&B).
 
     Example:
@@ -206,6 +217,7 @@ class TrainConfig(BaseModel):
     checkpoint_dir: Path
     run_dir: Path
     device: str = "cpu"
+    freeze_bn_stats: bool = True
     wandb_project: str | None = None  # None -> W&B desactivado, ver tracking.py
 
 
