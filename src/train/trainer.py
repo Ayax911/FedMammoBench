@@ -18,6 +18,7 @@ Ejemplo de uso:
     >>> best_ckpt = trainer.fit(train_loader, val_loader, epochs=10)
 """
 
+import contextlib
 import time
 from pathlib import Path
 
@@ -59,8 +60,6 @@ class Trainer:
         history: una entrada por época con las mismas claves que se
             escriben en `metrics.csv` (`train_*`, `val_*`,
             `duration_seconds`). Poblado por `fit()`.
-        wandb_project: Nombre opcional de proyecto en W&B.
-        wandb_run_name: Nombre opcional de corrida en W&B.
 
     Example:
         >>> trainer = Trainer(model, optimizer, loss_spec, "weights/", "runs/", "cuda")
@@ -82,8 +81,7 @@ class Trainer:
         min_delta: float = 0.0,
         save_every: int | None = None,
         freeze_bn_stats: bool = True,
-        wandb_project: str | None = None,
-        wandb_run_name: str | None = None,
+        logger: MetricsLogger | None = None,
     ) -> None:
         """Inicializa los componentes de entrenamiento y estado de mejor checkpoint.
 
@@ -121,9 +119,13 @@ class Trainer:
                 época. `True` (default) mantiene las BN congeladas en
                 `eval()`; `False` deja que sus estadísticas deriven, como
                 hace el proyecto INC. Ver `train/loop.py`.
-            wandb_project: opcional — pasado directo a MetricsLogger. None
-                (default) desactiva W&B por completo.
-            wandb_run_name: opcional — nombre de esta corrida en W&B.
+            logger: `MetricsLogger` ya abierto por quien llama (típicamente
+                `cli.run()`, para que una sola corrida de W&B cubra
+                entrenamiento + evaluación de test). `Trainer` NO la cierra
+                -- quien la inyectó es quien la abrió y debe cerrarla. `None`
+                (default) hace que `fit()` cree y cierre su propia
+                `MetricsLogger(run_dir)` sin W&B, para uso standalone (ver
+                ejemplo de módulo).
         """
         self.model = model
         self.optimizer = optimizer
@@ -135,8 +137,7 @@ class Trainer:
         self.metric_name = metric_name
         self.save_every = save_every
         self.freeze_bn_stats = freeze_bn_stats
-        self.wandb_project = wandb_project
-        self.wandb_run_name = wandb_run_name
+        self._injected_logger = logger
 
         self.tracker = EarlyStopping(patience=patience, min_delta=min_delta, mode=metric_mode)
         self.best_checkpoint_path: Path | None = None
@@ -192,9 +193,17 @@ class Trainer:
             >>> best_path = trainer.fit(train_loader, val_loader, epochs=10)
             >>> print(best_path)
         """
-        with MetricsLogger(
-            self.run_dir, wandb_project=self.wandb_project, wandb_run_name=self.wandb_run_name
-        ) as logger:
+        # Si cli.run() ya abrió una MetricsLogger (para que cubra también la
+        # evaluación de test que viene después de fit()), usarla sin
+        # cerrarla acá -- nullcontext no llama __exit__. Sin una inyectada
+        # (uso standalone, ver docstring del módulo), Trainer crea y cierra
+        # la suya propia, sin W&B.
+        logger_ctx = (
+            contextlib.nullcontext(self._injected_logger)
+            if self._injected_logger is not None
+            else MetricsLogger(self.run_dir)
+        )
+        with logger_ctx as logger:
             for epoch in range(epochs):
                 epoch_start = time.time()
 
