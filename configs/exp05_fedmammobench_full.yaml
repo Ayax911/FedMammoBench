@@ -1,0 +1,107 @@
+# exp05 -- El MISMO modelo de exp04, sobre el dataset completo de FedMammoBench.
+#
+# exp04 replicó el experimento del INC sobre las 1132 lesiones intratumorales
+# y cerró la brecha (AUC 0.8698 vs 0.8720 del INC). exp05 no cambia el modelo:
+# cambia los DATOS, de `dataset_split_formatted.csv` (1132 parches) a
+# `fedmammobench.csv` (8341 imágenes completas, 4 fuentes: cmmd 4722,
+# kau-bcmd 2206, cdd-cesm 1003, inbreast 410).
+#
+# Las 4 correcciones de exp04 se conservan tal cual -- son las que hacen que
+# este pipeline y el del INC vean lo mismo, y exp05 se corre en AMBOS
+# proyectos para comparar (ver ../inc_repro_data/exp05_RUNBOOK.md):
+#   (1) normalize identidad [0,1]   (2) freeze_bn_stats: false
+#   (3) LeakyReLU negative_slope 0.2  (4) misma familia de métricas
+#
+# LO QUE SÍ CAMBIA RESPECTO DE exp04, y por qué:
+#
+#   A. EL DESBALANCE SE INVIERTE. En los parches el maligno era el 84% del
+#      train (669/792); acá el BENIGNO es el 66% (4393/6671). Los pesos de la
+#      loss se recalculan con la misma fórmula del INC, total/(2*n_clase)
+#      -- la que produce el [3.22, 0.59] de exp04 (verificado: 3.2195/0.5919):
+#        neg = 6671/(2*4393) = 0.7593      pos = 6671/(2*2278) = 1.4642
+#      Nótese que ahora pos > neg, al revés que en exp04.
+#
+#   B. metric_name PASA DE "f1" A "f1_macro", y no es opcional. El comentario
+#      (4) de exp04 autorizaba "f1" *solo* porque en los parches el maligno
+#      era mayoría, y advertía que el riesgo aplica "al manifest con 66/34".
+#      Este ES ese manifest. Con `BinaryF1Score` valiendo exactamente 0.0
+#      mientras el modelo no prediga ningún maligno -- el estado normal de las
+#      primeras épocas con el backbone congelado -- y un EarlyStopping que
+#      exige mejora estricta, una racha de ceros no resetea el contador y la
+#      corrida se detendría devolviendo el checkpoint de la época 0, es decir
+#      un modelo sin entrenar. Ver el encabezado de src/metrics.py.
+#
+#   C. image_root apunta al árbol de JPG del manifest, no a data/. Los paths
+#      son `Preprocessed_Dataset/<fuente>/<fuente>_N.jpg`.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp05_fedmammobench_full.yaml
+
+experiment_id: exp05_fedmammobench_full
+
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: none          # backbone 100% congelado = num_freeze=159 del INC
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [1024, 512]
+    activation: leakyrelu
+    negative_slope: 0.2         # (3) nn.LeakyReLU(0.2) del INC, NO el default 0.01
+    dropout: 0.2
+    num_classes: 2
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 1.0e-4
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]   # (A) recalculado para el 66/34 de este manifest
+
+data:
+  manifest_path: manifests/fedmammobench.csv
+  # (C) EDITAR: directorio que CONTIENE Preprocessed_Dataset/.
+  # Las imágenes NO están en el disco al momento de escribir este config --
+  # sólo quedan restos en la papelera. Ver exp05_RUNBOOK.md, sección 0.
+  image_root: /RUTA/PENDIENTE/QUE/CONTIENE/Preprocessed_Dataset
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: [224, 224]
+  # (1) Identidad: deja los píxeles en [0,1], como el ToTensor() pelado del INC.
+  normalize_mean: [0.0, 0.0, 0.0]
+  normalize_std: [1.0, 1.0, 1.0]
+  augmentation:                 # idéntica a exp04 / dataloader_images.py del INC
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+
+train:
+  epochs: 200
+  metric_name: f1_macro         # (B) OBLIGATORIO con este desbalance -- ver arriba
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  freeze_bn_stats: false        # (2) deja derivar las running stats, como el INC
+  checkpoint_dir: runs/exp05_fedmammobench_full/weights
+  run_dir: runs/exp05_fedmammobench_full
+  device: cuda
+  wandb_project: fedmammobench2.0
