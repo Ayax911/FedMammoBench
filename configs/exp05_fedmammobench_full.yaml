@@ -72,18 +72,18 @@ loss:
     weight: [0.7593, 1.4642]   # (A) recalculado para el 66/34 de este manifest
 
 data:
-  manifest_path: manifests/fedmammobench.csv
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv
   # (C) EDITAR: directorio que CONTIENE Preprocessed_Dataset/.
   # Las imágenes NO están en el disco al momento de escribir este config --
   # sólo quedan restos en la papelera. Ver exp05_RUNBOOK.md, sección 0.
-  image_root: /RUTA/PENDIENTE/QUE/CONTIENE/Preprocessed_Dataset
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
   batch_size: 64
   num_workers: 4
   seed: 42
-  image_size: [224, 224]
+  image_size: null
   # (1) Identidad: deja los píxeles en [0,1], como el ToTensor() pelado del INC.
-  normalize_mean: [0.0, 0.0, 0.0]
-  normalize_std: [1.0, 1.0, 1.0]
+  normalize_mean: null
+  normalize_std: null
   augmentation:                 # idéntica a exp04 / dataloader_images.py del INC
     horizontal_flip: true
     horizontal_flip_p: 0.5
