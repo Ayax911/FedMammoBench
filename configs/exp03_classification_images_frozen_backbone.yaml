@@ -1,0 +1,101 @@
+# Reproducción del experimento INC "Classification Images_HL1024-512_lr1e-4_dr0.2"
+# (inc-project-models-classification-detection-main/src/models/classification_images,
+#  ver <repo>/Classification Images_HL1024-512_lr1e-4_dr0.2/config.txt) sobre el
+# pipeline centralizado de FedMammoBench.
+#
+# Corrige un bug de configs/exp02.yaml (mismo experimento, ya corrido en
+# runs/Classification_Images_HL1024-512_lr1e-4_dr0.2/, sin este fix):
+# exp02 usa `unfreeze_from: layer4`, pero el config.txt original de INC
+# entrena con `num_freeze=159`, y ResNet50 sin `fc` tiene EXACTAMENTE 159
+# tensores de parámetros (verificado: `len(list(nn.Sequential(*list(
+# torchvision.models.resnet50().children())[:-1]).named_parameters()))
+# == 159`). O sea, INC congeló el backbone COMPLETO -- "layer4" descongela
+# ~14M parámetros que el experimento original nunca entrenó. `unfreeze_from:
+# none` es la réplica fiel.
+#
+# Dataset: manifests/dataset_split_formatted.csv ya existe y ES el propio
+# dataset de INC (patient_id tipo D1-XXXX, rutas intratumoral-patches/...),
+# reformateado a las columnas que exige src/datasets/manifest.py
+# (preprocessed_image_path, classification, split, patient_id) -- no hace
+# falta generar un CSV nuevo. loss.hparams.weight = [3.22, 0.59] reproduce
+# exactamente neg_weight/pos_weight de config.txt (verificado: recalculando
+# el peso inverso a la frecuencia de clase sobre el split de train de este
+# CSV da 3.2195 / 0.5919 -- 792 filas de train, 123 Benign / 669 Malignant).
+#
+# Validar sin correr nada:
+#   .venv/bin/python -c "from src.config import load_config; c = load_config('configs/exp03_classification_images_frozen_backbone.yaml'); print(c.experiment_id)"
+#
+# Correr de punta a punta (requiere GPU + imágenes reales + checkpoint real --
+# ver la respuesta del asistente para el detalle de qué falta):
+#   .venv/bin/python -m src.cli --config configs/exp03_classification_images_frozen_backbone.yaml
+
+experiment_id: exp03_classification_images_frozen_backbone
+
+architecture:
+  name: resnet50_radimagenet
+  # Mismo checkpoint que usan exp01/exp02 -- placeholder de ruta de la
+  # workstation del INC, ajustar a donde exista realmente en la máquina
+  # que ejecute esto.
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  # "none" = backbone 100% congelado, réplica de num_freeze=159 (todos los
+  # tensores del backbone) del proyecto INC -- NO "layer4" (ver nota arriba).
+  unfreeze_from: none
+
+head:
+  name: configurable_mlp   # reproduce mlp_models.py de INC: N capas ocultas + activación elegible, sin BatchNorm1d
+  hparams:
+    in_features: 2048            # salida de ResNet50 tras global average pooling
+    hidden_layers: [1024, 512]   # --hidden_layers 1024 512 en config.txt
+    activation: leakyrelu        # --activation LeakyReLU
+    dropout: 0.2                 # --dropout 0.2
+    num_classes: 2               # --output_size 2 (usa CrossEntropyLoss, ver loss abajo)
+
+optimizer:
+  name: adam                 # torch.optim.Adam en training.py de INC (no adamw)
+  hparams:
+    lr: 1.0e-4                # --lr 0.0001
+    betas: [0.5, 0.999]       # --b1 0.5 --b2 0.999
+
+scheduler:
+  name: cosine                # CosineAnnealingLR(optimizer, T_max=n_epochs, eta_min=min_lr) en training.py de INC
+  hparams:
+    T_max: 200                 # = n_epochs
+    eta_min: 1.0e-6             # --min_lr 1e-06
+
+# INC llama a esto "BCE" (--loss BCE) pero losses.py en realidad construye
+# nn.CrossEntropyLoss(weight=[neg_weight, pos_weight]) sobre 2 logits -- por
+# eso acá es "cross_entropy", no "bce" (que en este repo espera 1 logit).
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [3.22, 0.59]      # [neg_weight, pos_weight] de config.txt; ver nota de verificación arriba
+
+data:
+  manifest_path: manifests/dataset_split_formatted.csv
+  # Raíz real donde viven los .png de intratumoral-patches/ en la máquina de
+  # ejecución -- mismo placeholder que exp01/exp02, ajustar en destino.
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/data
+  batch_size: 64              # --batch_size 64
+  num_workers: 4
+  seed: 42
+  image_size: [224, 224]
+  augmentation:                # replica dataloaders/dataloader_images.py de INC exactamente
+    horizontal_flip: true
+    horizontal_flip_p: 0.5      # RandomHorizontalFlip(p=0.5)
+    rotation_degrees: 15        # RandomRotation(degrees=15)
+    vertical_flip: true
+    vertical_flip_p: 0.2        # RandomVerticalFlip(p=0.2)
+    blur: true
+    blur_p: 0.3                 # RandomGaussianBlur(p=0.3, kernel_size=3, sigma=(0.1,0.6))
+
+train:
+  epochs: 200                   # --n_epochs 200
+  metric_name: f1_macro         # NO "f1" a secas -- ver advertencia en src/config.py
+  metric_mode: max
+  patience: 100                  # --patience_early 100
+  min_delta: 0.005               # umbral que usa el proyecto INC sobre F1 de validación
+  save_every: 10
+  checkpoint_dir: runs/exp03_classification_images_frozen_backbone/weights
+  run_dir: runs/exp03_classification_images_frozen_backbone
+  device: cuda                   # requiere GPU -- ver notas de ejecución
+  wandb_project: fedmammobench2.0
