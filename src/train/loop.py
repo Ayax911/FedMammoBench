@@ -25,6 +25,7 @@ def train_one_epoch(
     optimizer: Optimizer,
     loss_spec: LossSpec,
     device: str,
+    freeze_bn_stats: bool = True,
 ) -> dict[str, float]:
     """Entrena el modelo durante una época completa.
 
@@ -38,6 +39,12 @@ def train_one_epoch(
         optimizer: optimizador PyTorch (ej. AdamW).
         loss_spec: especificación de pérdida construida con `build_loss()`.
         device: dispositivo de cómputo (`"cpu"`, `"cuda"`).
+        freeze_bn_stats: si `True` (default) llama a `_set_frozen_bn_eval()`
+            tras `model.train()`, dejando las BN congeladas en `eval()` para
+            que no actualicen `running_mean`/`running_var`. `False` omite esa
+            llamada y reproduce el comportamiento del proyecto INC, donde las
+            estadísticas de BN sí derivan durante el entrenamiento aunque los
+            pesos estén congelados.
 
     Returns:
         dict[str, float]: Diccionario con la pérdida promedio `{"loss": float}`.
@@ -47,7 +54,8 @@ def train_one_epoch(
         >>> print(f"Train loss: {train_metrics['loss']:.4f}")
     """
     model.train()
-    _set_frozen_bn_eval(model)
+    if freeze_bn_stats:
+        _set_frozen_bn_eval(model)
 
     total_loss = 0.0
     n_batches = 0

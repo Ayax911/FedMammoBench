@@ -81,6 +81,7 @@ class Trainer:
         patience: int | None = None,
         min_delta: float = 0.0,
         save_every: int | None = None,
+        freeze_bn_stats: bool = True,
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
     ) -> None:
@@ -116,6 +117,10 @@ class Trainer:
             save_every: si no es `None`, guarda un checkpoint periódico
                 (`epoch{N}.pt`, independiente del mejor) cada `save_every`
                 épocas. `None` (default) no guarda ninguno.
+            freeze_bn_stats: se pasa tal cual a `train_one_epoch()` en cada
+                época. `True` (default) mantiene las BN congeladas en
+                `eval()`; `False` deja que sus estadísticas deriven, como
+                hace el proyecto INC. Ver `train/loop.py`.
             wandb_project: opcional — pasado directo a MetricsLogger. None
                 (default) desactiva W&B por completo.
             wandb_run_name: opcional — nombre de esta corrida en W&B.
@@ -129,6 +134,7 @@ class Trainer:
         self.scheduler = scheduler
         self.metric_name = metric_name
         self.save_every = save_every
+        self.freeze_bn_stats = freeze_bn_stats
         self.wandb_project = wandb_project
         self.wandb_run_name = wandb_run_name
 
@@ -193,7 +199,12 @@ class Trainer:
                 epoch_start = time.time()
 
                 train_metrics = train_one_epoch(
-                    self.model, train_loader, self.optimizer, self.loss_spec, self.device
+                    self.model,
+                    train_loader,
+                    self.optimizer,
+                    self.loss_spec,
+                    self.device,
+                    freeze_bn_stats=self.freeze_bn_stats,
                 )
                 val_metrics = evaluate(self.model, val_loader, self.loss_spec, self.device)
 
