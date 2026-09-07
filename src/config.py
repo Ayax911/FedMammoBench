@@ -23,8 +23,22 @@ class ArchitectureConfig(BaseModel):
     """Configuración para la instanciación del backbone del modelo (`models/build.py`).
 
     Attributes:
-        name: Identificador registrado en `_ARCHITECTURES` (ej. `"resnet50_radimagenet"`).
-        weights_path: Ruta al archivo checkpoint `.pth` o `.pt` con pesos preentrenados.
+        name: Identificador registrado en `_ARCHITECTURES` (ej.
+            `"resnet50_radimagenet"`, `"resnet50_imagenet_v1"`,
+            `"resnet50_imagenet_v2"`).
+        weights_path: Ruta al archivo checkpoint `.pth` o `.pt` con pesos
+            preentrenados. `None` (default) para arquitecturas que ya traen
+            sus pesos incluidos en el `model_factory` -- ej.
+            `resnet50_imagenet_v1`/`_v2`, que usan los pesos de ImageNet
+            embebidos en torchvision (`ArchitectureSpec.weights_from_factory
+            = True`, ver `models/build.py`) y no leen ningún archivo local.
+            Para el resto (`resnet50_radimagenet`) sigue siendo obligatorio
+            EN LA PRÁCTICA: `build_model()` levanta `ValueError` si falta,
+            porque esas arquitecturas no tienen otra forma de conseguir sus
+            pesos. No se valida acá (en `config.py`) para no hacer que este
+            módulo dependa de `_ARCHITECTURES` -- ver la dirección de
+            dependencias única de CLAUDE.md (`config.py` va ANTES que
+            `models/` en la cadena, nunca al revés).
         unfreeze_from: Nombre del bloque a partir del cual descongelar gradientes (default: `"none"`).
 
     Example:
@@ -33,12 +47,13 @@ class ArchitectureConfig(BaseModel):
         ...     weights_path=Path("checkpoints/RadImageNet-ResNet50_notop.pth"),
         ...     unfreeze_from="layer3"
         ... )
+        >>> arch_cfg = ArchitectureConfig(name="resnet50_imagenet_v2", unfreeze_from="layer4")
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str  # clave en _ARCHITECTURES, ej. "resnet50_radimagenet"
-    weights_path: Path
+    weights_path: Path | None = None
     unfreeze_from: str = "none"
 
 
@@ -128,12 +143,42 @@ class DataConfig(BaseModel):
             hace el proyecto INC, cuyo `dataloader_images.py` aplica solo
             `ToTensor()` sin ningún `Normalize`. Úsalo para reproducirlo;
             el default `0.5/0.5` (rango `[-1, 1]`) NO es equivalente.
+        by_database_manifests: mapa opcional `nombre_base_de_datos ->
+            manifest_path` para el desglose de test por base de datos (ver
+            `_evaluate_by_database()` en `cli.py`). `None` (default)
+            desactiva el desglose por completo — un YAML que no lo mencione
+            se comporta exactamente igual que antes de que este campo
+            existiera. Cuando se fija, `cli.run()` construye, al final del
+            entrenamiento, un `Manifest`+`Split` independiente por cada
+            entrada (mismo `image_root`, mismo `eval_transform_builder` que
+            el split de test principal) y evalúa el mismo mejor checkpoint
+            sobre el `.test_df()` de cada uno — no filtra en memoria el test
+            split principal por una columna, porque construir un
+            `Manifest`/`Split` real por base de datos reutiliza tal cual la
+            validación anti-leakage de `Split` y deja un artefacto en disco
+            (el CSV) auditable por separado. Los archivos que
+            `scripts/split_manifest_by_database.py` genera en
+            `manifests/by_database/` (uno por `source_dataset` de
+            `fedmammobench_norm_{0_1,neg1_1}.csv`, sin tocar ninguna imagen)
+            son el caso de uso pensado para este campo, pero cualquier CSV
+            con el esquema de `Manifest` sirve. Las claves son solo
+            etiquetas para las gráficas/summary de W&B (`test_by_database_
+            {clave}_...`) — no necesitan coincidir con ningún valor de
+            `source_dataset`, aunque en la práctica sí coinciden.
 
     Example:
         >>> data_cfg = DataConfig(
         ...     manifest_path=Path("manifests/fedmammobench.csv"),
         ...     image_root=Path("data/images"),
         ...     batch_size=32
+        ... )
+        >>> data_cfg = DataConfig(
+        ...     manifest_path=Path("manifests/fedmammobench_norm_neg1_1.csv"),
+        ...     image_root=Path("data/images"),
+        ...     by_database_manifests={
+        ...         "cmmd": Path("manifests/by_database/cmmd_norm_neg1_1.csv"),
+        ...         "inbreast": Path("manifests/by_database/inbreast_norm_neg1_1.csv"),
+        ...     },
         ... )
     """
 
@@ -148,6 +193,7 @@ class DataConfig(BaseModel):
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
     normalize_mean: tuple[float, ...] | None = (0.5, 0.5, 0.5)
     normalize_std: tuple[float, ...] | None = (0.5, 0.5, 0.5)
+    by_database_manifests: dict[str, Path] | None = None
 
 
 class TrainConfig(BaseModel):

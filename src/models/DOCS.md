@@ -19,6 +19,10 @@ backbone, report = build_model(
     device="cuda"
 )
 
+# 1b. Alternativa con pesos de ImageNet (sin weights_path -- torchvision ya
+# los trae embebidos en el propio model_factory, ver ArchitectureSpec.weights_from_factory):
+backbone, report = build_model(name="resnet50_imagenet_v2", unfreeze_from="layer3", device="cuda")
+
 # 2. Construir la cabeza de clasificación MLP (1 logit para BCE)
 HeadClass = get_head_strategy("standard_mlp")
 head_builder = HeadClass(in_features=2048, hidden_dim=512, num_classes=1)
@@ -36,17 +40,26 @@ model = nn.Sequential(backbone, head).to("cuda")
 
 #### `ArchitectureSpec`
 
-Dataclass que centraliza el mapeo de claves del checkpoint (`key_remap`), los prefijos válidos (`valid_prefixes`) y la estrategia de congelamiento (`freeze_strategy`).
+Dataclass que centraliza el `model_factory`, el mapeo de claves del checkpoint (`key_remap`), los prefijos válidos (`valid_prefixes`), la estrategia de congelamiento (`freeze_strategy`) y `weights_from_factory` (`bool`, default `False`).
 
-#### `build_model(name, weights_path, *, unfreeze_from="none", device="cpu")`
+`weights_from_factory=True` marca las arquitecturas cuyo `model_factory()` YA devuelve el modelo con pesos preentrenados cargados (ej. `resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)` de torchvision) -- no hay checkpoint externo que leer, así que `build_model()` se salta `load_weights()`/`torch.load()` por completo para esas entradas y `weights_path` no es necesario. `key_remap`/`valid_prefixes` se ignoran en ese caso (no hay nada que remapear: el `state_dict` ya usa los nombres estándar de `resnet50`), pero se siguen declarando para que toda entrada de `_ARCHITECTURES` tenga la misma forma. Es el mecanismo de escalabilidad del módulo: agregar una arquitectura cuyos pesos vienen embebidos en una librería (torchvision u otra) es agregar una entrada al registro con este flag en `True` -- `build_model()` no cambia.
 
-Factory principal para instanciar el backbone truncado y con pesos cargados.
+Registro actual (`_ARCHITECTURES`):
+| Nombre | `weights_from_factory` | Pesos |
+|---|---|---|
+| `resnet50_radimagenet` | `False` | checkpoint externo (`weights_path` obligatorio) -- RadImageNet, dominio médico |
+| `resnet50_imagenet_v1` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V1` (receta original, ~76.1% top-1 ImageNet) |
+| `resnet50_imagenet_v2` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V2` (receta nueva de torchvision, ~80.9% top-1 ImageNet) |
+
+#### `build_model(name, weights_path=None, *, unfreeze_from="none", device="cpu")`
+
+Factory principal para instanciar el backbone truncado y con pesos cargados. `weights_path` es `None` por defecto: obligatorio en la práctica (`ValueError` si falta) para arquitecturas con `weights_from_factory=False`, ignorado para las que lo tienen en `True`.
 
 ##### Cómo usar `build.py`:
 ```python
 from src.models.build import build_model
 
-# Construir backbone ResNet50 descongelando desde layer3 en adelante
+# Construir backbone ResNet50 (RadImageNet) descongelando desde layer3 en adelante
 backbone, report = build_model(
     name="resnet50_radimagenet",
     weights_path="checkpoints/RadImageNet-ResNet50_notop.pth",
@@ -56,6 +69,11 @@ backbone, report = build_model(
 
 print(f"Tensores coincidentes cargados: {report.matched}")
 print(f"Tensores faltantes: {len(report.missing)}")
+
+# Construir backbone ResNet50 con pesos de ImageNet -- sin weights_path,
+# torchvision descarga/cachea el checkpoint la primera vez (requiere internet
+# esa primera vez).
+backbone, report = build_model(name="resnet50_imagenet_v2", unfreeze_from="layer3", device="cpu")
 ```
 
 ---
@@ -64,12 +82,16 @@ print(f"Tensores faltantes: {len(report.missing)}")
 
 #### `load_weights(model_factory, weights_path, key_remap, valid_prefixes, device="cpu")`
 
-Limpia el `state_dict` del checkpoint (remueve `"module."`), aplica `key_remap`, filtra por `valid_prefixes` y trunca el modelo a sus 9 bloques encoder.
+Limpia el `state_dict` del checkpoint (remueve `"module."`), aplica `key_remap`, filtra por `valid_prefixes` y trunca el modelo a sus 9 bloques encoder vía `truncate_backbone()`.
+
+#### `truncate_backbone(model, n=9)`
+
+Corta un modelo completo a sus primeros `n` hijos directos (`nn.Sequential(*list(model.children())[:n])`) -- para `resnet50`, `n=9` deja `conv1..avgpool` y descarta `fc`. Único lugar donde vive ese "9": lo usa tanto `load_weights()` (checkpoint externo) como `build_model()` para las arquitecturas `weights_from_factory=True` (ImageNet), que nunca pasan por `load_weights()`.
 
 ##### Cómo usar `weights.py`:
 ```python
 from torchvision.models import resnet50
-from src.models.weights import load_weights
+from src.models.weights import load_weights, truncate_backbone
 
 # Definir factory de modelo PyTorch base
 model_factory = lambda: resnet50(weights=None)
@@ -85,6 +107,10 @@ backbone, report = load_weights(
     valid_prefixes=valid_prefixes,
     device="cpu"
 )
+
+# truncate_backbone() por sí solo, sin checkpoint externo (caso ImageNet):
+from torchvision.models import ResNet50_Weights
+backbone = truncate_backbone(resnet50(weights=ResNet50_Weights.IMAGENET1K_V2))
 ```
 
 ---
@@ -176,5 +202,5 @@ head = head_builder.build()
 
 `src/models/__init__.py` reexporta las utilidades principales:
 ```python
-from src.models import build_model, get_head_strategy, LoadReport
+from src.models import build_model, get_head_strategy, load_weights, truncate_backbone, LoadReport
 ```

@@ -1,6 +1,10 @@
 """Punto de entrada principal CLI: integra config -> seed -> datasets -> models -> train.
 
 Es el único módulo que conoce todos los demás — nada depende de él.
+`evaluate.py` (re-evaluación de un checkpoint ya entrenado, sin reentrenar)
+NO importa de acá -- ambos importan de `eval_pipeline.py`, que es donde
+viven `evaluate_split()`/`evaluate_by_database()` (ver su docstring de
+módulo para el porqué de la extracción).
 
 Ejemplo de ejecución desde CLI:
     $ python -m src.cli --config configs/exp01.yaml
@@ -13,111 +17,22 @@ Ejemplo de uso programático en Python:
 """
 
 import argparse
-from pathlib import Path
 
-import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 
 from .config import ExperimentConfig, load_config, save_config
 from .datasets.build import builder_dataloader
 from .datasets.manifest import Manifest
 from .datasets.split import Split
 from .datasets.transform import TransformBuilder
+from .eval_pipeline import METRIC_DISPLAY_NAMES, evaluate_by_database, evaluate_split
 from .models.build import build_model
 from .models.heads import get_head_strategy
-from .reporting import (
-    compute_confusion_matrix_metrics,
-    plot_confusion_matrix,
-    plot_loss_curve,
-    plot_metric_curve,
-    plot_roc_curve,
-    save_metrics_json,
-    save_predictions_csv,
-)
+from .reporting import plot_loss_curve, plot_metric_curve
 from .seed import set_global_seed
 from .tracking import MetricsLogger
-from .train.build import LossSpec, build_loss, build_optimizer, build_scheduler
-from .train.evaluation import evaluate_checkpoint, predict_on_loader
+from .train.build import build_loss, build_optimizer, build_scheduler
 from .train.trainer import Trainer
-
-
-def _evaluate_split(
-    split_name: str,
-    model: nn.Module,
-    best_checkpoint: Path,
-    loader: DataLoader[tuple[torch.Tensor, int]],
-    loss_spec: LossSpec,
-    device: str,
-    run_dir: Path,
-    logger: MetricsLogger,
-) -> dict[str, float]:
-    """Evalúa `best_checkpoint` sobre un split (val o test) y persiste/loguea todo, idéntico para ambos.
-
-    Antes de que existiera val/, este bloque estaba escrito a mano una sola
-    vez para test dentro de `run()`. Reusarlo para val en vez de duplicarlo
-    evita repetir a mano un bug real que agregar val hizo evidente:
-    `compute_confusion_matrix_metrics()` devuelve las mismas claves
-    (`cm_mcc`, `cm_npv`, ...) sin importar el split, así que loguearlas sin
-    prefijo al summary PLANO de W&B (como hacía la primera versión de este
-    bloque, solo para test) haría que val sobreescriba a test en cuanto se
-    agregara. El prefijo `{split_name}_` evita la colisión.
-
-    `evaluate_checkpoint()` recarga `best_checkpoint` en `model` -- SIEMPRE
-    el mejor, nunca el estado en el que haya quedado `model` al final del
-    entrenamiento (ver docstring de `Trainer.fit()`). Esto importa tanto
-    para val como para test: el `evaluate()` que corre dentro del loop de
-    entrenamiento evalúa el modelo tal como está ESA época, no releído desde
-    el mejor checkpoint -- por eso este bloque vuelve a evaluar val aunque
-    ya se haya evaluado, por época, durante `fit()`.
-
-    Args:
-        split_name: `"val"` o `"test"` -- prefijo de las claves logueadas a
-            W&B y nombre de la subcarpeta bajo `run_dir`.
-        model: modelo completo; sus pesos se sobreescriben in-place con los
-            de `best_checkpoint`.
-        best_checkpoint: ruta devuelta por `Trainer.fit()`.
-        loader: `loaders["val"]` o `loaders["test"]`.
-        loss_spec: mismo `LossSpec` usado para entrenar ese checkpoint.
-        device: dispositivo de cómputo.
-        run_dir: `config.train.run_dir` -- la subcarpeta `run_dir/{split_name}/`
-            se crea si no existe.
-        logger: `MetricsLogger` ya abierto por `run()`.
-
-    Returns:
-        dict[str, float]: el mismo dict que devuelve `evaluate_checkpoint()`
-            (`"loss"` + métricas clínicas), sin prefijo -- para imprimir o
-            inspeccionar en `run()`.
-    """
-    split_metrics = evaluate_checkpoint(model, best_checkpoint, loader, loss_spec, device)
-    logger.log_summary({f"{split_name}_{k}": v for k, v in split_metrics.items()})
-
-    y_true, y_pred, y_prob = predict_on_loader(model, loader, loss_spec, device)
-
-    # Todas las métricas calculables desde la matriz de confusión -- no solo
-    # las siete que evaluate_checkpoint() ya trackea -- ver docstring de
-    # compute_confusion_matrix_metrics() para la lista completa (NPV, MCC,
-    # kappa, likelihood ratios, etc.).
-    cm_metrics = compute_confusion_matrix_metrics(y_true, y_pred)
-    logger.log_summary({f"{split_name}_{k}": v for k, v in cm_metrics.items()})
-
-    split_dir = run_dir / split_name
-    save_metrics_json(split_metrics, split_dir / "metrics.json")
-    save_metrics_json(cm_metrics, split_dir / "confusion_matrix_metrics.json")
-
-    predictions_path = split_dir / "predictions.csv"
-    save_predictions_csv(y_true, y_pred, y_prob, predictions_path)
-    logger.log_table(f"{split_name}/predictions", predictions_path)
-
-    confusion_matrix_path = split_dir / "confusion_matrix.png"
-    plot_confusion_matrix(y_true, y_pred, confusion_matrix_path)
-    logger.log_image(f"{split_name}/confusion_matrix", confusion_matrix_path)
-
-    roc_curve_path = split_dir / "roc_curve.png"
-    plot_roc_curve(y_true, y_prob, roc_curve_path)
-    logger.log_image(f"{split_name}/roc_curve", roc_curve_path)
-
-    return split_metrics
 
 
 def run(config: ExperimentConfig) -> None:
@@ -172,7 +87,14 @@ def run(config: ExperimentConfig) -> None:
 
     backbone, load_report = build_model(
         config.architecture.name,
-        weights_path=str(config.architecture.weights_path),
+        # None cuando la arquitectura ya trae sus pesos desde el
+        # model_factory (ej. resnet50_imagenet_v1/_v2, ver
+        # ArchitectureSpec.weights_from_factory en models/build.py) -- str()
+        # sobre None daría la ruta literal "None", que build_model()
+        # confundiría con un path real en vez de "no hay checkpoint externo".
+        weights_path=(
+            str(config.architecture.weights_path) if config.architecture.weights_path is not None else None
+        ),
         unfreeze_from=config.architecture.unfreeze_from,
         device=config.train.device,
     )
@@ -258,17 +180,10 @@ def run(config: ExperimentConfig) -> None:
         # Una curva train-vs-val por cada métrica clínica -- ahora que
         # train_one_epoch() (train/loop.py) las calcula igual que evaluate(),
         # no solo loss. Mismo nombre de display para el eje Y/leyenda que
-        # las claves de trainer.history sin el prefijo train_/val_.
-        metric_display_names = {
-            "accuracy": "Accuracy",
-            "auc": "AUC",
-            "sensitivity": "Sensibilidad",
-            "specificity": "Especificidad",
-            "f1": "F1",
-            "f1_macro": "F1-macro",
-            "precision": "Precisión",
-        }
-        for metric_key, display_name in metric_display_names.items():
+        # las claves de trainer.history sin el prefijo train_/val_. Nombres
+        # centralizados en METRIC_DISPLAY_NAMES (eval_pipeline.py) para que
+        # evaluate_by_database() use exactamente los mismos.
+        for metric_key, display_name in METRIC_DISPLAY_NAMES.items():
             metric_curve_path = config.train.run_dir / "plots" / f"{metric_key}_curve.png"
             plot_metric_curve(
                 [epoch_metrics[f"train_{metric_key}"] for epoch_metrics in trainer.history],
@@ -287,9 +202,9 @@ def run(config: ExperimentConfig) -> None:
         # tal como estaba ESA época -- esto la vuelve a evaluar releyendo el
         # mejor checkpoint, para tener matriz de confusión/ROC/métricas
         # derivadas consistentes con lo que realmente se reporta como
-        # resultado (ver docstring de _evaluate_split()).
+        # resultado (ver docstring de evaluate_split() en eval_pipeline.py).
         for split_name, loader in (("val", loaders["val"]), ("test", loaders["test"])):
-            split_metrics = _evaluate_split(
+            split_metrics = evaluate_split(
                 split_name,
                 model,
                 best_checkpoint,
@@ -303,6 +218,25 @@ def run(config: ExperimentConfig) -> None:
                 f"{split_name.capitalize()} "
                 f"({config.train.metric_name}={split_metrics[config.train.metric_name]:.4f}): "
                 f"{split_metrics}"
+            )
+
+        # Desglose de test por base de datos -- opt-in, ver
+        # DataConfig.by_database_manifests (src/config.py). None/{} (default)
+        # deja el comportamiento idéntico a antes de que este campo
+        # existiera: ni un Manifest ni un plot de más.
+        if config.data.by_database_manifests:
+            evaluate_by_database(
+                config.data.by_database_manifests,
+                config.data.image_root,
+                eval_transform_builder,
+                model,
+                best_checkpoint,
+                loss_spec,
+                config.data.batch_size,
+                config.data.num_workers,
+                config.train.device,
+                config.train.run_dir,
+                logger,
             )
 
 

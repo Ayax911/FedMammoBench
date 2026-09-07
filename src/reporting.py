@@ -54,6 +54,16 @@ Ejemplo de uso:
     >>> plot_roc_curve(y_true, y_prob, run_dir / "test" / "roc_curve.png")
     >>> cm_metrics = compute_confusion_matrix_metrics(y_true, y_pred)
     >>> save_metrics_json(cm_metrics, run_dir / "test" / "confusion_matrix_metrics.json")
+
+Desglose de test por base de datos (opt-in vía `DataConfig.by_database_manifests`,
+ver `cli.py:_evaluate_by_database()`) -- dos funciones más, mismo criterio de
+"cada una recibe exactamente los datos que necesita para UN artefacto":
+    >>> from src.reporting import (
+    ...     plot_confusion_matrix_by_database, plot_metrics_by_database, save_metrics_by_database_json,
+    ... )
+    >>> save_metrics_by_database_json(metrics_by_db, run_dir / "test" / "metrics_by_database.json")
+    >>> plot_confusion_matrix_by_database(cm_by_db, run_dir / "test" / "confusion_matrix_by_database.png")
+    >>> plot_metrics_by_database(metrics_by_db, run_dir / "test" / "metrics_by_database.png")
 """
 
 import csv
@@ -486,4 +496,222 @@ def plot_roc_curve(y_true: list[int], y_prob: list[float], path: str | Path) -> 
     ax.legend(loc="lower right")  # pyright: ignore[reportUnknownMemberType]
     fig.tight_layout()
     fig.savefig(path, dpi=200)  # pyright: ignore[reportUnknownMemberType]
+    plt.close(fig)
+
+
+def save_metrics_by_database_json(metrics_by_db: dict[str, dict[str, float]], path: str | Path) -> None:
+    """Vuelca a JSON el dict anidado `base_de_datos -> {métrica: valor}`.
+
+    Análogo a `save_metrics_json()` para el resultado de
+    `_evaluate_by_database()` (`cli.py`) -- un dict de dicts, no un dict
+    plano, así que se mantiene aparte en vez de generalizar
+    `save_metrics_json()` y perder el tipo `dict[str, float]` que el resto
+    del módulo asume (`save_predictions_csv`, `MetricsLogger.log_summary`).
+
+    Args:
+        metrics_by_db: dict `nombre_base_de_datos -> dict[métrica, valor]`,
+            típicamente construido en `cli.py:_evaluate_by_database()`
+            combinando el retorno de `evaluate_checkpoint()` y
+            `compute_confusion_matrix_metrics()` por base de datos.
+        path: ruta destino del archivo `.json`. El directorio padre se crea
+            si no existe.
+
+    Example:
+        >>> save_metrics_by_database_json(
+        ...     {"cmmd": {"accuracy": 0.81, "auc": 0.88}, "inbreast": {"accuracy": 0.74, "auc": 0.80}},
+        ...     "runs/exp05/test/metrics_by_database.json",
+        ... )
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(metrics_by_db, indent=2, sort_keys=True))
+
+
+def plot_confusion_matrix_by_database(
+    cm_by_db: dict[str, tuple[list[int], list[int]]],
+    path: str | Path,
+    class_names: tuple[str, str] = ("Benign", "Malignant"),
+) -> None:
+    """Calcula y guarda, en una sola imagen, un panel `1xN` con una matriz de confusión por base de datos.
+
+    Complementa a `plot_confusion_matrix()` (una sola matriz para todo el
+    split de test combinado) con el desglose que habilita
+    `DataConfig.by_database_manifests`: mismo cmap, mismo formato de
+    anotación y misma disposición de ejes que `plot_confusion_matrix()` en
+    cada panel, para que ambas gráficas se lean igual de un vistazo — la
+    única diferencia es un panel por base de datos en vez de uno solo.
+
+    Args:
+        cm_by_db: dict `nombre_base_de_datos -> (y_true, y_pred)`,
+            típicamente construido en `cli.py:_evaluate_by_database()` con
+            una llamada a `predict_on_loader()` por base de datos. El orden
+            de iteración de este dict es el orden en que se dibujan los
+            paneles, de izquierda a derecha.
+        path: ruta destino de la imagen `.png`. El directorio padre se crea
+            si no existe.
+        class_names: nombres para los ejes, en orden `(clase 0, clase 1)` —
+            igual que `plot_confusion_matrix()`.
+
+    Raises:
+        ValueError: si `cm_by_db` está vacío.
+
+    Example:
+        >>> plot_confusion_matrix_by_database(
+        ...     {"cmmd": (y_true_cmmd, y_pred_cmmd), "inbreast": (y_true_inbreast, y_pred_inbreast)},
+        ...     "runs/exp05/test/confusion_matrix_by_database.png",
+        ... )
+    """
+    if not cm_by_db:
+        raise ValueError("cm_by_db está vacío -- no hay ninguna base de datos que graficar.")
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    db_names = list(cm_by_db.keys())
+    fig, axes_grid = plt.subplots(1, len(db_names), figsize=(5 * len(db_names), 5), squeeze=False)
+    axes = axes_grid[0]  # squeeze=False siempre da un array 2D -- nos quedamos con la única fila
+
+    for ax, db_name in zip(axes, db_names):
+        y_true, y_pred = cm_by_db[db_name]
+        cm = BinaryConfusionMatrix()(torch.tensor(y_pred), torch.tensor(y_true)).numpy()
+        ax.imshow(cm, cmap="Blues")  # pyright: ignore[reportUnknownMemberType]
+        for i in range(2):
+            for j in range(2):
+                ax.text(j, i, str(int(cm[i, j])), ha="center", va="center", color="black")  # pyright: ignore[reportUnknownMemberType]
+        ax.set_xticks([0, 1], labels=class_names)  # pyright: ignore[reportUnknownMemberType]
+        ax.set_yticks([0, 1], labels=class_names)  # pyright: ignore[reportUnknownMemberType]
+        ax.set_xlabel("Predicho")  # pyright: ignore[reportUnknownMemberType]
+        ax.set_ylabel("Real")  # pyright: ignore[reportUnknownMemberType]
+        ax.set_title(db_name)  # pyright: ignore[reportUnknownMemberType]
+
+    fig.suptitle("Matriz de confusión por base de datos")  # pyright: ignore[reportUnknownMemberType]
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)  # pyright: ignore[reportUnknownMemberType]
+    plt.close(fig)
+
+
+# Paleta categórica fija para plot_metrics_by_database() -- un color por
+# métrica, en un orden fijo que nunca se recicla entre corridas (principio
+# del skill de dataviz del proyecto: la identidad de una serie es su color,
+# nunca su posición). Son los primeros 6 slots de la paleta categórica de
+# referencia (azul/naranja/aqua/amarillo/magenta/verde), que valida sin
+# fallos de contraste CVD para el caso "barras adyacentes" con hasta 8
+# slots -- no hace falta re-ordenar ni recortar acá.
+_METRIC_BAR_COLORS: dict[str, str] = {
+    "accuracy": "#2a78d6",  # azul
+    "auc": "#eb6834",  # naranja
+    "sensitivity": "#1baf7a",  # aqua
+    "specificity": "#eda100",  # amarillo
+    "precision": "#e87ba4",  # magenta
+    "f1_macro": "#008300",  # verde
+}
+
+
+def plot_metrics_by_database(
+    metrics_by_db: dict[str, dict[str, float]],
+    path: str | Path,
+    metric_keys: tuple[str, ...] = (
+        "accuracy", "auc", "sensitivity", "specificity", "precision", "f1_macro",
+    ),
+    metric_display_names: dict[str, str] | None = None,
+) -> None:
+    """Grafica un diagrama de barras agrupadas por base de datos y por métrica.
+
+    Una barra por `(base de datos, métrica)`, agrupadas por base de datos en
+    el eje X -- ej. 4 grupos (una por base de datos) de 6 barras cada uno
+    (una por métrica). Complementa a `plot_confusion_matrix_by_database()`
+    dentro de `run_dir/test/`: la matriz de confusión muestra el detalle
+    TP/TN/FP/FN por base de datos, esta gráfica resume las métricas
+    derivadas para comparar bases de datos entre sí de un vistazo.
+
+    El eje Y es siempre `[0, 1]` -- ver `plot_metric_curve()`, que fija el
+    mismo rango por la misma razón (las métricas clínicas de
+    `build_metric_collection()`/`compute_confusion_matrix_metrics()` viven
+    ahí siempre), y así una barra corta se lee igual de "mala" sin importar
+    qué tan comprimido esté el resto de la gráfica. Cada barra lleva su
+    valor numérico encima (`ax.bar_label`): la paleta categórica de
+    referencia marca 3 de estos 6 colores (magenta, amarillo, aqua) por
+    debajo del contraste mínimo sobre fondo claro, así que la regla de
+    "relief" del skill de dataviz del proyecto aplica -- etiquetas visibles
+    en vez de depender solo del color para leer el valor.
+
+    Args:
+        metrics_by_db: dict `nombre_base_de_datos -> dict[métrica, valor]`,
+            típicamente construido en `cli.py:_evaluate_by_database()`
+            combinando el retorno de `evaluate_checkpoint()` y
+            `compute_confusion_matrix_metrics()` por base de datos. El orden
+            de iteración de este dict es el orden de los grupos en el eje X.
+        path: ruta destino de la imagen `.png`. El directorio padre se crea
+            si no existe.
+        metric_keys: qué claves de cada `metrics_by_db[db]` graficar, y en
+            qué orden (mismo orden para el color y para la posición dentro
+            de cada grupo). Default: las seis métricas clínicas de
+            `build_metric_collection()` menos `"f1"` -- se omite a propósito
+            porque mide solo la clase positiva y puede valer exactamente
+            `0.0` con pocas muestras malignas por base de datos (ver la nota
+            de `"f1" vs "f1_macro"` en `src/metrics.py`), lo que aplastaría
+            visualmente al resto de las barras sin aportar información
+            distinta de `f1_macro`.
+        metric_display_names: nombres a mostrar en la leyenda, por clave de
+            `metric_keys` (ej. `{"f1_macro": "F1-macro"}`). `None` (default)
+            usa la clave cruda tal cual. `cli.py` le pasa el mismo dict de
+            nombres para mostrar que ya usa `plot_metric_curve()`, para que
+            la leyenda de esta gráfica diga lo mismo que el resto de
+            `run_dir/plots/`.
+
+    Raises:
+        ValueError: si `metrics_by_db` está vacío.
+
+    Example:
+        >>> plot_metrics_by_database(
+        ...     {"cmmd": {"accuracy": 0.81, "auc": 0.88, "f1_macro": 0.79},
+        ...      "inbreast": {"accuracy": 0.74, "auc": 0.80, "f1_macro": 0.70}},
+        ...     "runs/exp05/test/metrics_by_database.png",
+        ...     metric_keys=("accuracy", "auc", "f1_macro"),
+        ... )
+    """
+    if not metrics_by_db:
+        raise ValueError("metrics_by_db está vacío -- no hay ninguna base de datos que graficar.")
+
+    display_names = metric_display_names or {}
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    db_names = list(metrics_by_db.keys())
+    n_metrics = len(metric_keys)
+    group_width = 0.8  # ancho total ocupado por un grupo (todas las barras de una base de datos)
+    bar_width = group_width / n_metrics
+
+    fig, ax = plt.subplots(figsize=(max(6.0, 2.2 * len(db_names)), 5))
+    for metric_idx, metric_key in enumerate(metric_keys):
+        # Centrar el grupo de n_metrics barras alrededor de cada posición
+        # entera 0, 1, 2, ... (una por base de datos) -- metric_idx=0 queda a
+        # la izquierda del centro, metric_idx=n_metrics-1 a la derecha.
+        offsets = [
+            group_idx + (metric_idx - (n_metrics - 1) / 2) * bar_width for group_idx in range(len(db_names))
+        ]
+        values = [metrics_by_db[db_name].get(metric_key, 0.0) for db_name in db_names]
+        color = _METRIC_BAR_COLORS.get(metric_key, "#52514e")  # gris neutro para métricas fuera de la paleta fija
+        bars = ax.bar(  # pyright: ignore[reportUnknownMemberType]
+            offsets, values, width=bar_width * 0.9, label=display_names.get(metric_key, metric_key), color=color,
+        )
+        ax.bar_label(bars, fmt="%.2f", fontsize=7, padding=2)  # pyright: ignore[reportUnknownMemberType]
+
+    ax.set_xticks(range(len(db_names)), labels=db_names)  # pyright: ignore[reportUnknownMemberType]
+    ax.set_ylim(0, 1)  # pyright: ignore[reportUnknownMemberType] -- ver docstring: las métricas viven en [0, 1]
+    ax.set_ylabel("Valor de la métrica")  # pyright: ignore[reportUnknownMemberType]
+    ax.set_title("Métricas de test por base de datos")  # pyright: ignore[reportUnknownMemberType]
+    ax.grid(True, axis="y", linestyle="--", alpha=0.4)  # pyright: ignore[reportUnknownMemberType]
+    # Leyenda AFUERA del área de dibujo (debajo del eje X), nunca "lower
+    # right"/"best" -- con valores reales cerca de 0 (ej. una base de datos
+    # donde el modelo falla por completo) una leyenda dentro del área de
+    # dibujo tapa exactamente las barras que hace falta leer.
+    ax.legend(  # pyright: ignore[reportUnknownMemberType]
+        loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=min(n_metrics, 6), fontsize=8, frameon=False,
+    )
+    # bbox_inches="tight" en vez de fig.tight_layout(): la leyenda vive fuera
+    # de ax (bbox_to_anchor con y negativo), así que tight_layout() no la
+    # tiene en cuenta y la recortaría al guardar.
+    fig.savefig(path, dpi=200, bbox_inches="tight")  # pyright: ignore[reportUnknownMemberType]
     plt.close(fig)

@@ -34,7 +34,7 @@ Ejemplo de uso:
 import csv
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, TextIO
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -100,13 +100,26 @@ class MetricsLogger:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
+        # metrics.csv y el SummaryWriter de TensorBoard se abren PEREZOSAMENTE
+        # -- recién en el primer log() (ver más abajo), no acá. Abrir
+        # metrics.csv en modo "w" en __init__, incondicionalmente, trunca
+        # cualquier metrics.csv preexistente en run_dir en el momento mismo
+        # de instanciar MetricsLogger -- sin importar si después se llama a
+        # log() ni una sola vez. Eso rompía a `evaluate.py`
+        # (`run_evaluation()`), que abre un MetricsLogger sobre el run_dir de
+        # un experimento YA entrenado para reusar log_summary()/log_image()/
+        # log_table() (que no tocan el CSV ni TensorBoard) sin reentrenar --
+        # el historial real de metrics.csv (commiteado como parte del
+        # registro de resultados, ver CLAUDE.md) se borraba con un archivo
+        # vacío en cuanto se abría el logger, antes incluso de evaluar nada.
+        # Diferir la apertura hasta el primer log() no cambia el
+        # comportamiento de Trainer.fit() (que sí llama a log() cada época,
+        # como siempre), pero deja intacto el metrics.csv de una corrida
+        # vieja cuando nadie vuelve a llamar a log().
         self._csv_path = self.run_dir / "metrics.csv"
-        self._csv_file = self._csv_path.open("w", newline="")
-        # None hasta el primer log() — recién ahí se conocen las columnas
-        # (los nombres de métrica que Trainer decida pasar).
+        self._csv_file: TextIO | None = None
         self._csv_writer: csv.DictWriter[str] | None = None
-
-        self._tb_writer = SummaryWriter(log_dir=str(self.run_dir))
+        self._tb_writer: SummaryWriter | None = None
 
         self._wandb_run = None
         if wandb_project is not None:
@@ -144,12 +157,18 @@ class MetricsLogger:
         """
         row: dict[str, float | int] = {"epoch": epoch, **metrics}
 
+        # Apertura perezosa -- ver el comentario en __init__ sobre por qué
+        # esto no puede pasar antes del primer log() real.
+        if self._csv_file is None:
+            self._csv_file = self._csv_path.open("w", newline="")
         if self._csv_writer is None:
             self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=list(row.keys()))
             self._csv_writer.writeheader()
         self._csv_writer.writerow(row)
         self._csv_file.flush()
 
+        if self._tb_writer is None:
+            self._tb_writer = SummaryWriter(log_dir=str(self.run_dir))
         for name, value in metrics.items():
             self._tb_writer.add_scalar(name, value, epoch)  # pyright: ignore[reportUnknownMemberType]
 
@@ -220,10 +239,14 @@ class MetricsLogger:
         """Cierra el archivo CSV, el SummaryWriter, y la corrida de W&B.
 
         Llamar al final de `fit()`, incluso si algo falló a mitad de
-        entrenamiento — por eso también existe `__exit__`.
+        entrenamiento — por eso también existe `__exit__`. `None` cuando
+        `log()` nunca se llamó (ej. `evaluate.py:run_evaluation()`, que solo
+        usa `log_summary()`/`log_image()`/`log_table()`) -- nada que cerrar.
         """
-        self._csv_file.close()
-        self._tb_writer.close()
+        if self._csv_file is not None:
+            self._csv_file.close()
+        if self._tb_writer is not None:
+            self._tb_writer.close()
         if self._wandb_run is not None:
             self._wandb_run.finish()
 

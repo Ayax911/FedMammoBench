@@ -9,8 +9,12 @@
 
 experiment_id: exp_example_01
 
-# Backbone encoder (src/models/build.py). "resnet50_radimagenet" es la única
-# arquitectura registrada hoy.
+# Backbone encoder (src/models/build.py). Arquitecturas registradas hoy:
+#   - resnet50_radimagenet: RadImageNet (dominio médico) -- requiere weights_path.
+#   - resnet50_imagenet_v1 / resnet50_imagenet_v2: pesos de ImageNet embebidos
+#     en torchvision -- SIN weights_path (torchvision los descarga/cachea la
+#     primera vez que se instancian). v2 es la receta de entrenamiento más
+#     nueva de torchvision (~80.9% top-1 ImageNet vs ~76.1% de v1).
 architecture:
   name: resnet50_radimagenet
   weights_path: checkpoints/RadImageNet-ResNet50_notop.pth
@@ -68,6 +72,15 @@ data:
     rotation_degrees: 15      # 0 desactiva la rotación
     vertical_flip: false
     blur: false
+  # Opcional -- desglose de test por base de datos al final del
+  # entrenamiento (metrics_by_database.json/.png, confusion_matrix_by_database.png
+  # en run_dir/test/). Omitir por completo desactiva el desglose. Ver
+  # scripts/split_manifest_by_database.py para generar estos manifests.
+  # by_database_manifests:
+  #   cmmd: manifests/by_database/cmmd_norm_neg1_1.csv
+  #   cdd-cesm: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+  #   inbreast: manifests/by_database/inbreast_norm_neg1_1.csv
+  #   kau-bcmd: manifests/by_database/kau-bcmd_norm_neg1_1.csv
 
 # Bucle de entrenamiento y persistencia (src/train/trainer.py).
 train:

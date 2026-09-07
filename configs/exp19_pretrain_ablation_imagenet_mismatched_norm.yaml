@@ -1,0 +1,99 @@
+# exp19_pretrain_ablation_imagenet_mismatched_norm -- COPIA LITERAL de
+# exp18_pretrain_ablation_radimagenet cambiando SOLO `architecture.name` a
+# resnet50_imagenet_v2. A propósito, `data.manifest_path`/`normalize_mean`/`normalize_std`
+# NO se tocan: siguen siendo los de RadImageNet (`fedmammobench_norm_neg1_1.csv`,
+# normalize_mean/std: null -- píxeles ya en [-1, 1], sin normalización adicional).
+#
+# Esto es DELIBERADAMENTE incorrecto desde el punto de vista de "cómo alimentar un backbone
+# de ImageNet" -- resnet50_imagenet_v2 se entrenó con píxeles en [0, 1] normalizados con las
+# estadísticas de ImageNet (mean/std ~0.45/~0.22), no en [-1, 1] sin normalizar. Ver
+# exp17_pretrain_ablation_imagenet.yaml para la versión "correcta" de este mismo par
+# (mismo head/loss/train que este archivo y que exp18, pero con
+# fedmammobench_norm_0_1.csv + normalize_mean/std: [0.449]/[0.226], la normalización que
+# ese backbone sí espera).
+#
+# Para qué sirve entonces: exp17 (ImageNet, normalización correcta) vs exp19 (ImageNet,
+# normalización de RadImageNet sin corregir) vs exp18 (RadImageNet, su normalización nativa)
+# es la comparación de a tres que cuantifica cuánto pesa la normalización de entrada en la
+# transferencia de un backbone de ImageNet -- exp19 es el control "mal alimentado" de ese
+# experimento, no una corrida que se espere que gane. No es la que hay que citar como
+# "el resultado de ImageNet" en ningún reporte -- esa es exp17.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp19_pretrain_ablation_imagenet_mismatched_norm.yaml
+
+experiment_id: exp19_pretrain_ablation_imagenet_mismatched_norm
+
+architecture:
+  name: resnet50_imagenet_v2   # único cambio real frente a exp18 -- sin weights_path, ver
+  # ArchitectureSpec.weights_from_factory en src/models/build.py (torchvision descarga/cachea
+  # los pesos solos).
+  unfreeze_from: none          # igual que exp17/exp18
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [1024]
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.5
+    num_classes: 2
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 5.0e-4
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]   # idéntico a exp17/exp18
+
+data:
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv   # SIN CAMBIAR frente a exp18 -- ver
+  # la nota de cabecera: esto es lo que hace que la normalización quede desalineada a propósito.
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null              # las imágenes ya están a 224x224 en disco
+  normalize_mean: null          # SIN CAMBIAR frente a exp18 -- ver nota de cabecera
+  normalize_std: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  # Mismas 4 bases que exp17/exp18, variante norm_neg1_1 -- consistente con manifest_path de
+  # arriba (sin cambiar frente a exp18).
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_neg1_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+    inbreast: manifests/by_database/inbreast_norm_neg1_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_neg1_1.csv
+
+train:
+  epochs: 200
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  freeze_bn_stats: false
+  checkpoint_dir: runs/exp19_pretrain_ablation_imagenet_mismatched_norm/weights
+  run_dir: runs/exp19_pretrain_ablation_imagenet_mismatched_norm
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # mismo grupo que exp17/exp18 -- se
+  # ven los 3 juntos en la UI de W&B, que es justo lo que hace falta para leer este ablation.

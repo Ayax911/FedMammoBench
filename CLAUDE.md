@@ -7,19 +7,39 @@ ResNet50 in PyTorch. **Current scope is centralized training only** — the fede
 is postponed until the centralized pipeline is validated, and nothing under `src/` imports `flwr` or
 `ray` today.
 
-## The one command
+## The one command (plus one more for re-evaluation)
 
 ```bash
 .venv/bin/python -m src.cli --config configs/exp05_fedmammobench_full_weighted.yaml
 ```
 
-That is the entire interface. `src/cli.py:run()` does everything end to end — seed → manifest → split
-→ transforms → dataloaders → backbone + head → `Trainer.fit()` → re-evaluate the **best** checkpoint on
-val *and* test → plots, JSONs, `predictions.csv`, W&B. There is no separate evaluate/plot entry point,
-no resume, and no way to score an existing checkpoint without re-running training. Adding one means
-writing it.
+That is the entire training interface. `src/cli.py:run()` does everything end to end — seed →
+manifest → split → transforms → dataloaders → backbone + head → `Trainer.fit()` → re-evaluate the
+**best** checkpoint on val *and* test (+ per-database test breakdown, opt-in — see below) → plots,
+JSONs, `predictions.csv`, W&B. There is still no resume.
 
-Cheap sanity check that the tree imports: `.venv/bin/python -c "import src.cli"`.
+There **is** a second entrypoint, `src/evaluate.py`, for the one gap that used to be real: scoring an
+already-trained checkpoint without re-running training (e.g. to backfill `test/*_by_database.*` for a
+run trained before `DataConfig.by_database_manifests` existed). It takes the same YAML plus
+`--checkpoint <path>.pt`, rebuilds the identical manifest/split/transforms/model, and calls
+`eval_pipeline.evaluate_split()`/`evaluate_by_database()` directly instead of `Trainer.fit()` — never
+touches `config.yaml`/`metrics.csv`/`plots/` in `run_dir`, only `run_dir/val/` and `run_dir/test/`.
+`eval_pipeline.py` is where that evaluation logic actually lives now (moved out of `cli.py`, which
+nothing else is allowed to import) so both entrypoints share it instead of duplicating it.
+
+```bash
+.venv/bin/python -m src.evaluate --config configs/exp05_fedmammobench_full_weighted.yaml \
+    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt
+```
+
+Per-database test breakdown (`DataConfig.by_database_manifests`, opt-in, `None` by default): derived
+manifests live in `manifests/by_database/` (one CSV per `source_dataset`, generated from
+`manifests/fedmammobench_norm_{0_1,neg1_1}.csv` by `scripts/split_manifest_by_database.py` — rerun that
+script if the source manifests change; it never touches image data). When set, both entrypoints write
+`test/metrics_by_database.json`, `test/confusion_matrix_by_database.png` and `test/metrics_by_database.png`
+alongside the usual `test/` artifacts.
+
+Cheap sanity check that the tree imports: `.venv/bin/python -c "import src.cli; import src.evaluate"`.
 
 ## Repo state — what is real, what is stale
 
@@ -82,12 +102,16 @@ tree.
 One direction of dependency, no exceptions:
 
 ```
-config.py → seed / metrics / checkpoint / tracking / reporting / datasets / models → train/ → cli.py
+config.py → seed / metrics / checkpoint / tracking / reporting / datasets / models → train/
+    → eval_pipeline.py → cli.py / evaluate.py
 ```
 
-Nothing imports `cli.py`. `datasets/` never imports `models/` or `train/`. `models/weights.py` never
-imports `models/build.py`. A late import inside a function to dodge a cycle is a design smell here,
-not an accepted workaround.
+Nothing imports `cli.py`. `evaluate.py` (re-evaluate an already-trained checkpoint, no retraining —
+see "The one command" above) sits at the same layer as `cli.py` and imports `eval_pipeline.py`
+directly, never `cli.py` — that's the whole reason `evaluate_split()`/`evaluate_by_database()` live in
+`eval_pipeline.py` instead of as private helpers inside `cli.py`. `datasets/` never imports `models/`
+or `train/`. `models/weights.py` never imports `models/build.py`. A late import inside a function to
+dodge a cycle is a design smell here, not an accepted workaround.
 
 Deliberate departures from the deleted package, all still in force:
 
@@ -106,22 +130,33 @@ Where the pieces live:
   is patient-disjoint; it never generates a split — stratification happens upstream, outside this
   repo), `MammoBenchDataset`, `TransformBuilder`, and `builder_dataloader()`. Per-method contracts in
   **`src/datasets/DOCS.md`**.
-- **`src/models/`** — `build_model(name, weights_path, unfreeze_from, device)` returns
+- **`src/models/`** — `build_model(name, weights_path=None, unfreeze_from, device)` returns
   `(backbone, LoadReport)`: instantiates from `_ARCHITECTURES`, remaps the checkpoint's `backbone.N.`
-  keys onto torchvision names, and applies a `FreezeStrategy`. Heads are a separate axis:
-  `get_head_strategy(name)` returns an unconstructed `HeadBuilder` subclass (`standard_mlp` — one
-  hidden layer, always `BatchNorm1d`; `configurable_mlp` — N hidden layers, selectable activation, no
-  BatchNorm by default). Details in **`src/models/DOCS.md`**.
+  keys onto torchvision names, and applies a `FreezeStrategy`. Registered architectures today:
+  `resnet50_radimagenet` (external `.pth` checkpoint, `weights_path` required) and
+  `resnet50_imagenet_v1`/`resnet50_imagenet_v2` (ImageNet weights bundled in torchvision itself —
+  `ArchitectureSpec.weights_from_factory=True`, no `weights_path`, torchvision downloads/caches on
+  first use). Heads are a separate axis: `get_head_strategy(name)` returns an unconstructed
+  `HeadBuilder` subclass (`standard_mlp` — one hidden layer, always `BatchNorm1d`; `configurable_mlp` —
+  N hidden layers, selectable activation, no BatchNorm by default). Details in **`src/models/DOCS.md`**.
 - **`src/train/`** — `build_optimizer`/`build_scheduler`/`build_loss`, the pure `train_one_epoch()` /
   `evaluate()` functions, `EarlyStopping`, `FocalLoss`, `evaluate_checkpoint()`/`predict_on_loader()`,
   and `Trainer`. See **`src/train/DOCS.md`**.
-- **`src/reporting.py`** — the four pure artifact writers (`save_metrics_json`,
-  `save_predictions_csv`, `plot_confusion_matrix`, `plot_roc_curve`) plus
-  `compute_confusion_matrix_metrics()`. Uses **torchmetrics**, not scikit-learn, for the confusion
-  matrix and ROC — sklearn is installed but deliberately unused here.
-- **`cli.py` owns the assembly**, on purpose: `nn.Sequential(backbone, head.build())`, the W&B run
-  (opened before `Trainer` so training and test land on one run), and the `_evaluate_split()` helper
-  that runs the identical val and test reporting block.
+- **`src/reporting.py`** — pure artifact writers: `save_metrics_json`, `save_predictions_csv`,
+  `plot_confusion_matrix`, `plot_roc_curve`, `compute_confusion_matrix_metrics()`, plus the
+  per-database-breakdown trio `save_metrics_by_database_json`, `plot_confusion_matrix_by_database`,
+  `plot_metrics_by_database`. Uses **torchmetrics**, not scikit-learn, for the confusion matrix and
+  ROC — sklearn is installed but deliberately unused here.
+- **`src/eval_pipeline.py`** — `evaluate_split()` (val/test, reused identically for both) and
+  `evaluate_by_database()` (opt-in per-database test breakdown), both taking a checkpoint path and an
+  already-open `MetricsLogger` — shared by `cli.py` (right after `Trainer.fit()`) and `evaluate.py`
+  (standalone re-evaluation).
+- **`cli.py` owns the training assembly**, on purpose: `nn.Sequential(backbone, head.build())`, the
+  W&B run (opened before `Trainer` so training and test land on one run), and calling
+  `eval_pipeline.evaluate_split()`/`evaluate_by_database()` after `fit()`.
+- **`evaluate.py`** rebuilds that same assembly minus `Trainer.fit()`, loading a given checkpoint
+  straight into `eval_pipeline.evaluate_split()`/`evaluate_by_database()` instead — see "The one
+  command" above.
 
 `LossSpec` (`train/build.py`) is the one abstraction worth understanding before editing the loop: it
 pairs the loss function with the correct logits→positive-class-probability conversion, because that
@@ -140,8 +175,13 @@ These are the legacy failure modes the rewrite exists to prevent. Preserve them.
   `f1_macro` on that manifest. `f1` is correct only for the INC replicas, whose train split is 84%
   malignant.
 - **Evaluate the best checkpoint, never the last.** `Trainer.fit()` returns the best checkpoint path
-  and `cli.run()` feeds exactly that into `_evaluate_split()` for both val and test. Never add a
-  "which checkpoint" config flag — it can drift from what was actually best.
+  and `cli.run()` feeds exactly that into `eval_pipeline.evaluate_split()` for both val and test. Never
+  add a "which checkpoint" config flag — it can drift from what was actually best.
+- **`MetricsLogger`'s CSV/TensorBoard writers open lazily, on the first `log()` call — never in
+  `__init__`.** Opening eagerly would truncate a `run_dir`'s real `metrics.csv` (the committed training
+  history) the instant `evaluate.py:run_evaluation()` instantiates a logger to reuse
+  `log_summary()`/`log_image()`/`log_table()`, even though it never calls `log()`. Don't "simplify" this
+  back to eager — it silently destroys history the moment someone re-evaluates an old checkpoint.
 - **Silent weight-loading failure.** `load_weights()` raises when `matched == 0`. That is precisely the
   state a `backbone.`-prefix mismatch produces, and without the raise the run trains from random init
   and looks merely mediocre.
@@ -186,7 +226,9 @@ never was** — those three cannot be re-run as-is even on the workstation.
 `run_dir` (`runs/<experiment_id>/`) gets `config.yaml` (a snapshot of exactly what ran), `metrics.csv`,
 TensorBoard events, `plots/` (loss plus one train-vs-val curve per clinical metric), and one folder per
 evaluated split — `val/` and `test/`, each with `metrics.json`, `confusion_matrix_metrics.json`,
-`predictions.csv`, `confusion_matrix.png`, `roc_curve.png`. Weights go to `checkpoint_dir`
+`predictions.csv`, `confusion_matrix.png`, `roc_curve.png`. If `DataConfig.by_database_manifests` is
+set, `test/` also gets `metrics_by_database.json`, `confusion_matrix_by_database.png` and
+`metrics_by_database.png` (see `eval_pipeline.evaluate_by_database()`). Weights go to `checkpoint_dir`
 (`runs/<experiment_id>/weights/`) as `best_epoch<N>.pt` plus `best_epoch<N>_backbone.pt` /
 `_head.pt` (split out for the eventual federated work, where only the backbone aggregates) and
 `epoch<N>.pt` every `save_every` epochs.

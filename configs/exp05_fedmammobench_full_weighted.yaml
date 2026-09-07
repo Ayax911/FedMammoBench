@@ -66,6 +66,15 @@ data:
     vertical_flip_p: 0.2
     blur: true
     blur_p: 0.3
+  # Desglose de test por base de datos (metrics_by_database.json/.png,
+  # confusion_matrix_by_database.png en runs/exp05.../test/) -- generados por
+  # scripts/split_manifest_by_database.py a partir del mismo manifest TIFF de
+  # arriba (norm_neg1_1), sin tocar ninguna imagen.
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_neg1_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+    inbreast: manifests/by_database/inbreast_norm_neg1_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_neg1_1.csv
 
 train:
   epochs: 200

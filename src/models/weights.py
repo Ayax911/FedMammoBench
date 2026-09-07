@@ -23,6 +23,37 @@ import torch.nn as nn
 from .reports import LoadReport
 
 
+def truncate_backbone(model: nn.Module, n: int = 9) -> nn.Sequential:
+    """Trunca un modelo a sus primeros `n` submódulos hijos directos.
+
+    Único lugar donde vive el número mágico "9" -- el índice que separa el
+    encoder (`conv1..avgpool`) de la cabeza de clasificación (`fc`) en un
+    `resnet50` de torchvision. `load_weights()` lo llama después de cargar un
+    checkpoint externo; `build_model()` (`models/build.py`) lo vuelve a llamar
+    para las arquitecturas con `ArchitectureSpec.weights_from_factory=True`
+    (ImageNet vía torchvision, ej. `resnet50_imagenet_v2`), que nunca pasan
+    por `load_weights()` porque `model_factory()` ya les entrega los pesos
+    cargados -- sin este helper compartido, ese "9" tendría que repetirse en
+    `build.py` y podría divergir si algún día cambia acá.
+
+    Args:
+        model: modelo completo (con `fc` incluido) del que extraer el encoder.
+        n: cantidad de hijos directos a conservar, en orden. Default 9, que
+            para `resnet50` es exactamente `conv1, bn1, relu, maxpool,
+            layer1, layer2, layer3, layer4, avgpool` -- descarta `fc`.
+
+    Returns:
+        nn.Sequential: los primeros `n` submódulos, en el mismo orden.
+
+    Example:
+        >>> from torchvision.models import resnet50
+        >>> backbone = truncate_backbone(resnet50(weights=None))
+        >>> len(backbone)
+        9
+    """
+    return nn.Sequential(*list(model.children())[:n])
+
+
 def load_weights(
     model_factory: Callable[[], nn.Module],
     weights_path: str | Path,
@@ -107,7 +138,6 @@ def load_weights(
     )
 
     # Truncate model up to layer index 9 (extracting standard ResNet encoder layers)
-    encoder_layers = list(model.children())
-    backbone = nn.Sequential(*encoder_layers[:9])
+    backbone = truncate_backbone(model)
 
     return backbone, report

@@ -1,0 +1,87 @@
+# exp18_pretrain_ablation_radimagenet -- par con exp17_pretrain_ablation_imagenet: MISMO head
+# (h1024/dropout 0.5 de una sola capa, el ganador del barrido de exp16) + optimizer/scheduler/loss/
+# augmentation/train que exp17 -- la única diferencia entre ambos archivos es la arquitectura
+# (RadImageNet acá, ImageNet en exp17) y, por lo que eso obliga (ver la nota de exp17), el
+# manifest/normalización de `data:`. NO es una copia de exp05: la cabeza es distinta (exp05 usa
+# h1024-512/dropout 0.2) -- exp18 existe para emparejarse con exp17, no para reproducir exp05.
+#
+# experiment_id/run_dir/wandb_group son propios (no pisan runs/exp05.../) para que las dos
+# corridas del par aparezcan juntas y numeradas en runs/ y en la UI de W&B.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp18_pretrain_ablation_radimagenet.yaml
+
+experiment_id: exp18_pretrain_ablation_radimagenet
+
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: none          # backbone 100% congelado -- igual que exp17
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [1024]
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.5
+    num_classes: 2
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 5.0e-4
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]   # ponderación por clase para balancear el 66/34 -- igual que exp17
+
+data:
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv   # RadImageNet espera [-1, 1] -- ver
+  # la nota completa en configs/exp17_pretrain_ablation_imagenet.yaml sobre por qué exp17 usa
+  # norm_0_1 + normalización de ImageNet en vez de esto.
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null              # las imágenes ya están a 224x224 en disco
+  normalize_mean: null          # ya normalizadas en [-1, 1] -- ver nota arriba
+  normalize_std: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  # Desglose de test por base de datos -- mismas 4 bases que exp17, apuntando a la variante
+  # norm_neg1_1 (misma normalización que manifest_path de arriba).
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_neg1_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+    inbreast: manifests/by_database/inbreast_norm_neg1_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_neg1_1.csv
+
+train:
+  epochs: 200
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  freeze_bn_stats: false
+  checkpoint_dir: runs/exp18_pretrain_ablation_radimagenet/weights
+  run_dir: runs/exp18_pretrain_ablation_radimagenet
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # mismo grupo que exp17 -- junta el par
