@@ -68,3 +68,4 @@ train:
   run_dir: runs/exp08_layer4_bce_2048_2_posweight
   device: cuda
   wandb_project: fedmammobench2.0
+  wandb_group: bce_freeze_posweight_sweep

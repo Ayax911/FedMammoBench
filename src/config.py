@@ -192,6 +192,12 @@ class TrainConfig(BaseModel):
             diferencia entre un backbone que efectivamente cambia (INC) y
             uno que se queda con las estadísticas de RadImageNet (default).
         wandb_project: Nombre opcional del proyecto en Weights & Biases (None desactiva W&B).
+        wandb_group: Nombre opcional de grupo en Weights & Biases (`wandb.init(group=...)`).
+            Junta en la UI las corridas de un mismo bloque de experimentos (ej. el barrido
+            fullfreeze/layer4 x posweight, o el barrido de profundidad de cabeza) bajo una
+            sola fila expandible, sin tocar `experiment_id` ni `run_dir`. Ignorado si
+            `wandb_project` es `None`. `None` (default) dejaría la corrida sin grupo — visible
+            suelta en la lista de la UI en vez de agrupada.
 
     Example:
         >>> train_cfg = TrainConfig(
@@ -219,6 +225,7 @@ class TrainConfig(BaseModel):
     device: str = "cpu"
     freeze_bn_stats: bool = True
     wandb_project: str | None = None  # None -> W&B desactivado, ver tracking.py
+    wandb_group: str | None = None  # agrupa corridas en la UI de W&B, ver tracking.py
 
 
 class ExperimentConfig(BaseModel):

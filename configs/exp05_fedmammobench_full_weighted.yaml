@@ -79,4 +79,5 @@ train:
   run_dir: runs/exp05_fedmammobench_full_weighted
   device: cuda
   wandb_project: fedmammobench2.0
+  wandb_group: ce_full_manifest
 

@@ -30,7 +30,7 @@ Maneja la validación de configuraciones mediante Pydantic v2. Cada sub-configur
 * **`ArchitectureConfig`**: Dataclass de configuración para construir el backbone encoder (`name`, `weights_path`, `unfreeze_from`).
 * **`NamedComponentConfig`**: Configuración genérica por nombre e hiperparámetros (`name`, `hparams`) para componentes dinámicos (optimizadores, schedulers, funciones de pérdida y cabezas de clasificación).
 * **`DataConfig`**: Parámetros de dataset y DataLoader (`manifest_path`, `image_root`, `batch_size`, `num_workers`, `seed`, `image_size`).
-* **`TrainConfig`**: Parámetros del bucle de entrenamiento (`epochs`, `metric_name`, `checkpoint_dir`, `run_dir`, `device`, `wandb_project`).
+* **`TrainConfig`**: Parámetros del bucle de entrenamiento (`epochs`, `metric_name`, `checkpoint_dir`, `run_dir`, `device`, `wandb_project`, `wandb_group`).
 * **`ExperimentConfig`**: Modelo principal que integra todas las secciones de un experimento.
 * **`load_config(path)`**: Carga y valida un archivo YAML contra `ExperimentConfig`.
 * **`save_config(config, path)`**: Serializa un `ExperimentConfig` a formato YAML.
@@ -179,6 +179,7 @@ with MetricsLogger(
     run_dir="runs/exp_01",
     wandb_project="Federal-Learning",
     wandb_run_name="exp_01",
+    wandb_group="bce_freeze_posweight_sweep",  # junta esta corrida con las del mismo bloque en la UI
     config={"lr": 1e-4, "unfreeze_idx": [7]},
 ) as logger:
     for epoch in range(1, 5):

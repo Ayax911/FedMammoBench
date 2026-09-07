@@ -99,3 +99,4 @@ train:
   run_dir: runs/exp03_classification_images_frozen_backbone
   device: cuda                   # requiere GPU -- ver notas de ejecución
   wandb_project: fedmammobench2.0
+  wandb_group: inc_replica

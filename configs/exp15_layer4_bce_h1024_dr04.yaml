@@ -76,3 +76,4 @@ train:
   run_dir: runs/exp15_layer4_bce_h1024_dr04
   device: cuda
   wandb_project: fedmammobench2.0
+  wandb_group: bce_dropout_sweep

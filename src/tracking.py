@@ -75,6 +75,7 @@ class MetricsLogger:
         run_dir: str | Path,
         wandb_project: str | None = None,
         wandb_run_name: str | None = None,
+        wandb_group: str | None = None,
         config: dict[str, Any] | None = None,
     ) -> None:
         """Prepara el destino de metrics.csv, el writer de TensorBoard, y (si se pide) W&B.
@@ -86,6 +87,11 @@ class MetricsLogger:
                 W&B queda completamente desactivado, `wandb` ni se importa.
             wandb_run_name: Nombre de esta corrida en W&B. Ignorado si
                 `wandb_project` es None.
+            wandb_group: Nombre de grupo de W&B (`wandb.init(group=...)`) —
+                junta en la UI todas las corridas del mismo bloque de
+                experimentos (ej. un barrido de hiperparámetro) bajo una
+                fila expandible. `None` (default) deja la corrida sin grupo.
+                Ignorado si `wandb_project` es None.
             config: Hiperparámetros de la corrida (típicamente
                 `ExperimentConfig.model_dump(mode="json")`) para que W&B
                 pueda agrupar/filtrar corridas por config. Ignorado si
@@ -110,6 +116,7 @@ class MetricsLogger:
             self._wandb_run = wandb.init(
                 project=wandb_project,
                 name=wandb_run_name,
+                group=wandb_group,
                 dir=str(self.run_dir),
                 mode=mode,
                 config=config,

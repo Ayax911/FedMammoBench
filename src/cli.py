@@ -216,6 +216,7 @@ def run(config: ExperimentConfig) -> None:
         config.train.run_dir,
         wandb_project=config.train.wandb_project,
         wandb_run_name=config.experiment_id,
+        wandb_group=config.train.wandb_group,
         config=config.model_dump(mode="json"),
     ) as logger:
         trainer = Trainer(

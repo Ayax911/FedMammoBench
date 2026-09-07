@@ -112,3 +112,4 @@ train:
   run_dir: runs/exp04_inc_strict_replica
   device: cuda
   wandb_project: fedmammobench2.0
+  wandb_group: inc_replica

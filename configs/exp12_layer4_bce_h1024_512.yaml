@@ -77,3 +77,4 @@ train:
   run_dir: runs/exp12_layer4_bce_h1024_512
   device: cuda
   wandb_project: fedmammobench2.0
+  wandb_group: bce_head_depth_sweep
