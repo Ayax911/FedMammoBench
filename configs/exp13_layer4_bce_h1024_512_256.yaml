@@ -1,0 +1,79 @@
+# exp13_layer4_bce_h1024_512_256 -- Barrido de profundidad de cabeza sobre el ganador exp08
+# (val f1_macro=0.7647, test=0.7422). Idéntico a exp08 salvo `hidden_layers`.
+#
+# Profundidad 3: 2048 -> 1024 -> 512 -> 256 -> 1
+#
+# `use_batchnorm: true` reproduce la cadena de StandardMLPHead
+# (Linear -> BatchNorm1d -> activación -> Dropout) en cada capa oculta, pero
+# conservando la LeakyReLU(0.2) del INC en vez del ReLU fijo de StandardMLPHead
+# -- por eso se usa configurable_mlp y no standard_mlp: standard_mlp no permite
+# ni más de una capa oculta ni elegir la activación.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp13_layer4_bce_h1024_512_256.yaml
+
+experiment_id: exp13_layer4_bce_h1024_512_256
+
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: layer4
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [1024, 512, 256]
+    activation: leakyrelu
+    negative_slope: 0.2         # nn.LeakyReLU(0.2) del INC
+    dropout: 0.2
+    use_batchnorm: true         # cadena de StandardMLPHead en cada capa oculta
+    num_classes: 1
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 1.0e-4
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: bce
+  hparams:
+    pos_weight: [1.9295]   # Ponderación por clase para balancear el 66/34
+
+data:
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null              # Las imágenes ya están a 224x224 en disco
+  normalize_mean: null          # Las imágenes ya están normalizadas en [-1, 1]
+  normalize_std: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+
+train:
+  epochs: 200
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  freeze_bn_stats: false
+  checkpoint_dir: runs/exp13_layer4_bce_h1024_512_256/weights
+  run_dir: runs/exp13_layer4_bce_h1024_512_256
+  device: cuda
+  wandb_project: fedmammobench2.0

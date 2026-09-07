@@ -1,0 +1,126 @@
+_wandb:
+    value:
+        cli_version: 0.29.0
+        e:
+            vbfm9u31a08myfvvza9gyxet4ncn7jip:
+                args:
+                    - --config
+                    - configs/exp11_layer4_bce_h1024.yaml
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "195722883072"
+                        used: "137277403136"
+                executable: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/.venv/bin/python
+                git:
+                    commit: a24c6ab15b50dc0f8dfc10ab98c54d3e2db1bc30
+                    remote: git@github.com:Ayax911/FedMammoBench.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-c5b5be7b-8c3e-86ad-6240-79778baae0e8
+                host: labmirp-Precision-5860-Tower
+                memory:
+                    total: "134269358080"
+                os: Linux-7.0.0-28-generic-x86_64-with-glibc2.39
+                program: -m src.cli
+                python: CPython 3.12.8
+                root: runs/exp11_layer4_bce_h1024
+                startedAt: "2026-09-07T03:37:43.978437Z"
+                writerId: vbfm9u31a08myfvvza9gyxet4ncn7jip
+        m: []
+        python_version: 3.12.8
+        t:
+            "1":
+                - 1
+                - 41
+            "2":
+                - 1
+                - 41
+            "3":
+                - 2
+                - 13
+                - 16
+                - 62
+                - 61
+                - 78
+            "4": 3.12.8
+            "5": 0.29.0
+            "12": 0.29.0
+            "13": linux-x86_64
+architecture:
+    value:
+        name: resnet50_radimagenet
+        unfreeze_from: layer4
+        weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+data:
+    value:
+        augmentation:
+            blur: true
+            blur_p: 0.3
+            horizontal_flip: true
+            horizontal_flip_p: 0.5
+            rotation_degrees: 15
+            vertical_flip: true
+            vertical_flip_p: 0.2
+        batch_size: 64
+        image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+        image_size: null
+        manifest_path: manifests/fedmammobench_norm_neg1_1.csv
+        normalize_mean: null
+        normalize_std: null
+        num_workers: 4
+        seed: 42
+experiment_id:
+    value: exp11_layer4_bce_h1024
+head:
+    value:
+        hparams:
+            activation: leakyrelu
+            dropout: 0.2
+            hidden_layers:
+                - 1024
+            in_features: 2048
+            negative_slope: 0.2
+            num_classes: 1
+            use_batchnorm: true
+        name: configurable_mlp
+loss:
+    value:
+        hparams:
+            pos_weight:
+                - 1.9295
+        name: bce
+optimizer:
+    value:
+        hparams:
+            betas:
+                - 0.5
+                - 0.999
+            lr: 0.0001
+        name: adam
+scheduler:
+    value:
+        hparams:
+            T_max: 200
+            eta_min: 1e-06
+        name: cosine
+train:
+    value:
+        checkpoint_dir: runs/exp11_layer4_bce_h1024/weights
+        device: cuda
+        epochs: 200
+        freeze_bn_stats: false
+        metric_mode: max
+        metric_name: f1_macro
+        min_delta: 0.005
+        patience: 100
+        run_dir: runs/exp11_layer4_bce_h1024
+        save_every: 10
+        wandb_project: fedmammobench2.0

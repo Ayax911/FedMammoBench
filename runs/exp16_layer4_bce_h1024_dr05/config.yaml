@@ -1,0 +1,63 @@
+experiment_id: exp16_layer4_bce_h1024_dr05
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal
+    Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: layer4
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers:
+    - 1024
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.5
+    use_batchnorm: true
+    num_classes: 1
+optimizer:
+  name: adam
+  hparams:
+    lr: 0.0001
+    betas:
+    - 0.5
+    - 0.999
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-06
+loss:
+  name: bce
+  hparams:
+    pos_weight:
+    - 1.9295
+data:
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  normalize_mean: null
+  normalize_std: null
+train:
+  epochs: 200
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  checkpoint_dir: runs/exp16_layer4_bce_h1024_dr05/weights
+  run_dir: runs/exp16_layer4_bce_h1024_dr05
+  device: cuda
+  freeze_bn_stats: false
+  wandb_project: fedmammobench2.0
