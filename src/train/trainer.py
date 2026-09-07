@@ -203,7 +203,17 @@ class Trainer:
             if self._injected_logger is not None
             else MetricsLogger(self.run_dir)
         )
-        with logger_ctx as logger:
+        # `print()` por sí solo solo llega a stdout -- se pierde si la corrida
+        # se lanza en background/Docker sin redirección propia. metrics.csv
+        # (vía MetricsLogger, arriba) ya persiste los mismos números, pero no
+        # como texto legible de un vistazo; train.log espeja exactamente lo
+        # que se imprime, época por época. "a" (no "w") porque MetricsLogger
+        # ya pudo haber sido abierto por cli.run() antes de instanciar este
+        # Trainer -- no hay un único punto "inicio de corrida" que trunque acá
+        # con seguridad, y perder log de una corrida anterior por sobreescritura
+        # sería peor que ir acumulando.
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        with logger_ctx as logger, (self.run_dir / "train.log").open("a") as log_file:
             for epoch in range(epochs):
                 epoch_start = time.time()
 
@@ -264,19 +274,24 @@ class Trainer:
                 # (ver CLAUDE.md, "f1 vs f1_macro") -- verla por época, incluso cuando
                 # se hace early stopping sobre otra métrica, ayuda a detectar el
                 # estancamiento en 0.0 típico de las primeras épocas.
-                print(
+                line = (
                     f"[epoch {epoch}] train_loss={train_metrics['loss']:.4f} "
                     f"val_loss={val_metrics['loss']:.4f} "
                     f"f1_macro={val_metrics['f1_macro']:.4f} "
                     f"val_{self.metric_name}={current_metric:.4f} (best={self.tracker.best_value:.4f}) "
                     f"[{epoch_metrics['duration_seconds']:.1f}s]"
                 )
+                print(line)
+                log_file.write(line + "\n")
+                log_file.flush()  # que el archivo esté al día si la corrida se corta a medias
 
                 if self.tracker.should_stop:
-                    print(
+                    stop_line = (
                         f"Early stopping activado en época {epoch} "
                         f"(sin mejora en {self.tracker.patience} épocas)"
                     )
+                    print(stop_line)
+                    log_file.write(stop_line + "\n")
                     break
 
         if self.best_checkpoint_path is None:
