@@ -2,298 +2,238 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-FedMammoBench: a federated learning framework for binary mammography classification (benign/malignant), built on PyTorch (+ Flower/Ray for the federated side, postponed — see below).
+FedMammoBench: binary mammography classification (benign / malignant) with a RadImageNet-pretrained
+ResNet50 in PyTorch. **Current scope is centralized training only** — the federated half (Flower/Ray)
+is postponed until the centralized pipeline is validated, and nothing under `src/` imports `flwr` or
+`ray` today.
 
-## Branch state — read `REFACTOR.md` first
+## The one command
 
-`feature/radimagenet-refactor` (the branch you are almost certainly on) is a **from-scratch rewrite**
-of the training package. The previous `src/fedmammobench/` (~9,900 lines: CLI, config system,
-registries, strategies, weight loaders, `Trainer`, resume logic) was **deliberately deleted** on this
-branch (commits `12cb3d1` + `6cfd5b6`) as a learning exercise — understand every piece, simplify ~59
-opaque modules down to ~15–18, reproduce the legacy's results rather than free-rewrite them (the numbers
-feed a paper). **Current scope is centralized training only; federated learning is postponed** until
-that pipeline is validated.
-
-`REFACTOR.md` at the repo root is the actively-maintained handoff/status document for this rewrite —
-verified tree state, what's done vs. not, open decisions, next steps. **Read it before writing any code
-under `src/`, and re-read it each session — it changes every commit, faster than this file does.** Where
-anything below disagrees with a more recent `REFACTOR.md`, trust `REFACTOR.md`.
-
-Because of the deletion, a lot of *other* checked-in documentation now describes a package that no
-longer exists in this working tree and does not run here: the top of `README.md` (Quick Start, Execution
-Modes, Configuration, Federated Strategies, Transfer Learning, Research Experiments — all assume
-`fedmammobench-*` CLI entry points and `configs/base.yaml` inheritance), `scripts/DOCS.md`,
-`docs/SRC_STRUCTURE.md`, and every `scripts/run_{centralized,federated,server,client,evaluation}.py`
-(all `import fedmammobench...`, none of which resolves). Treat any doc or script that imports
-`fedmammobench` as legacy reference material, not as something to run. The legacy package is still
-intact on `main`:
 ```bash
-git show main:src/fedmammobench/training/trainer.py
-git show main:src/fedmammobench/models/weight_loaders/custom.py
-git worktree add ../fedmammobench-legacy main   # to browse it as a full checkout
+.venv/bin/python -m src.cli --config configs/exp05_fedmammobench_full_weighted.yaml
 ```
-`CHANGELOG.md` and `run.sh` were deleted alongside it and are recoverable the same way.
 
-## Environment & running code
+That is the entire interface. `src/cli.py:run()` does everything end to end — seed → manifest → split
+→ transforms → dataloaders → backbone + head → `Trainer.fit()` → re-evaluate the **best** checkpoint on
+val *and* test → plots, JSONs, `predictions.csv`, W&B. There is no separate evaluate/plot entry point,
+no resume, and no way to score an existing checkpoint without re-running training. Adding one means
+writing it.
 
-`.venv/` (Python 3.12.3) is the interpreter to use — **not** a `venv/` directory, and note
-`pyproject.toml`'s `requires-python = ">=3.11,<3.12"` technically rejects it (one of several things
-`pyproject.toml` still needs fixing for this branch, see `REFACTOR.md` §8). It currently has only
-`torch`, `torchvision`, `pandas`, `pillow`, `numpy` installed — enough for `src/datasets` and most of
-`src/models`, but **not** `pytest`, `scikit-learn`, `albumentations`, `opencv`, `ray`, `flwr`, `PyYAML`,
-or `wandb`. Install whatever a task needs ad hoc; there is no `requirements.txt` in this tree to install
-from wholesale (it existed pre-refactor, not anymore).
+Cheap sanity check that the tree imports: `.venv/bin/python -c "import src.cli"`.
 
-`pip install -e .` does not work: `[tool.setuptools.packages.find] include = ["fedmammobench*"]` matches
-zero packages now that that directory is gone. Import the new code straight from the repo root instead:
-```bash
-.venv/bin/python -c "from src.datasets import Manifest, Split; print('ok')"
+## Repo state — what is real, what is stale
+
+`main` is the live branch and holds the rewritten `src/` package. A lot of checked-in documentation
+predates that and describes things that no longer exist anywhere:
+
+- **The legacy `src/fedmammobench/` package is gone from every branch** (71 files: registries,
+  strategies, weight loaders, its own `Trainer`, `configs/base.yaml` inheritance, the
+  `fedmammobench-*` console scripts). There is no `pyproject.toml` in this tree at all, so
+  `pip install -e .` and every `fedmammobench-*` command are dead by construction.
+- **The exp01–exp32 standalone notebook series is also gone from every branch**, deleted in `0e934ec`
+  ("remove notebook-era configs/ and runs/"), along with `scripts/gen_*.py` and every
+  `scripts/run-expNN-*.sh`/`eval-expNN-*.sh`. `configs/` is now YAML only and `scripts/` holds nothing
+  but `DOCS.md`.
+- **`ec55408` is the last commit holding both** — the complete legacy package *and* the notebook series
+  with its generators. Use it to consult either:
+  ```bash
+  git show ec55408:src/fedmammobench/training/trainer.py
+  git show ec55408:configs/exp28/exp28.ipynb          # the notebook src/ was written to reproduce
+  git worktree add ../fedmammobench-legacy ec55408    # to browse it as a full checkout
+  ```
+- **`REFACTOR.md` is a snapshot from 2026-08-26 and its status sections are wrong** — it claims `src/`
+  is 155 lines in 4 files and that `models/`/`train/` are unwritten. Its *rationale* sections are still
+  the best explanation of why the code looks the way it does (§4 architecture decisions, §6 the exact
+  transform pipeline and index gotcha, §7 legacy bugs to reproduce, §10 manifest statistics); its
+  checklists are not.
+- **`PHASES.md` is accurate and is the newest design document.** It logs, phase by phase, what was
+  ported from the INC project (`inc-project-models-classification-detection-main`, a sibling repo not
+  checked in here) into `src/`: F1/precision metrics, `drop_last`, cuDNN determinism, the
+  `weight`-as-list loss bug, `FocalLoss`, `EarlyStopping`, test-set evaluation and reporting,
+  `ConfigurableMLPHead`, vertical-flip/blur augmentation, periodic checkpoints. Read it before
+  touching those areas — most of the odd-looking defaults are "reproduces INC exactly" decisions.
+- The `develop` / `phaseN-*` branch convention PHASES.md describes is historical; those branches are
+  merged and deleted.
+
+## Environment
+
+`.venv/` (Python **3.12.8**) is the interpreter, and it already has everything in `requirements.txt`:
+torch 2.13 + CUDA, torchvision 0.28, torchmetrics, pandas 3.0, pydantic 2.13, PyYAML, tensorboard,
+matplotlib, wandb, scikit-learn. Always call it explicitly (`.venv/bin/python`) — there is no
+installed package and no activation step in any of the run instructions.
+
+`src/__init__.py` makes `src` a package, so `from src.datasets import ...` works from the repo root
+with no `PYTHONPATH` tweak. Do **not** use `PYTHONPATH=src` + `from datasets import ...`; that name
+collides with HuggingFace `datasets`.
+
+**There is no test suite and no test runner.** `pytest` is not installed, and `tests/` contains only
+`__init__.py` plus `test_wandb_writer.py`, which imports the deleted package and cannot run. Nothing
+under `src/` has a test. Verification in this repo has been done the way `PHASES.md` documents it:
+drive the real code from a throwaway script with synthetic tensors and assert on the artifacts it
+produces. `pyright` is configured (`pyrightconfig.json`, `strict`, `include: ["src"]`) but is not
+installed in the venv either — the type annotations and `# pyright: ignore` comments in `src/` exist
+to satisfy it, so keep them consistent even though nothing checks them here.
+
+`Dockerfile` still targets Python 3.11 + `pip install -e .` + `scripts/`; it cannot build against this
+tree.
+
+## Architecture
+
+One direction of dependency, no exceptions:
+
 ```
-`src/__init__.py` makes `src` a package, so `from src.datasets import ...` needs no `PYTHONPATH` tweak.
-Avoid `PYTHONPATH=src` + `from datasets import ...` — that top-level name collides with HuggingFace's
-`datasets` package if it's ever installed alongside.
-
-There is no working test command right now. `tests/` holds only `__init__.py` and
-`test_wandb_writer.py`, and the latter is itself dead — it imports `fedmammobench.utils.wandb_utils`,
-which doesn't exist in this tree. `pytest` isn't installed in `.venv` either. `tests/test_dataset.py` /
-`tests/test_splits.py` against the new `src/datasets/` are the first tests actually worth writing here
-(see `REFACTOR.md` §12).
-
-None of this applies to the notebook experiments (`configs/exp*/*.ipynb`) — see below.
-
-## Current architecture (`src/`, in progress)
-
-Target layout and the one dependency rule to keep (`REFACTOR.md` §5):
+config.py → seed / metrics / checkpoint / tracking / reporting / datasets / models → train/ → cli.py
 ```
-config → seed/metrics/checkpoint/tracking/datasets/models → train/ → cli.py
-```
-Nothing imports from `cli.py`. `datasets/` never imports from `models/` or `train/`. `models/weights.py`
-never imports from `models/build.py`. A late import inside a function to dodge a cycle is a design smell
-here, not an accepted workaround.
 
-Key design decisions (deliberately different from the deleted package):
+Nothing imports `cli.py`. `datasets/` never imports `models/` or `train/`. `models/weights.py` never
+imports `models/build.py`. A late import inside a function to dodge a cycle is a design smell here,
+not an accepted workaround.
+
+Deliberate departures from the deleted package, all still in force:
+
 | Decision | Choice | Why |
 |---|---|---|
-| Config | Pydantic v2 + YAML | free validation; `extra="forbid"` catches typos |
-| Config inheritance | **None** — no `defaults:`/`base.yaml` chain | every experiment config reads start-to-end |
-| Decorator registries (`@register_*`) | **Dropped** — plain dict dispatch | keeps "where does this come from" visible |
-| One `Dataset` class per source | **No** — a single one | everything is already consolidated into one manifest CSV |
+| Config | Pydantic v2 + YAML, `extra="forbid"` | typos fail validation instead of being ignored |
+| Config inheritance | **None** — no `defaults:`/`base.yaml` | every experiment YAML reads start to end |
+| Decorator registries | **Dropped** — plain module-level dicts | `_ARCHITECTURES`, `_HEAD_STRATEGIES`, `_OPTIMIZERS`, `_SCHEDULERS`, `_LOSSES` are all greppable in one place |
+| One `Dataset` per source | **No** — a single `MammoBenchDataset` | everything is already consolidated into one manifest CSV |
 
-- **`src/datasets/`** — manifest loading/validation, patient-level train/val/test split
-  verification (never generation — the manifest's `split` column is already stratified upstream),
-  `MammoBenchDataset`, a `TransformBuilder`, and `builder_dataloader()` tying it all together. This
-  package works end-to-end against `manifests/fedmammobench.csv` today. Full per-method contracts,
-  raises, and gotchas (e.g. `.iloc` vs `.loc` on the split-filtered, non-contiguous-index DataFrames) are
-  in **`src/datasets/DOCS.md`** — read that instead of re-deriving it from the source.
-- **`src/models/`** — `build_model()` builds a named architecture (registered in a plain dict, e.g.
-  `resnet50_radimagenet`), loads/remaps a checkpoint's `state_dict` (`weights.py`), and applies a
-  per-architecture `FreezeStrategy` (`freeze.py`) to unfreeze from a given block onward. Details in
-  **`src/models/DOCS.md`**. Two currently-broken things to know before you spend time debugging them:
-  - `src/models/__init__.py` imports `.load` and `.train` submodules that don't exist yet (only
-    `build.py`, `weights.py`, `freeze.py`, `heads.py`, `reports.py`, `mlp_configs/` do) — `import
-    src.models` fails outright. Import the submodule you need directly, e.g.
-    `from src.models.build import build_model`.
-  - The classification-head factory (`heads.py`, `mlp_configs/standard_mlp.py`) both do
-    `from ..heads import HeadBuilder`, but no `HeadBuilder` base class is defined anywhere in the repo
-    yet — importing either module raises `ModuleNotFoundError`.
-- **`src/train/`** — optimizer/scheduler/loss factories (`build.py`), pure `train_one_epoch()` /
-  `evaluate()` functions (`loop.py`), and a `Trainer` (`trainer.py`) that runs the epoch loop and saves a
-  checkpoint only when the tracked validation metric improves (never the last epoch — `fit()` returns
-  the *best* checkpoint's path). This package is newer and moving fast; some of what `loop.py`/
-  `trainer.py` import (`src/metrics.py`, `src/checkpoint.py`) may not exist yet depending on when you
-  read this. Check `git log`/`git status` and `REFACTOR.md`'s "próximos pasos" for what's actually
-  landed before assuming a module is complete.
+Where the pieces live:
 
-Legacy bugs that must be **deliberately reproduced**, not just avoided by accident, because the new
-`models/`/`train/` code replaces the modules that had them (`REFACTOR.md` §7):
-- **BN drift under freeze.** `model.train()` re-enables frozen BatchNorm layers, which keep updating
-  `running_mean`/`running_var` even with `requires_grad=False`. Re-`eval()` them right after every
-  `model.train()` call (`train/loop.py`'s `_set_frozen_bn_eval`, once written).
-- **Silent weight-loading failure.** A `LoadReport` with `matched == 0` must raise, not just report zero
-  — that's exactly the state a `backbone.`-prefix mismatch produces, and it silently trains from random
-  init.
-- **`backbone.` key prefix.** This project's own checkpoints carry it; torchvision constructors don't
-  expect it. Normalize before `load_state_dict`.
-- **Evaluate the best checkpoint, not the final one.** `Trainer.fit()` must return the best checkpoint's
-  path, and test-set evaluation must always use that return value — never a separate "which checkpoint"
-  config flag that can drift from what was actually best.
+- **`src/datasets/`** — `Manifest` (loads the CSV, requires `preprocessed_image_path` /
+  `classification` / `split` / `patient_id`, normalizes labels to `label_norm`, resolves
+  `abs_image_path` against `image_root`), `Split` (**verifies** the manifest's existing `split` column
+  is patient-disjoint; it never generates a split — stratification happens upstream, outside this
+  repo), `MammoBenchDataset`, `TransformBuilder`, and `builder_dataloader()`. Per-method contracts in
+  **`src/datasets/DOCS.md`**.
+- **`src/models/`** — `build_model(name, weights_path, unfreeze_from, device)` returns
+  `(backbone, LoadReport)`: instantiates from `_ARCHITECTURES`, remaps the checkpoint's `backbone.N.`
+  keys onto torchvision names, and applies a `FreezeStrategy`. Heads are a separate axis:
+  `get_head_strategy(name)` returns an unconstructed `HeadBuilder` subclass (`standard_mlp` — one
+  hidden layer, always `BatchNorm1d`; `configurable_mlp` — N hidden layers, selectable activation, no
+  BatchNorm by default). Details in **`src/models/DOCS.md`**.
+- **`src/train/`** — `build_optimizer`/`build_scheduler`/`build_loss`, the pure `train_one_epoch()` /
+  `evaluate()` functions, `EarlyStopping`, `FocalLoss`, `evaluate_checkpoint()`/`predict_on_loader()`,
+  and `Trainer`. See **`src/train/DOCS.md`**.
+- **`src/reporting.py`** — the four pure artifact writers (`save_metrics_json`,
+  `save_predictions_csv`, `plot_confusion_matrix`, `plot_roc_curve`) plus
+  `compute_confusion_matrix_metrics()`. Uses **torchmetrics**, not scikit-learn, for the confusion
+  matrix and ROC — sklearn is installed but deliberately unused here.
+- **`cli.py` owns the assembly**, on purpose: `nn.Sequential(backbone, head.build())`, the W&B run
+  (opened before `Trainer` so training and test land on one run), and the `_evaluate_split()` helper
+  that runs the identical val and test reporting block.
 
-## Notebook experiments (`configs/exp*/*.ipynb`)
+`LossSpec` (`train/build.py`) is the one abstraction worth understanding before editing the loop: it
+pairs the loss function with the correct logits→positive-class-probability conversion, because that
+conversion depends on how many logits the head emits (1 for BCE, 2 for CrossEntropy/Focal), not on the
+loss's name. `train_one_epoch()`/`evaluate()` call `spec.compute()`/`spec.probs()` with no branching
+of their own — the only `if` lives in `build_loss()` and runs once.
 
-Unaffected by the refactor above — these predate it and don't import any package from `src/`.
+## Invariants that will silently ruin a run
 
-The current line of work (**exp01–exp19**, core series, plus **exp20–exp32** extending it — see below)
-is **standalone Jupyter notebooks that import nothing from this repo's packages**: plain torchvision
-`resnet50` + a hand-written `Classifier`, wrapped in a local `FullModel(backbone, classifier)`. They are
-all centralized, single-GPU, `Mammo-Bench`-only ablations over which ResNet50 blocks are unfrozen
-(`layer4` / `layer4+layer3` / fully frozen) crossed with head type (`linear` / dropout 0.3 / 0.5).
+These are the legacy failure modes the rewrite exists to prevent. Preserve them.
 
-**`configs/exp20`–`exp22` extend the same series past exp19** (same notebook structure —
-parameters cell, seeding, `metrics.json` — and have committed `runs/` results) but vary image
-size, batch size, and loss (`img384`/`img512`, discriminative LR + BCE) rather than freeze depth
-or head type.
+- **`metric_name: f1` vs `f1_macro`.** `f1` is `BinaryF1Score` — positive class only — and sits at
+  exactly `0.0` while the model predicts no malignants, which is the normal state of early epochs on
+  the 66/34 `fedmammobench.csv`. `EarlyStopping` requires strict improvement, so that run of zeros
+  never resets the patience counter and `fit()` returns the epoch-0 (untrained) checkpoint. Use
+  `f1_macro` on that manifest. `f1` is correct only for the INC replicas, whose train split is 84%
+  malignant.
+- **Evaluate the best checkpoint, never the last.** `Trainer.fit()` returns the best checkpoint path
+  and `cli.run()` feeds exactly that into `_evaluate_split()` for both val and test. Never add a
+  "which checkpoint" config flag — it can drift from what was actually best.
+- **Silent weight-loading failure.** `load_weights()` raises when `matched == 0`. That is precisely the
+  state a `backbone.`-prefix mismatch produces, and without the raise the run trains from random init
+  and looks merely mediocre.
+- **BN drift under freeze.** `model.train()` re-enables frozen BatchNorm layers, whose
+  `running_mean`/`running_var` keep updating even at `requires_grad=False`.
+  `train/loop.py:_set_frozen_bn_eval()` re-`eval()`s them right after every `model.train()`.
+  `freeze_bn_stats: false` turns that off on purpose, to reproduce INC — with a fully frozen backbone
+  that is the difference between a backbone that still adapts and one pinned to RadImageNet statistics.
+- **`drop_last=True` on the train loader only.** `StandardMLPHead` uses `BatchNorm1d`, which throws on
+  a final batch of size 1.
+- **Never create `src/data/`.** `.gitignore` has a repo-wide `data/` rule that swallows the whole
+  module in silence; that is why the package is `src/datasets/`.
+- **`.iloc`, not `.loc`.** `Split`'s DataFrames keep their original non-contiguous indices, so
+  positional access is mandatory in `__getitem__`.
 
-**`configs/exp23` is both the W&B template for this notebook series and the base of Block 6.**
-It started as a straight copy of `exp22` plus a hand-rolled `wandb.init()`/log/`finish()` following the
-same degrade-to-offline logic as the (now-deleted) package's `WandbWriter`: never blocks or prompts for
-a key, falls back to offline mode if no credentials are cached. For any *future* one-off notebook
-outside a generated block, copy exp23's W&B cells rather than reinventing the pattern. The lab
-workstation authenticates via a shared team **service account** in `~/.netrc` (not a personal key) —
-never `cat` that file or paste a key into a notebook cell (which gets committed with its outputs);
-verify credentials with `grep -q "api.wandb.ai" ~/.netrc` instead.
+## The YAML contract
 
-On top of that, `exp23` diverged further from `exp22` and became the base config for **Block 6 —
-depth of unfreezing** (`exp23`–`exp27`): `CrossEntropyLoss` instead of `BCEWithLogitsLoss` (the MLP
-head's `linear2` outputs 2 raw logits, not 1 + sigmoid), best-checkpoint/early-stopping tracked by
-**F1-macro on validation** instead of min val loss (`val_f1_history`, mirrors `val_loss_history`), the
-head (`linear1`→`bn1`→ReLU→dropout→`linear2`, 2048→512→2) reinitialized `normal(mean=0, std=0.01)`
-instead of `nn.Linear`'s default kaiming-uniform (`bn1` and the RadImageNet backbone are left alone),
-and a single `LR=LR_BACKBONE=1e-4` for both the head and backbone param groups — **intentionally not
-differential**, which deliberately re-enters the failure mode `scripts/gen_lr_backbone_grid.py`
-documents from exp02/03/05/06/08/09 (undifferentiated LR destroys RadImageNet backbone weights in 1-3
-epochs); this is now itself an ablation axis for the block, not an oversight. `UNFREEZE_IDX` — a list of
-`backbone` `nn.Sequential` indices (`0`=conv1, `1`=bn1, `4`-`7`=layer1-4) — is the only thing that varies
-between the five:
+`ExperimentConfig` (`src/config.py`) is the schema, `extra="forbid"` throughout — an unknown or
+misspelled key is a `ValidationError`, not a silent no-op. Sections: `experiment_id`, `architecture`,
+`head`, `optimizer`, `scheduler` (optional), `loss`, `data`, `train`. `head`/`optimizer`/`scheduler`/
+`loss` are all `NamedComponentConfig` (`name` + free-form `hparams` splatted into the constructor), so
+adding a hyperparameter usually means only touching the factory, not the config models.
 
-| Notebook | `UNFREEZE_IDX` | Depth |
-|---|---|---|
-| `exp24` | `[]` | backbone fully frozen |
-| `exp23` | `[7]` | layer4 only |
-| `exp25` | `[7, 6]` | layer4 + layer3 |
-| `exp26` | `[7, 6, 5]` | layer4 + layer3 + layer2 |
-| `exp27` | `[7, 6, 5, 4, 1, 0]` | entire backbone |
+Two `data` settings encode the **pre-processed float-TIFF pipeline** and must move together:
+`Preproccesed/preprocess_images.py` writes 32-bit float single-channel TIFFs (PIL mode `"F"`) already
+resized to 224×224 and normalized to `[0,1]` (`norm_0_1/`) or `[-1,1]` (`norm_neg1_1/`), with
+`manifests/fedmammobench_norm_{0_1,neg1_1}.csv` pointing at them. Configs consuming those set
+`image_size: null` **and** `normalize_mean: null` / `normalize_std: null` — resizing and normalizing
+again would be wrong. `MammoBenchDataset.__getitem__` detects mode `"F"` and skips `.convert()`
+entirely (PIL clips rather than rescales floats, which would collapse a `[-1,1]` image to near-zero),
+replicating to 3 channels on the tensor afterwards instead. Setting `normalize_mean: [0,0,0]` /
+`normalize_std: [1,1,1]` is the *other* meaningful value — identity, i.e. plain `[0,1]` pixels, which
+is what INC does; the `0.5/0.5` default is not equivalent.
 
-The freeze cell and the optimizer cell in `exp23` were generalized to read `UNFREEZE_IDX` instead of
-hardcoding `backbone[7]`, so those two cells are byte-identical across all five notebooks; only the
-parameters cell differs. `scripts/gen_depth_block_grid.py` substitutes exactly that cell to produce
-`exp24`–`exp27` from the `exp23` template — `exp23` itself is hand-edited, not generated; edit the
-generator's `EXPERIMENTS` list and re-run with `--force` to change `exp24`–`exp27`. All five have
-committed `runs/exp2{3..7}...` results.
+Every config carries **absolute lab-workstation paths** for `weights_path` and `image_root`; they do
+not resolve elsewhere. `configs/exp02`, `exp03_*` and `exp04_*` point at
+`manifests/dataset_split_formatted.csv`, the INC dataset manifest, which **is not in this repo and
+never was** — those three cannot be re-run as-is even on the workstation.
 
-**Stale manifest reference in `exp23`–`exp27`.** Their params cell points `MANIFEST_PATH` at
-`manifests/fedmammobench_tompei.csv`, which was later deleted from the repo (replaced by a corrected
-`manifests/fedmammobench.csv`, still carrying the `source_dataset` column). Their committed `runs/`
-results stand, but re-running any of `exp23`–`exp27` today fails at the manifest-loading cell until
-`MANIFEST_PATH` is repointed at `fedmammobench.csv`. Block 7 (below) already points at the live file —
-don't copy the stale path from `exp23`–`exp27` into new work.
+## Run artifacts
 
-**Block 7 — same depth-of-unfreezing grid as Block 6, at 256px instead of 512px, plus a per-database
-test breakdown (`exp28`–`exp32`).** `exp28` is a hand-edited copy of `exp23` with three changes:
-`IMAGE_SIZE` 512 → 256; `MANIFEST_PATH` repointed at `manifests/fedmammobench.csv`; and a
-`source_dataset`-level test breakdown appended after the existing global test cell.
+`run_dir` (`runs/<experiment_id>/`) gets `config.yaml` (a snapshot of exactly what ran), `metrics.csv`,
+TensorBoard events, `plots/` (loss plus one train-vs-val curve per clinical metric), and one folder per
+evaluated split — `val/` and `test/`, each with `metrics.json`, `confusion_matrix_metrics.json`,
+`predictions.csv`, `confusion_matrix.png`, `roc_curve.png`. Weights go to `checkpoint_dir`
+(`runs/<experiment_id>/weights/`) as `best_epoch<N>.pt` plus `best_epoch<N>_backbone.pt` /
+`_head.pt` (split out for the eventual federated work, where only the backbone aggregates) and
+`epoch<N>.pt` every `save_every` epochs.
 
-Evaluation is built around one reusable function, `evaluate_model(model, checkpoint_path, dataloader,
-...)`: it loads `checkpoint_path` into `model` and runs inference over whatever `DataLoader` it's
-handed, returning accuracy/AUC/precision/recall/F1 + confusion matrix (AUC/precision/recall/F1 come
-back `None` with a `"warning"` key when the subset has fewer than 2 classes present). The global test
-cell calls it once with the `test` `DataLoader`; the per-dataset cell builds one fresh `DataLoader` per
-`source_dataset` value and calls it again per dataset, same `BEST_MODEL_PATH` — a deliberate trade for a
-single, stateless evaluation function over one that depends on state from an earlier cell.
+`ls runs/` is the fastest way to see which experiments have actually been executed. Checkpoints
+(`*.pt`/`*.pth`), `events.out.tfevents.*` and `*.log` are gitignored; `metrics.csv`, `metrics.json`,
+`predictions.csv` and `plots/*.png` are committed and serve as the results record.
 
-Outputs land in two places on purpose: `RUN_DIR/plots/` + `RUN_DIR/metrics.json` stay global-test-only,
-while `RUN_DIR/per_dataset/metrics_per_dataset.json` + a grouped bar chart + a confusion-matrix grid go
-in their own `RUN_DIR/per_dataset/` folder. `wandb_run.finish()` moved to the end of the per-dataset
-plotting cell so both granularities land on the same W&B run.
+W&B: `train.wandb_project` (`null` disables it) — the workstation authenticates through a shared team
+service account in `~/.netrc`. Never `cat` that file or paste a key anywhere; check credentials with
+`grep -q "api.wandb.ai" ~/.netrc`. `MetricsLogger` imports `wandb` lazily and degrades to a no-op, so
+a missing key never blocks a run.
 
-`save_predictions_csv(manifest_df, result, out_path)` appends `y_true`/`y_pred`/`y_prob` (from
-`evaluate_model`'s returned lists) to a copy of the evaluated `DataFrame`, assigned by **position**, not
-pandas index — this depends on `shuffle=False` + `CSVDataset(dataframe=...)` preserving input row order.
-Global goes to `RUN_DIR/predictions.csv`; each per-dataset subset goes to
-`RUN_DIR/per_dataset/predictions_<source_dataset>.csv`.
+## Conventions
 
-| Notebook | `UNFREEZE_IDX` | Depth | Block 6 counterpart |
-|---|---|---|---|
-| `exp29` | `[]` | backbone fully frozen | `exp24` |
-| `exp28` | `[7]` | layer4 only | `exp23` |
-| `exp30` | `[7, 6]` | layer4 + layer3 | `exp25` |
-| `exp31` | `[7, 6, 5]` | layer4 + layer3 + layer2 | `exp26` |
-| `exp32` | `[7, 6, 5, 4, 1, 0]` | entire backbone | `exp27` |
-
-`scripts/gen_img256_block_grid.py` substitutes the parameters cell to produce `exp29`–`exp32` from the
-`exp28` template, mirroring `gen_depth_block_grid.py`. `exp28` itself is hand-edited, not generated. None
-of `exp29`–`exp32` have been executed yet (no `runs/exp2{8..9}...`/`exp3{0..2}...` directories) as of
-this writing — check `ls runs/` for the current state.
-
-**`configs/exp71`–`exp77` are an earlier, superseded draft of this same work — don't treat them as
-part of the series.** Tells: the filename carries a description
-(`exp72_resnet50_layer4only.ipynb`) instead of being bare `expNN.ipynb`; no parameters cell, no seeding,
-no `metrics.json` write — no committed `runs/` record. exp01–exp09 re-do these ablations properly.
-
-Structure of each exp01–exp19 notebook, essentially identical across the series:
-- A parameters cell near the top (`EXP_ID`, `RUN_NAME`, `BLOCK`, `HEAD`, `LR`, `BATCH_SIZE`,
-  `NUM_EPOCHS`, `PATIENCE`, `PROJECT_ROOT`, `DATASET_ROOT`). Deriving a new experiment means copying a
-  notebook and editing this cell — that is the whole "config system" here.
-- **Absolute paths hardcoded to the lab workstation** (`/media/imagenesmedicas/DATA1/...`) for
-  `PROJECT_ROOT`, `DATASET_ROOT`, and the RadImageNet checkpoint. They do not resolve on other machines.
-- Data comes from `manifests/fedmammobench.csv` with columns `split` / `classification` /
-  `preprocessed_image_path`, read by a local `CSVDataset` (not `src/datasets/`).
-- Comments and printed output are in **Spanish**; keep that when editing them.
-- Outputs land in `runs/<RUN_NAME>/` and are committed except the checkpoint (`.gitignore` only
-  excludes `*.pt`/`*.pth`) — `runs/` doubles as the results record for the notebook series. Layout:
-  `metrics.json` (test-set summary + hyperparameters), `loss_history.csv`, `plots/loss_curve.png`,
-  `plots/test_confusion_matrix.png`, `plots/test_metric_<name>.png`, `best_model.pth`, and for Block 7
-  only `predictions.csv` + `per_dataset/`.
-
-**Blocks 4–5 (exp10–exp19) are generated, not hand-written.** `scripts/gen_lr_backbone_grid.py` takes
-`configs/exp09/exp09.ipynb` as the template and substitutes the cells that vary; the grid itself is the
-`EXPERIMENTS` list at the top of that script. Edit the generator and re-run it with `--force` rather than
-editing those notebooks by hand. Blocks 1–3 (exp01–exp09) predate the generator and are hand-written;
-don't regenerate over them. Unlike blocks 1–3, blocks 4–5 seed everything (`SEED = 42`) and use
-discriminative LRs (`LR` for the head, `LR_BACKBONE` for the unfrozen blocks) — their numbers are **not**
-directly comparable to exp01–exp09, which ran unseeded with a single LR. exp10 and exp11 are seeded
-re-runs of exp07 and exp09 to bridge that gap.
-
-Two subtleties the deleted package used to handle centrally are re-implemented by hand in each notebook
-— if you fix one, fix it in the whole series:
-- `load_radimagenet_backbone` remaps `RadImageNet-resnet50.pth`'s `backbone.<N>.*` `nn.Sequential` keys
-  onto torchvision names; without it `load_state_dict(strict=False)` matches zero tensors.
-- `freeze_bn_running_stats` re-`eval()`s BN layers whose affine params are frozen — the same fix
-  `src/train/loop.py` is (re)implementing above.
-
-`runs/` is the results index for this series: one directory per `RUN_NAME`, and a notebook with no
-`runs/` entry has not been executed on the workstation yet. `ls runs/` is the fastest way to see which
-combinations already have numbers before proposing a new one.
+- **Language is per-file and mixed on purpose.** `config.py`, `cli.py`, `train/`, `datasets/build.py`
+  and every `DOCS.md` are Spanish; `datasets/dataset.py`, `datasets/manifest.py` and `models/` are
+  English. Match the file you are editing rather than imposing one. Config YAML comments and
+  `PHASES.md`/`REFACTOR.md` are Spanish.
+- **Comments carry the *why*, at length.** The existing docstrings and inline comments record which
+  bug a line prevents and what the INC project does differently. That density is the house style —
+  when you change behavior here, extend that record rather than trimming it.
+- **`.claude/commands/`** (`/docker-run`, `/docker-queue`, `/new-exp`, `/eval-experiments`, `/plot`,
+  `/compare`, `/check-manifest`, `/validate-configs`) all predate the rewrite and assume the legacy
+  package or the Docker image. Verify one actually applies before reaching for it.
+- Commit subjects follow `<Verb>: description` (`<Feat>:`, `<Fix>:`, `<Docs>:`, `<add>:`, `<exp>:`),
+  with `<exp>:` reserved for committing a run's results.
 
 ## Documentation map
 
-Trustworthiness for *this branch's actual working tree*, highest first:
+Trustworthiness for the current tree, highest first:
 
-- `REFACTOR.md` — **authoritative for `src/` status.** Verified tree state, open decisions, next
-  steps; rewritten frequently, so re-read it each session rather than trusting a memory of it.
-- `src/datasets/DOCS.md`, `src/models/DOCS.md` — authoritative, current per-method contracts for those
-  two packages (inputs, raises, returns). `src/train/` doesn't have one yet.
-- `configs/README.md` (Spanish) — describes running experiments via the legacy package/Docker; useful
-  for the operational conventions (per-node hyperparameter matching, W&B, autoplot) but the commands
-  themselves assume `fedmammobench-*`, which doesn't exist on this branch.
-- `docs/EXPERIMENTOS_CENTRALIZADOS.md` (Spanish) — the exp01–exp19 notebook series: the 19
-  configurations, their results, and the CMMD patient-level label-propagation defect that puts a
-  ~0.44 val_loss floor under all of them. Still current and unaffected by the refactor.
-- **Legacy-only, describes the deleted package** — do not use these to understand what's runnable on
-  this branch: the top portion of `README.md` (down to "Documentation Architecture"), `scripts/DOCS.md`,
-  `docs/SRC_STRUCTURE.md`, `docs/EXTENDING.md`, `docs/CHECKPOINT_COMPATIBILITY.md`,
-  `docs/RADIMAGENET_IMPLEMENTATION.md`, `docs/TRANSFER_LEARNING_GUIDE.md`,
-  `docs/FEDERATED_DEPLOYMENT_GUIDE.md`, `docs/SETUP_6NODES.md`, `docs/QUICK_START_6NODES.md`,
-  `docs/NODE_CONFIGURATION_MATRIX.md`, `docs/DOCKER.md`. They're still worth reading for *what the
-  legacy package did* (the new code is meant to reproduce its results), just not for what to run today.
-  `README.md`'s bottom section ("Documentation Architecture" / "Project Structure") is the one part of
-  that file describing the current refactor, and is accurate.
+- `PHASES.md` — what was ported from INC and why each default is what it is. Current.
+- `src/DOCS.md`, `src/datasets/DOCS.md`, `src/models/DOCS.md`, `src/train/DOCS.md` — per-method
+  contracts (args, raises, returns) with worked examples. Current; update them alongside code.
+- `configs/*.yaml` header comments — the real experiment log. `exp04_inc_strict_replica.yaml` in
+  particular documents the four divergences from INC it corrects and the one it deliberately does not.
+- `REFACTOR.md` — rationale current, status sections stale (see above).
 - `docs/DATA_PREPARATION.md`, `docs/METHODOLOGY.md` — manifest format and experimental design; not
   package-specific, still relevant.
-
-## Repo conventions
-
-- **Language:** new `src/` code mixes English and Spanish docstrings depending on who wrote the module
-  (in flux during the rewrite) — match whichever the file you're editing already uses rather than
-  imposing one. Notebooks and their comments/output are Spanish. Operational docs and shell scripts
-  (`configs/README.md`, `.claude/commands/*`) are Spanish.
-- **Project slash commands** live in `.claude/commands/` — `/docker-run`, `/docker-queue`, `/new-exp`,
-  `/eval-experiments`, `/plot`, `/compare`, `/check-manifest`, `/validate-configs`. These predate the
-  refactor and assume the legacy package/Docker image; verify a command actually applies before
-  reaching for it here.
-- **`scripts/` is append-only in practice:** one-off `run-expNN-MM.sh` / `eval-expNN-MM.sh` drivers
-  accumulate with hardcoded experiment IDs and checkpoint paths. They document what was run; do not
-  edit them to run something new.
-- **Data, weights, and every `*.pt`/`*.pth` are gitignored.** Non-checkpoint run artifacts under
-  `runs/` — `metrics.json`, CSVs, `plots/*.png` — are *not* ignored and do get committed.
-- **Notebooks are committed with their outputs**, so a re-executed notebook produces a five-figure line
-  diff. Expect that; don't try to "clean up" the diff by stripping outputs unless asked.
+- `docs/EXPERIMENTOS_CENTRALIZADOS.md`, `docs/INFORME_EXP01_22.md` — results of the deleted notebook
+  series, including the CMMD patient-level label-propagation defect that puts a ~0.44 val-loss floor
+  under all of them. Historical, but the numbers are the ones the current pipeline is compared against.
+- **Describes the deleted package — do not use to decide what to run:** `README.md` down to
+  "Documentation Architecture", `scripts/DOCS.md`, `docs/SRC_STRUCTURE.md`, `docs/EXTENDING.md`,
+  `docs/CHECKPOINT_COMPATIBILITY.md`, `docs/RADIMAGENET_IMPLEMENTATION.md`,
+  `docs/TRANSFER_LEARNING_GUIDE.md`, `docs/FEDERATED_DEPLOYMENT_GUIDE.md`, `docs/SETUP_6NODES.md`,
+  `docs/QUICK_START_6NODES.md`, `docs/NODE_CONFIGURATION_MATRIX.md`, `docs/DOCKER.md`, `docs/audit/`,
+  `docs/audit-plan.md`. Still useful for *what the legacy did* — the new code is meant to reproduce
+  its results — just not for what exists today.
