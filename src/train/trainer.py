@@ -259,8 +259,15 @@ class Trainer:
                 self.history.append(epoch_metrics)
                 logger.log(epoch, epoch_metrics)
 
+                # f1_macro va siempre en el log (aunque metric_name sea otra) porque
+                # es la métrica de referencia del proyecto en manifests desbalanceados
+                # (ver CLAUDE.md, "f1 vs f1_macro") -- verla por época, incluso cuando
+                # se hace early stopping sobre otra métrica, ayuda a detectar el
+                # estancamiento en 0.0 típico de las primeras épocas.
                 print(
                     f"[epoch {epoch}] train_loss={train_metrics['loss']:.4f} "
+                    f"val_loss={val_metrics['loss']:.4f} "
+                    f"f1_macro={val_metrics['f1_macro']:.4f} "
                     f"val_{self.metric_name}={current_metric:.4f} (best={self.tracker.best_value:.4f}) "
                     f"[{epoch_metrics['duration_seconds']:.1f}s]"
                 )
