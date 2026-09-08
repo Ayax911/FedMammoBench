@@ -101,7 +101,7 @@ class ConfigurableMLPHead(HeadBuilder):
         Example:
             >>> head = ConfigurableMLPHead(in_features=2048, hidden_layers=[512]).build()
         """
-        layers: list[nn.Module] = [nn.Flatten()]
+        layers: list[nn.Module] = [nn.Flatten(), nn.Dropout(p=0.5)]  # GAP + Flatten para cualquier salida de backbone
         prev_size = self.in_features
 
         # `negative_slope` solo existe en LeakyReLU; el resto de activaciones

@@ -146,6 +146,8 @@ class Trainer:
         # MetricsLogger acaba de escribir.
         self.best_epoch: int | None = None
         self.history: list[dict[str, float]] = []
+        
+        print(self.model)
 
     @property
     def best_metric(self) -> float:
