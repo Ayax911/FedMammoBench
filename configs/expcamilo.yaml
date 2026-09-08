@@ -39,10 +39,10 @@ head:
   name: configurable_mlp
   hparams:
     in_features: 2048
-    hidden_layers: [512, 512]
+    hidden_layers: [1024, 1024, 512, 512]
     activation: leakyrelu
     negative_slope: 0.2
-    dropout: 0.5
+    dropout: 0.4
     num_classes: 1
 
 optimizer:
@@ -60,7 +60,7 @@ scheduler:
 loss:
   name: bce
   hparams:
-    pos_weight: [1.9295]   
+    pos_weight: [5]   
 
 data:
   manifest_path: manifests/fedmammobench_norm_neg1_1.csv   # SIN CAMBIAR frente a exp18 -- ver
