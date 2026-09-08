@@ -1,0 +1,136 @@
+_wandb:
+    value:
+        cli_version: 0.29.0
+        e:
+            jjnt7l18fsmt5opou89ebvfmcanwug0z:
+                args:
+                    - --config
+                    - configs/exp29_antioverfit_wd1e2.yaml
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "195722883072"
+                        used: "139744231424"
+                executable: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/.venv/bin/python
+                git:
+                    commit: 3f12e17bfcde59c5b1bad935ed15b227cb926469
+                    remote: git@github.com:Ayax911/FedMammoBench.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-c5b5be7b-8c3e-86ad-6240-79778baae0e8
+                host: labmirp-Precision-5860-Tower
+                memory:
+                    total: "134269358080"
+                os: Linux-7.0.0-28-generic-x86_64-with-glibc2.39
+                program: -m src.cli
+                python: CPython 3.12.8
+                root: runs/exp29_antioverfit_wd1e2
+                startedAt: "2026-09-08T17:21:21.458122Z"
+                writerId: jjnt7l18fsmt5opou89ebvfmcanwug0z
+        m: []
+        python_version: 3.12.8
+        t:
+            "1":
+                - 1
+                - 41
+            "2":
+                - 1
+                - 41
+            "3":
+                - 2
+                - 13
+                - 16
+                - 62
+                - 61
+                - 78
+            "4": 3.12.8
+            "5": 0.29.0
+            "12": 0.29.0
+            "13": linux-x86_64
+architecture:
+    value:
+        name: resnet50_imagenet_v2
+        unfreeze_from: conv1
+        weights_path: null
+data:
+    value:
+        augmentation:
+            blur: true
+            blur_p: 0.3
+            horizontal_flip: true
+            horizontal_flip_p: 0.5
+            rotation_degrees: 15
+            vertical_flip: true
+            vertical_flip_p: 0.2
+        batch_size: 64
+        by_database_manifests:
+            cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+            cmmd: manifests/by_database/cmmd_norm_0_1.csv
+            inbreast: manifests/by_database/inbreast_norm_0_1.csv
+            kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+        image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+        image_size: null
+        manifest_path: manifests/fedmammobench_norm_0_1.csv
+        normalize_mean:
+            - 0.449
+        normalize_std:
+            - 0.226
+        num_workers: 4
+        seed: 42
+experiment_id:
+    value: exp29_antioverfit_wd1e2
+head:
+    value:
+        hparams:
+            activation: leakyrelu
+            dropout: 0
+            hidden_layers: []
+            in_features: 2048
+            input_dropout: 0.5
+            negative_slope: 0.2
+            num_classes: 2
+        name: configurable_mlp
+loss:
+    value:
+        hparams:
+            weight:
+                - 0.7593
+                - 1.4642
+        name: cross_entropy
+optimizer:
+    value:
+        hparams:
+            backbone_lr: 0.0001
+            betas:
+                - 0.9
+                - 0.999
+            lr: 0.001
+            weight_decay: 0.01
+        name: adamw
+scheduler:
+    value:
+        hparams:
+            T_max: 80
+            eta_min: 1e-06
+        name: cosine
+train:
+    value:
+        checkpoint_dir: runs/exp29_antioverfit_wd1e2/weights
+        device: cuda
+        epochs: 80
+        freeze_bn_stats: true
+        metric_mode: max
+        metric_name: auc
+        min_delta: 0.001
+        patience: 20
+        run_dir: runs/exp29_antioverfit_wd1e2
+        save_every: 10
+        wandb_group: antioverfit_regularized
+        wandb_project: fedmammobench2.0
