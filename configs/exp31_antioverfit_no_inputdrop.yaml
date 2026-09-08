@@ -1,0 +1,84 @@
+# exp31_antioverfit_no_inputdrop -- idéntico a exp28_antioverfit_base salvo
+# UN cambio: input_dropout 0.5 -> 0.0. Aísla cuánto del resultado de exp22
+# (y de exp28) se debía al Dropout(0.5) tras Flatten() que exp21-23 tuvieron
+# por accidente (ver commit e7c3340 y el docstring de
+# ConfigurableMLPHead.__init__ en src/models/mlp_configs/configurable_mlp.py)
+# -- si exp31 generaliza igual o mejor que exp28, ese dropout no era la
+# causa del buen resultado de exp22 y el resto de la receta (weight_decay +
+# LR discriminativo) alcanza solo.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp31_antioverfit_no_inputdrop.yaml
+
+experiment_id: exp31_antioverfit_no_inputdrop
+
+architecture:
+  name: resnet50_imagenet_v2
+  unfreeze_from: conv1
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: []
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.0
+    input_dropout: 0.0           # ÚNICO CAMBIO vs exp28 (era 0.5)
+    num_classes: 2
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 1.0e-3
+    backbone_lr: 1.0e-4
+    betas: [0.9, 0.999]
+    weight_decay: 1.0e-4
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 80
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]
+
+data:
+  manifest_path: manifests/fedmammobench_norm_0_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null
+  normalize_mean: [0.449]
+  normalize_std: [0.226]
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_0_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+    inbreast: manifests/by_database/inbreast_norm_0_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+
+train:
+  epochs: 80
+  metric_name: auc
+  metric_mode: max
+  patience: 20
+  min_delta: 0.001
+  save_every: 10
+  freeze_bn_stats: true
+  checkpoint_dir: runs/exp31_antioverfit_no_inputdrop/weights
+  run_dir: runs/exp31_antioverfit_no_inputdrop
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: antioverfit_regularized

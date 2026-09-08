@@ -1,0 +1,141 @@
+# exp28_antioverfit_base -- receta "exp22 domada": mismo backbone/head que
+# exp22_pretrain_ablation_imagenet_all (ImageNet, full-unfreeze -- la corrida
+# con mejor val/test AUC de todo el proyecto: val 0.899 / test 0.887), pero
+# con regularización real en los tres ejes donde exp22 no tenía ninguna:
+#
+# 1. weight_decay=1e-4 vía AdamW (ningún config activo del repo usaba
+#    weight_decay -- exp22 corría con `adam` puro sobre 25M de parámetros
+#    descongelados).
+# 2. LR discriminativo: backbone_lr=1e-4, lr=1e-3 para la cabeza. exp22
+#    aplicaba 1e-3 plano a TODO el backbone descongelado -- demasiado
+#    agresivo para pesos preentrenados (train_loss 0.027, val_loss final
+#    1.85: la curva se degenera bien pasado el mínimo). Requiere el
+#    ensamblado de param groups agregado a src/cli.py (ver `backbone_lr` en
+#    optimizer.hparams).
+# 3. betas=[0.9, 0.999] en vez de [0.5, 0.999] -- exp22 heredaba el beta1 de
+#    GAN del proyecto INC sin justificación para clasificación supervisada.
+#
+# Además corrige dos anomalías de exp22 que no eran regularización pero sí
+# contaminaban la comparación:
+#   - normalize_mean/std FIJADOS en [0.449]/[0.226] -- exp22 los dejaba en
+#     null pese a que su propio header decía fijarlos (ver diagnóstico
+#     2026-09-08). Sin esto, un backbone ImageNet recibe píxeles [0,1] sin
+#     normalizar, fuera de la distribución con la que se entrenó.
+#   - epochs/T_max/patience recortados a la escala real de la mejor época
+#     observada (exp22: mejor en la época 54, corte en 155) en vez de
+#     200/200/50 -- con esos valores el cosine casi no actúa donde importa y
+#     la corrida sigue entrenando 100 épocas en plena degradación.
+#   - metric_name=auc (libre de umbral) en vez de f1_macro@0.5 -- evita
+#     elegir un checkpoint bien pasado del mínimo de val_loss solo porque el
+#     umbral fijo 0.5 favorece esa época. El f1 se reporta calibrado aparte
+#     con scripts/calibrate_threshold.py, no se usa para seleccionar.
+#
+# input_dropout=0.5 explícito: exp22 tuvo, sin saberlo, un Dropout(0.5) tras
+# Flatten() hardcodeado en ConfigurableMLPHead.build() (ver commit e7c3340).
+# Ahora es un hparam (src/models/mlp_configs/configurable_mlp.py) -- este
+# config lo fija a mano para preservar esa parte del comportamiento de exp22
+# (probablemente contribuyó a que generalizara mejor que exp20/21/23), no
+# porque se haya vuelto a filtrar por accidente.
+#
+# Pares de esta serie (mismo optimizer/scheduler/train, un solo cambio c/u):
+#   exp29 -- weight_decay=1e-2 (¿cuánto paga más weight decay?)
+#   exp30 -- label_smoothing=0.1 (¿robustez al ruido de etiqueta de CMMD?)
+#   exp31 -- input_dropout=0.0 (¿cuánto del resultado es ese dropout?)
+#   exp32 -- backbone RadImageNet en vez de ImageNet (control de pretraining)
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp28_antioverfit_base.yaml
+
+experiment_id: exp28_antioverfit_base
+
+architecture:
+  name: resnet50_imagenet_v2   # pesos de ImageNet embebidos en torchvision -- sin weights_path,
+  # torchvision los descarga/cachea (~/.cache/torch/hub/checkpoints/) la primera vez que se
+  # instancia el modelo -- requiere acceso a internet esa primera vez únicamente.
+  unfreeze_from: conv1          # full-unfreeze -- el régimen que mejor generalizó en el diagnóstico
+  # 2026-09-08 (val AUC 0.899 en exp22) pese al gap de overfitting más grande; la apuesta de esta
+  # serie es domar ese gap con regularización real en vez de retroceder a layer4/congelado.
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: []
+    activation: leakyrelu
+    negative_slope: 0.2         # idéntico a exp05/exp17-23
+    dropout: 0.0                # sin capas ocultas, este hparam sería un no-op de todos modos
+    input_dropout: 0.5          # preserva el dropout accidental de exp21-23, ahora explícito
+    num_classes: 2
+
+optimizer:
+  name: adamw                   # no adam -- weight_decay de adamw es desacoplado del gradiente
+  # (Loshchilov & Hutter 2019), el "weight_decay" de Adam clásico se mezcla con el momentum de
+  # forma que en la práctica regulariza mucho menos de lo que su valor nominal sugiere.
+  hparams:
+    lr: 1.0e-3                  # LR de la cabeza (recién inicializada, puede moverse rápido)
+    backbone_lr: 1.0e-4         # LR del backbone preentrenado -- 10x menor que la cabeza, evita
+    # el destrozo de pesos ImageNet que producía el 1e-3 plano de exp22 (train_loss 0.027, val_loss
+    # final 1.85). Requiere el ensamblado de param groups en src/cli.py (ver su comentario).
+    betas: [0.9, 0.999]          # default de Adam/AdamW -- exp05-23 usaban [0.5, 0.999] (beta1 de
+    # GAN, herencia del proyecto INC) sin ninguna justificación para clasificación supervisada.
+    weight_decay: 1.0e-4
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 80                   # recortado de 200 -- ninguna corrida de la ablación de pretraining
+    # tuvo su mejor época más allá de la ~104; T_max=200 dejaba el cosine casi sin actuar donde
+    # importa.
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]   # mismos pesos de clase que exp05/exp17-23 -- balancean el 66/34
+    # de fedmammobench.csv (neg = total/(2*n_benigno), pos = total/(2*n_maligno)).
+
+data:
+  manifest_path: manifests/fedmammobench_norm_0_1.csv   # [0, 1] -- backbone ImageNet, ver architecture
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null              # las imágenes ya están a 224x224 en disco
+  normalize_mean: [0.449]       # promedio de las 3 medias de ImageNet (0.485/0.456/0.406) -- un
+  # solo valor porque MammoBenchDataset replica a 3 canales DESPUÉS de que corre `transform` (ver
+  # src/datasets/dataset.py y TransformBuilder.normalize_mean en src/datasets/transform.py): al
+  # momento en que Normalize se ejecuta, el tensor del TIFF modo "F" sigue en 1 solo canal. exp22
+  # dejaba esto en null a pesar de decir en su header que lo fijaba -- ver diagnóstico 2026-09-08.
+  normalize_std: [0.226]        # promedio de las 3 std de ImageNet (0.229/0.224/0.225)
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_0_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+    inbreast: manifests/by_database/inbreast_norm_0_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+
+train:
+  epochs: 80                    # recortado de 200 -- ver nota de T_max arriba
+  metric_name: auc               # libre de umbral -- f1_macro@0.5 podía elegir un checkpoint ya
+  # pasado del mínimo de val_loss solo porque ese umbral fijo favorecía esa época. El f1 calibrado
+  # se reporta aparte con scripts/calibrate_threshold.py, no decide el checkpoint.
+  metric_mode: max
+  patience: 20                   # recortado de 50/100 -- a la escala de T_max=80
+  min_delta: 0.001               # AUC vive en una escala más fina que f1_macro; 0.005 (el valor
+  # que usaban los configs con metric_name=f1_macro) sería demasiado grueso acá.
+  save_every: 10
+  freeze_bn_stats: true          # irrelevante con unfreeze_from=conv1 (nada queda congelado que
+  # _set_frozen_bn_eval() necesite re-eval()ar), pero es el default correcto si algún día se corre
+  # esta misma receta con freeze parcial.
+  checkpoint_dir: runs/exp28_antioverfit_base/weights
+  run_dir: runs/exp28_antioverfit_base
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: antioverfit_regularized
