@@ -1,0 +1,110 @@
+# exp33_pretrain_imagenet .yaml -- par con exp18_pretrain_ablation_radimagenet:
+# mismo optimizer/scheduler/loss/augmentation/train que exp05_fedmammobench_full_weighted
+# (la receta "full dataset, CrossEntropy ponderada" ya validada) -- pero head en h1024/dropout 0.5
+# de una sola capa (el ganador del barrido de dropout de exp16, no el h1024-512/dropout 0.2 de
+# exp05) y backbone en ImageNet en vez de RadImageNet. La comparación queda aislada a "qué pesos
+# trae el backbone" únicamente PORQUE exp18 usa exactamente el mismo head+loss que este -- no
+# porque ambos compartan head con exp05.
+#
+# CUIDADO -- por qué esto NO reusa manifest_path/normalize_* de exp05 tal cual:
+#   RadImageNet (exp05/exp18) espera píxeles en [-1, 1] -- por eso esos configs usan
+#   fedmammobench_norm_neg1_1.csv con normalize_mean/std: null (el TIFF ya viene en ese rango).
+#   Los pesos de ImageNet de torchvision (resnet50_imagenet_v2) esperan en cambio píxeles en
+#   [0, 1] normalizados con las estadísticas de ImageNet -- alimentarlos con [-1, 1] correría el
+#   modelo MUY fuera de la distribución con la que se entrenó ese backbone (los filtros de conv1
+#   y las estadísticas de BatchNorm dejan de tener sentido), lo que empeoraría la comparación
+#   contra RadImageNet sin que sea una diferencia real entre ambos pretrainings.
+#   Por eso este config usa fedmammobench_norm_0_1.csv (píxeles ya en [0, 1]) y SÍ fija
+#   normalize_mean/std, distinto del "null" de exp05.
+#
+#   normalize_mean/std usan un solo valor -- (0.449,)/(0.226,), el promedio de las 3 medias/
+#   desviaciones estándar de ImageNet (0.485/0.456/0.406 y 0.229/0.224/0.225) -- y NO la tupla de
+#   3 valores estándar de ImageNet, porque MammoBenchDataset replica a 3 canales DESPUÉS de que
+#   corre `transform` (ver src/datasets/dataset.py y el docstring de
+#   TransformBuilder.normalize_mean en src/datasets/transform.py): en el momento en que
+#   `transforms.Normalize` se ejecuta, el tensor de un TIFF modo "F" todavía tiene 1 solo canal,
+#   así que una media/std de 3 valores rompería por shape mismatch. Como la imagen fuente es
+#   mamografía en escala de grises (no hay señal de color real detrás de los 3 canales
+#   replicados), promediar las 3 estadísticas de ImageNet en una sola es la aproximación estándar
+#   para fine-tunear backbones de ImageNet sobre imágenes médicas en escala de grises -- mucho más
+#   cercana a la distribución real de ImageNet que dejar los píxeles en [-1, 1] o sin normalizar.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp33_pretrain_imagenet .yaml.yaml
+
+experiment_id: exp33_pretrain_imagenet .yaml
+
+architecture:
+  name: resnet50_imagenet_v2   # pesos de ImageNet embebidos en torchvision -- sin weights_path,
+  # torchvision los descarga/cachea (~/.cache/torch/hub/checkpoints/) la primera vez que se
+  # instancia el modelo -- requiere acceso a internet esa primera vez únicamente. Ver
+  # ArchitectureSpec.weights_from_factory en src/models/build.py.
+  unfreeze_from: none          # mismo criterio que exp05/exp18 -- backbone 100% congelado,
+  # comparación aislada a "qué pesos trae el backbone", no a cuánto se reentrena.
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [1024, 1024, 512, 512]
+    activation: leakyrelu
+    negative_slope: 0.2         # idéntico a exp05/exp18
+    dropout: 0.2
+    num_classes: 2
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 5.0e-4
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]   # mismos pesos de clase que exp05/exp18 -- balancean el 66/34
+    # de fedmammobench.csv (neg = total/(2*n_benigno), pos = total/(2*n_maligno)).
+
+data:
+  manifest_path: manifests/fedmammobench_norm_0_1.csv   # [0, 1], NO norm_neg1_1 -- ver nota arriba
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null              # las imágenes ya están a 224x224 en disco
+  normalize_mean: null      # promedio de las 3 medias de ImageNet -- ver nota arriba
+  normalize_std: null     # promedio de las 3 std de ImageNet -- ver nota arriba
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  # Desglose de test por base de datos -- mismas 4 bases que exp05/exp18, pero apuntando a la
+  # variante norm_0_1 (misma normalización que manifest_path de arriba).
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_0_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+    inbreast: manifests/by_database/inbreast_norm_0_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+
+train:
+  epochs: 200
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  freeze_bn_stats: false        # idéntico a exp05/exp18 -- ver su nota en src/config.py
+  checkpoint_dir: runs/exp33_pretrain_imagenet .yaml/weights
+  run_dir: runs/exp33_pretrain_imagenet .yaml
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # junta este par en la UI de W&B
