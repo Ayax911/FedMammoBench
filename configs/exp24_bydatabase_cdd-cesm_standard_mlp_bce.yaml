@@ -1,0 +1,85 @@
+# exp24_bydatabase_cdd-cesm_standard_mlp_bce -- Experimento por-base-de-datos:
+# entrena y evalúa exclusivamente sobre cdd-cesm (manifests/by_database/cdd-cesm_norm_neg1_1.csv),
+# no sobre el manifest completo de FedMammoBench. Cabeza standard_mlp (2048 ->
+# 512 -> 1, ver experiment_example.yaml) + BCEWithLogitsLoss con pos_weight
+# calculado sobre la distribución real de clases del split train de esta base.
+#
+# Backbone 100% congelado (unfreeze_from: none), igual que exp07 -- mismo
+# criterio: reproducir el head lineal simple del INC sobre datasets chico
+# (803 imágenes en total) donde descongelar capas del backbone arriesga
+# overfitting.
+#
+# pos_weight (split train de cdd-cesm, manifests/by_database/cdd-cesm_norm_neg1_1.csv):
+#   Benign (neg)    = 535
+#   Malignant (pos) = 268
+#   pos_weight = neg / pos = 535 / 268 = 1.9963
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp24_bydatabase_cdd-cesm_standard_mlp_bce.yaml
+
+experiment_id: exp24_bydatabase_cdd-cesm_standard_mlp_bce
+
+architecture:
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: none          # backbone 100% congelado = num_freeze=159 del INC
+
+head:
+  name: standard_mlp
+  hparams:
+    in_features: 2048   # salida de ResNet50 tras global average pooling
+    hidden_dim: 512
+    dropout: 0.2
+    num_classes: 1      # 1 logit -> combinado con loss.name: bce
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 1.0e-4
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: bce
+  hparams:
+    pos_weight: [1.9963]   # neg/pos del split train de cdd-cesm (535/268), ver cabecera
+
+data:
+  manifest_path: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null              # Las imágenes ya están a 224x224 en disco
+  normalize_mean: null          # Las imágenes ya están normalizadas en [-1, 1]
+  normalize_std: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  # Sin by_database_manifests: este manifest ya está restringido a una sola
+  # base de datos (cdd-cesm), el desglose por-base no aporta nada aquí.
+
+train:
+  epochs: 200
+  metric_name: f1_macro   # NUNCA "f1" a secas -- ver CLAUDE.md, se queda en 0.0 mientras
+                           # el modelo no prediga ningún maligno y rompe el early stopping.
+  metric_mode: max
+  patience: 50
+  min_delta: 0.005
+  save_every: 25
+  freeze_bn_stats: false
+  checkpoint_dir: runs/exp24_bydatabase_cdd-cesm_standard_mlp_bce/weights
+  run_dir: runs/exp24_bydatabase_cdd-cesm_standard_mlp_bce
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: per_database_standard_mlp_bce

@@ -2,10 +2,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 configs=(
-  configs/exp07_fullfreeze_bce_2048_2_posweight.yaml
-  configs/exp08_layer4_bce_2048_2_posweight.yaml
-  configs/exp09_fullfreeze_bce_2048_2.yaml
-  configs/exp10_layer4_bce_2048_2.yaml
+  configs/exp24_bydatabase_cdd-cesm_standard_mlp_bce.yaml
+  configs/exp25_bydatabase_cmmd_standard_mlp_bce.yaml
+  configs/exp26_bydatabase_inbreast_standard_mlp_bce.yaml
+  configs/exp27_bydatabase_kau-bcmd_standard_mlp_bce.yaml
 )
 
 for cfg in "${configs[@]}"; do
