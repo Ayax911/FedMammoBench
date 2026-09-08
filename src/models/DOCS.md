@@ -198,6 +198,44 @@ head = head_builder.build()
 
 ---
 
+### `mlp_configs/configurable_mlp.py`
+
+#### `ConfigurableMLPHead`
+
+Cabeza MLP con número y tamaño de capas ocultas arbitrarios, activación elegible y `BatchNorm1d`
+opcional — reproduce la cabeza del proyecto INC (`classification_images/models/mlp_models.py`).
+Complementa a `StandardMLPHead` (una capa oculta fija, siempre `BatchNorm1d`), no la reemplaza.
+
+Arquitectura:
+`Flatten -> (Dropout(input_dropout)?) -> [Linear -> (BatchNorm1d?) -> activación -> Dropout] * N -> Linear`.
+
+Hiperparámetros propios de esta cabeza (además de `in_features`/`num_classes`, comunes a ambas):
+
+- `hidden_layers: list[int] | None` — tamaños de las capas ocultas, en orden; `[]`/`None` produce un
+  único `Linear(in_features, num_classes)`.
+- `activation: str` — `"relu"`, `"leakyrelu"`, `"sigmoid"`, `"tanh"`, `"gelu"`, `"linear"`.
+- `dropout: float` — dropout tras cada activación de capa oculta; `0` omite la capa por completo.
+- `use_batchnorm: bool` — `BatchNorm1d` tras cada `Linear` oculto (`False` por defecto, a diferencia
+  de `StandardMLPHead`).
+- `negative_slope: float` — solo para `activation="leakyrelu"`; el proyecto INC usa `0.2`.
+- `input_dropout: float` — dropout aplicado justo tras `Flatten()`, antes de cualquier capa oculta;
+  `0.0` (default) lo omite. Existe para reproducir exp21–exp23 (`runs/exp2{1,2,3}_...`), que
+  corrieron con esta capa hardcodeada en `p=0.5` — ver commit `e7c3340` y el docstring de
+  `ConfigurableMLPHead.__init__`.
+
+##### Cómo usar `ConfigurableMLPHead`:
+```python
+from src.models.mlp_configs.configurable_mlp import ConfigurableMLPHead
+
+head_builder = ConfigurableMLPHead(
+    in_features=2048, hidden_layers=[], activation="leakyrelu",
+    negative_slope=0.2, num_classes=2, input_dropout=0.5,
+)
+head = head_builder.build()
+```
+
+---
+
 ## Exportaciones (`__init__.py`)
 
 `src/models/__init__.py` reexporta las utilidades principales:

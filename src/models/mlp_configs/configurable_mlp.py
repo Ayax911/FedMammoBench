@@ -26,7 +26,7 @@ class ConfigurableMLPHead(HeadBuilder):
     defecto. Ambas conviven registradas en `_HEAD_STRATEGIES`
     (`models/heads.py`).
 
-    Arquitectura: `Flatten -> [Linear -> (BatchNorm1d?) -> activación -> Dropout] * N -> Linear`.
+    Arquitectura: `Flatten -> (Dropout(input_dropout)?) -> [Linear -> (BatchNorm1d?) -> activación -> Dropout] * N -> Linear`.
 
     Example:
         >>> builder = ConfigurableMLPHead(
@@ -45,6 +45,7 @@ class ConfigurableMLPHead(HeadBuilder):
         num_classes: int = 2,
         use_batchnorm: bool = False,
         negative_slope: float = 0.01,
+        input_dropout: float = 0.0,
     ) -> None:
         """Inicializa los parámetros de la cabeza configurable.
 
@@ -73,6 +74,15 @@ class ConfigurableMLPHead(HeadBuilder):
                 (`classification_images/models/mlp_models.py:get_activation`
                 devuelve `nn.LeakyReLU(0.2)`), así que reproducirlo exige
                 pasar `negative_slope: 0.2` explícitamente.
+            input_dropout: probabilidad de un `Dropout` aplicado justo tras
+                `Flatten()`, antes de cualquier capa oculta. `0.0` (default)
+                lo omite por completo, igual que `dropout` con capas
+                ocultas. Existe porque exp21–exp23 (ver commit `e7c3340`)
+                corrieron con exactamente esta capa, pero hardcodeada en
+                `p=0.5` e incondicional — instrumentación de debug que quedó
+                viva y desincronizada del hparam `dropout`. Este parámetro
+                la vuelve explícita y barrible: para reproducir esas
+                corridas, pasar `input_dropout: 0.5`.
 
         Raises:
             ValueError: si `activation` no está en las opciones soportadas.
@@ -89,6 +99,7 @@ class ConfigurableMLPHead(HeadBuilder):
         self.num_classes = num_classes
         self.use_batchnorm = use_batchnorm
         self.negative_slope = negative_slope
+        self.input_dropout = input_dropout
 
     def build(self) -> nn.Sequential:
         """Ensambla la cabeza según la configuración.
@@ -101,7 +112,12 @@ class ConfigurableMLPHead(HeadBuilder):
         Example:
             >>> head = ConfigurableMLPHead(in_features=2048, hidden_layers=[512]).build()
         """
-        layers: list[nn.Module] = [nn.Flatten(), nn.Dropout(p=0.5)]  # GAP + Flatten para cualquier salida de backbone
+        # GAP + Flatten para cualquier salida de backbone. El Dropout tras
+        # Flatten solo se agrega si input_dropout > 0 -- ver docstring de
+        # __init__ sobre por qué existe este parámetro.
+        layers: list[nn.Module] = [nn.Flatten()]
+        if self.input_dropout > 0:
+            layers.append(nn.Dropout(p=self.input_dropout))
         prev_size = self.in_features
 
         # `negative_slope` solo existe en LeakyReLU; el resto de activaciones

@@ -66,7 +66,6 @@ def train_one_epoch(
         >>> print(f"Train loss: {train_metrics['loss']:.4f}, AUC: {train_metrics['auc']:.4f}")
     """
     model.train()
-    #print(model)
     if freeze_bn_stats:
         _set_frozen_bn_eval(model)
 
