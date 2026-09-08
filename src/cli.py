@@ -119,7 +119,26 @@ def run(config: ExperimentConfig) -> None:
     # optimizer, para que apunte a los parámetros ya ubicados en destino.
     model = model.to(config.train.device)
 
-    optimizer = build_optimizer(model.parameters(), config.optimizer.name, **config.optimizer.hparams)
+    # LR discriminativo backbone/cabeza: `backbone_lr`, si viene en
+    # optimizer.hparams, separa model[0] (backbone) en su propio param group
+    # con ese LR, dejando model[1] (cabeza) en el LR general de `hparams`.
+    # build_optimizer() ya acepta param groups tal cual (ver su docstring en
+    # train/build.py) -- lo único que faltaba era este ensamblado. Filtra
+    # por requires_grad para no meterle al estado de AdamW parámetros del
+    # backbone que unfreeze_from dejó congelados (un freeze parcial, ej.
+    # layer4, no debería aportarle momentum/weight_decay a conv1-layer3).
+    # Sin `backbone_lr`, comportamiento idéntico a antes de que existiera:
+    # un solo param group con model.parameters() completo.
+    optimizer_hparams = dict(config.optimizer.hparams)
+    backbone_lr = optimizer_hparams.pop("backbone_lr", None)
+    if backbone_lr is not None:
+        params = [
+            {"params": [p for p in model[0].parameters() if p.requires_grad], "lr": backbone_lr},
+            {"params": model[1].parameters()},
+        ]
+    else:
+        params = model.parameters()
+    optimizer = build_optimizer(params, config.optimizer.name, **optimizer_hparams)
     scheduler = (
         build_scheduler(optimizer, config.scheduler.name, **config.scheduler.hparams)
         if config.scheduler is not None

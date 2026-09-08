@@ -193,6 +193,10 @@ def evaluate_by_database(
           confusión, una por base de datos.
         - `metrics_by_database.png`: barras agrupadas por base de datos y
           por métrica, eje Y fijo `[0, 1]`.
+        - `predictions_{db_name}.csv` (una por base de datos): mismo esquema
+          `y_true,y_pred,y_prob` que `test/predictions.csv`, para calibrar
+          un umbral específico de esa base con `scripts/calibrate_threshold.py`
+          en vez de uno global sobre el test combinado.
 
     Args:
         by_database_manifests: `config.data.by_database_manifests` -- dict
@@ -251,12 +255,15 @@ def evaluate_by_database(
         )
 
         db_metrics = evaluate_checkpoint(model, best_checkpoint, db_loader, loss_spec, device)
-        # y_prob no se usa acá -- ni la matriz de confusión ni
-        # compute_confusion_matrix_metrics() lo necesitan (a diferencia de
-        # evaluate_split(), que sí lo pasa a plot_roc_curve() para la curva
-        # ROC de test combinado; este desglose no grafica una ROC por base
-        # de datos).
-        y_true, y_pred, _y_prob = predict_on_loader(model, db_loader, loss_spec, device)
+        # y_prob no se usa para la matriz de confusión ni
+        # compute_confusion_matrix_metrics() (ninguna lo necesita, a
+        # diferencia de evaluate_split(), que sí lo pasa a plot_roc_curve()
+        # para la curva ROC de test combinado; este desglose no grafica una
+        # ROC por base de datos) -- pero sí se persiste a CSV, para que
+        # scripts/calibrate_threshold.py pueda calibrar un umbral POR BASE
+        # DE DATOS en vez de uno global (el desbalance real varía mucho de
+        # una base a otra, ver DataConfig.by_database_manifests).
+        y_true, y_pred, y_prob = predict_on_loader(model, db_loader, loss_spec, device)
         cm_metrics = compute_confusion_matrix_metrics(y_true, y_pred)
 
         logger.log_summary({f"test_by_database_{db_name}_{k}": v for k, v in db_metrics.items()})
@@ -264,6 +271,7 @@ def evaluate_by_database(
 
         metrics_by_db[db_name] = {**db_metrics, **cm_metrics}
         cm_by_db[db_name] = (y_true, y_pred)
+        save_predictions_csv(y_true, y_pred, y_prob, run_dir / "test" / f"predictions_{db_name}.csv")
 
     if not metrics_by_db:
         # Todas las bases de datos se omitieron arriba (test vacío) -- no
