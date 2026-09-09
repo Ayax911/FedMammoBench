@@ -24,7 +24,13 @@
 # Correr (en la workstation -- requiere credenciales de W&B en ~/.netrc, ver
 # abajo):
 #   wandb sweep sweeps/hpsearch_v1.yaml
-#   wandb agent <entity>/fedmammobench2.0/<sweep_id>
+#   wandb agent --count 300 <entity>/fedmammobench2.0/<sweep_id>
+#
+# --count 300, no 100: medido sobre exp28-32 (misma receta base, mismo
+# unfreeze_from=conv1), un trial real tarda ~6-8 min end-to-end (11s/época x
+# 24-43 épocas + evaluación final), y con Hyperband podando la mayoría en la
+# época 8 el promedio baja más -- 300 trials caben en un día de GPU, y un
+# espacio de 9 dimensiones aprovecha esa cobertura mejor que 100.
 #
 # ATENCIÓN antes de lanzar: verificar `grep -q "api.wandb.ai" ~/.netrc`.
 # MetricsLogger cae a mode="offline" si no encuentra credenciales (ver
@@ -33,6 +39,13 @@
 # no aprende absolutamente nada de los trials anteriores.
 
 program: scripts/sweep_train.py
+# Nombre visible de ESTE sweep en la pestaña "Sweeps" de W&B (distinto del id
+# opaco que W&B asigna al crearlo, ej. "a1b2c3d4") -- y el mismo string que
+# --sweep_name pasa al shim más abajo, para que los trials también sean
+# identificables en la tabla plana de runs (columna "Group": "hpsearch_v1_<id>"
+# en vez de solo "sweep_<id>"). Si se relanza este mismo YAML con cambios
+# (hpsearch_v2), cambiar este nombre junto con el archivo.
+name: hpsearch_v1
 method: bayes
 
 metric:
@@ -41,7 +54,7 @@ metric:
   # src/eval_pipeline.py) -- no es el val_auc de la última época. Es
   # exactamente la cantidad que se quiere maximizar.
   #
-  # OJO con cómo se reporta esto después: el máximo de val_auc sobre ~100
+  # OJO con cómo se reporta esto después: el máximo de val_auc sobre ~300
   # trials está inflado por selección, no es un resultado publicable. Ver la
   # sección "Cómo leer el resultado" del plan -- el ganador se re-corre con
   # varias semillas y el test se toca una sola vez, al final.
@@ -64,6 +77,8 @@ command:
   - scripts.sweep_train
   - --base_config
   - configs/exp31_antioverfit_no_inputdrop.yaml
+  - --sweep_name
+  - hpsearch_v1
   - ${args}
 
 parameters:

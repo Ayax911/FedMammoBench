@@ -50,7 +50,7 @@ Para inspeccionar qué config produciría un conjunto de overrides, sin entrenar
 (no necesita ni GPU ni datos ni credenciales de W&B):
 
     .venv/bin/python -m scripts.sweep_train \
-        --base_config configs/exp31_antioverfit_no_inputdrop.yaml \
+        --base_config configs/exp31_antioverfit_no_inputdrop.yaml --sweep_name hpsearch_v1 \
         --lr=0.0005 --weight_decay=0.01 --epochs=40 --dry_run
 """
 
@@ -172,10 +172,24 @@ def build_trial_config(
     config.experiment_id = trial_name
     config.train.run_dir = trial_root / "runs" / trial_name
     config.train.checkpoint_dir = trial_root / "runs" / trial_name / "weights"
-    # Agrupa los trials del mismo sweep en la UI de W&B. La pertenencia real
-    # al sweep la resuelven las variables de entorno que hereda el subproceso,
-    # no este campo -- esto es solo para que se lean juntos.
-    config.train.wandb_group = f"sweep_{sweep_id}"
+    # Agrupa los trials del mismo sweep en la UI de W&B (tabla de runs
+    # agrupada por columna "Group", el mismo mecanismo que ya usan
+    # exp05-36 con nombres como "antioverfit_regularized" -- ver
+    # TrainConfig.wandb_group en src/config.py). La pertenencia real al
+    # sweep de W&B (pestaña Sweeps, paralelo-coordenadas, importancia de
+    # hiperparámetros) la resuelve wandb.init() solo, leyendo
+    # WANDB_SWEEP_ID del entorno -- este campo es aparte, para la vista de
+    # runs planos.
+    #
+    # `args.sweep_name` (obligatorio, ver parse_args()) en vez de solo
+    # `sweep_id`: sweep_id es el hash opaco que asigna W&B (algo como
+    # "a1b2c3d4") -- útil para que dos lanzamientos del mismo diseño de
+    # sweep (mismo YAML relanzado) no se mezclen en un solo grupo, pero
+    # ilegible por sí solo en la tabla de runs. Prefijarlo con el nombre
+    # legible del sweep (ej. "hpsearch_v1", el mismo que su YAML) deja el
+    # grupo identificable de un vistazo Y sigue siendo único por
+    # lanzamiento.
+    config.train.wandb_group = f"{args.sweep_name}_{sweep_id}"
 
     return config
 
@@ -189,6 +203,16 @@ def parse_args() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(description="Corre un trial de un sweep de W&B sobre src.cli.")
     parser.add_argument("--base_config", required=True, type=Path, help="YAML base sobre el que se aplican los overrides.")
+    parser.add_argument(
+        "--sweep_name",
+        required=True,
+        help=(
+            "Nombre legible del sweep (ej. 'hpsearch_v1', el mismo que su archivo YAML) -- "
+            "no es una dimensión del espacio de búsqueda, es un argumento fijo del "
+            "`command:` de la definición del sweep, igual que --base_config. Se usa para "
+            "armar el wandb_group de cada trial: '<sweep_name>_<sweep_id>'."
+        ),
+    )
     parser.add_argument("--dry_run", action="store_true", help="Materializa el config del trial y NO entrena.")
 
     parser.add_argument("--lr", type=float, default=None, help="LR de la cabeza.")
