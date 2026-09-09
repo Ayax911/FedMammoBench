@@ -1,0 +1,94 @@
+# exp34_antioverfit_seed43 -- réplica exacta de exp31_antioverfit_no_inputdrop
+# (el mejor individual de la serie anti-overfitting: test AUC 0.889, F1-macro
+# 0.795) con UN cambio: data.seed 42 -> 43. Junto con exp35 (seed 44) y exp36
+# (seed 45), cuantifica la barra de ruido de la receta -- pendiente desde la
+# era de notebooks (docs/EXPERIMENTOS_CENTRALIZADOS.md §7, "Réplicas
+# multi-semilla") -- y de paso da tres corridas con la misma config exacta
+# para promediar como ensemble "ruido de semilla" (scripts/ensemble_eval.py),
+# a comparar contra el ensemble de regularizadores distintos (exp28+29+30+31,
+# val AUC 0.9233 / test AUC 0.9015 sobre las predicciones ya commiteadas) --
+# si este ensemble de puro ruido de semilla iguala esa ganancia, la mejora
+# del otro ensemble era solo promediar ruido, no diversidad real entre
+# regularizadores.
+#
+# `data.seed` no toca el split (Split.verify_patient_consistency() solo
+# valida la columna `split` que ya trae el manifest, nunca la genera -- ver
+# src/datasets/split.py) -- afecta init de pesos, dropout, orden de
+# augmentación y de shuffle del train loader (ver src/seed.py). val/test son
+# EXACTAMENTE los mismos en las tres réplicas.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp34_antioverfit_seed43.yaml
+
+experiment_id: exp34_antioverfit_seed43
+
+architecture:
+  name: resnet50_imagenet_v2
+  unfreeze_from: conv1
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: []
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.0
+    input_dropout: 0.0
+    num_classes: 2
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 1.0e-3
+    backbone_lr: 1.0e-4
+    betas: [0.9, 0.999]
+    weight_decay: 1.0e-4
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 80
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]
+
+data:
+  manifest_path: manifests/fedmammobench_norm_0_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 43                       # ÚNICO CAMBIO vs exp31 (era 42)
+  image_size: null
+  normalize_mean: [0.449]
+  normalize_std: [0.226]
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_0_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+    inbreast: manifests/by_database/inbreast_norm_0_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+
+train:
+  epochs: 80
+  metric_name: auc
+  metric_mode: max
+  patience: 20
+  min_delta: 0.001
+  save_every: 10
+  freeze_bn_stats: true
+  checkpoint_dir: runs/exp34_antioverfit_seed43/weights
+  run_dir: runs/exp34_antioverfit_seed43
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: antioverfit_seed_noise
