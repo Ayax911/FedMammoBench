@@ -1,4 +1,4 @@
-# exp33_pretrain_imagenet .yaml -- par con exp18_pretrain_ablation_radimagenet:
+# exp33_pretrain_imagenet -- par con exp18_pretrain_ablation_radimagenet:
 # mismo optimizer/scheduler/loss/augmentation/train que exp05_fedmammobench_full_weighted
 # (la receta "full dataset, CrossEntropy ponderada" ya validada) -- pero head en h1024/dropout 0.5
 # de una sola capa (el ganador del barrido de dropout de exp16, no el h1024-512/dropout 0.2 de
@@ -30,9 +30,9 @@
 #   cercana a la distribución real de ImageNet que dejar los píxeles en [-1, 1] o sin normalizar.
 #
 # Correr:
-#   .venv/bin/python -m src.cli --config configs/exp33_pretrain_imagenet .yaml.yaml
+#   .venv/bin/python -m src.cli --config configs/exp33_pretrain_imagenet.yaml
 
-experiment_id: exp33_pretrain_imagenet .yaml
+experiment_id: exp33_pretrain_imagenet
 
 architecture:
   name: resnet50_imagenet_v2   # pesos de ImageNet embebidos en torchvision -- sin weights_path,
@@ -77,8 +77,8 @@ data:
   num_workers: 4
   seed: 42
   image_size: null              # las imágenes ya están a 224x224 en disco
-  normalize_mean: null      # promedio de las 3 medias de ImageNet -- ver nota arriba
-  normalize_std: null     # promedio de las 3 std de ImageNet -- ver nota arriba
+  normalize_mean: [0.449]       # promedio de las 3 medias de ImageNet -- ver nota arriba
+  normalize_std: [0.226]        # promedio de las 3 std de ImageNet -- ver nota arriba
   augmentation:
     horizontal_flip: true
     horizontal_flip_p: 0.5
@@ -103,8 +103,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false        # idéntico a exp05/exp18 -- ver su nota en src/config.py
-  checkpoint_dir: runs/exp33_pretrain_imagenet .yaml/weights
-  run_dir: runs/exp33_pretrain_imagenet .yaml
+  checkpoint_dir: runs/exp33_pretrain_imagenet/weights
+  run_dir: runs/exp33_pretrain_imagenet
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # junta este par en la UI de W&B
