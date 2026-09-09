@@ -198,6 +198,16 @@ def evaluate_by_database(
           un umbral específico de esa base con `scripts/calibrate_threshold.py`
           en vez de uno global sobre el test combinado.
 
+    Además escribe en `run_dir/val/` (la misma carpeta que `evaluate_split()`
+    usa para el val combinado):
+        - `predictions_{db_name}.csv` (una por base de datos): mismo esquema
+          que su contraparte en `test/`, sobre `db_split.val_df()` en vez de
+          `.test_df()`. Solo para calibración -- `scripts/calibrate_threshold.py
+          --by-database` elige el umbral en este archivo y lo aplica al
+          `predictions_{db_name}.csv` de `test/` -- no se grafica ni se
+          agrega a `metrics_by_database.json`/`.png` (esos siguen siendo
+          exclusivamente de test, ver arriba).
+
     Args:
         by_database_manifests: `config.data.by_database_manifests` -- dict
             `nombre_base_de_datos -> manifest_path`.
@@ -272,6 +282,33 @@ def evaluate_by_database(
         metrics_by_db[db_name] = {**db_metrics, **cm_metrics}
         cm_by_db[db_name] = (y_true, y_pred)
         save_predictions_csv(y_true, y_pred, y_prob, run_dir / "test" / f"predictions_{db_name}.csv")
+
+        # También val por base de datos -- no para reportar (evaluate_split()
+        # ya reportó val combinado antes de que cli.run()/evaluate.py llame a
+        # esta función), sino para que scripts/calibrate_threshold.py pueda
+        # elegir un umbral POR BASE DE DATOS sin haber tocado el test de esa
+        # base: sin este val por base, la única calibración posible es sobre
+        # el val combinado, que un desbalance tan distinto entre bases (CMMD
+        # ~49% maligno vs KAU-BCMD ~4.6%) hace inútil para KAU-BCMD/INBreast
+        # específicamente. `model` ya tiene los pesos de `best_checkpoint`
+        # cargados por el evaluate_checkpoint() de arriba -- no hace falta
+        # volver a cargarlos para correr predict_on_loader() sobre val.
+        db_val_df = db_split.val_df()
+        if db_val_df.empty:
+            # Mismo caso defensivo que db_test_df.empty arriba -- no ocurre
+            # con los manifests generados por
+            # scripts/split_manifest_by_database.py.
+            print(f"Aviso: '{db_name}' no tiene filas de val en {manifest_path} -- sin calibración por base para esta.")
+            continue
+
+        db_val_loader = DataLoader(
+            MammoBenchDataset(df=db_val_df, transform=eval_transform),
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+        )
+        val_y_true, val_y_pred, val_y_prob = predict_on_loader(model, db_val_loader, loss_spec, device)
+        save_predictions_csv(val_y_true, val_y_pred, val_y_prob, run_dir / "val" / f"predictions_{db_name}.csv")
 
     if not metrics_by_db:
         # Todas las bases de datos se omitieron arriba (test vacío) -- no

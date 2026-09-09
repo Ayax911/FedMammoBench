@@ -26,6 +26,18 @@ Escribe `run_dir/test/metrics_calibrated.json`:
       "test_calibrated": {métricas de test al umbral calibrado},
     }
 
+`--by-database` repite exactamente lo mismo pero una vez POR BASE DE DATOS,
+sobre `val/predictions_{db}.csv` / `test/predictions_{db}.csv` -- requiere
+que la corrida se haya evaluado con la versión de `evaluate_by_database()`
+(`src/eval_pipeline.py`) que también persiste val por base (ver su
+docstring); una corrida vieja que solo tenga `predictions_{db}.csv` en
+`test/` no alcanza. Necesario porque un umbral global (el modo por defecto,
+sin esta bandera) se elige sobre el val COMBINADO, y el desbalance real
+varía muchísimo de una base a otra (CMMD ~49% maligno vs KAU-BCMD ~4.6%) --
+el umbral que le sirve a CMMD puede ser inútil para KAU-BCMD. Escribe
+`run_dir/test/metrics_calibrated_by_database.json`:
+    { "<db_name>": {mismo esquema que metrics_calibrated.json de arriba}, ... }
+
 Uso (re-ejecutable en cualquier momento; sobreescribe sin preguntar) -- con
 `-m`, no como ruta de archivo: el script importa `src.reporting`, y
 `python scripts/calibrate_threshold.py` deja fuera de `sys.path` la raíz del
@@ -34,6 +46,7 @@ scripts.calibrate_threshold`, que sí la agrega -- mismo motivo por el que
 `src/cli.py`/`src/evaluate.py` se invocan como `-m src.cli`/`-m src.evaluate`:
     .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/exp22_pretrain_ablation_imagenet_all
     .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/exp05_fedmammobench_full_weighted --objective youden
+    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/exp28_antioverfit_base --by-database
 """
 
 import argparse
@@ -119,8 +132,45 @@ def find_best_threshold(y_true: pd.Series, y_prob: pd.Series, objective: str) ->
     return best_threshold, best_metrics
 
 
+def _calibrate_pair(val_df: pd.DataFrame, test_df: pd.DataFrame, objective: str) -> dict[str, object]:
+    """Núcleo de la calibración: elige umbral en `val_df` y lo compara contra 0.5 en `test_df`.
+
+    Extraído para que `calibrate()` (global) y `calibrate_by_database()` (una
+    llamada por base de datos) compartan exactamente la misma lógica -- la
+    única diferencia entre ambos modos es QUÉ par (val, test) le pasan.
+
+    Args:
+        val_df: `predictions.csv` (o `predictions_{db}.csv`) de val -- columnas `y_true`, `y_prob`.
+        test_df: su contraparte de test.
+        objective: ver `find_best_threshold()`.
+
+    Returns:
+        dict[str, object]: `threshold`, `objective`, `val` (métricas en val a
+            ese umbral), `test_baseline_0.5`, `test_calibrated`.
+    """
+    threshold, val_metrics = find_best_threshold(val_df["y_true"], val_df["y_prob"], objective)
+
+    # Baseline: el umbral 0.5 fijo que evaluate_split()/evaluate_by_database()
+    # ya usaron para escribir confusion_matrix_metrics.json/metrics_by_database.json
+    # -- recalculado acá (no leído de disco) para que ambas filas de la
+    # comparación vengan de la misma función en la misma corrida del script.
+    test_pred_baseline = (test_df["y_prob"] >= 0.5).astype(int).tolist()
+    test_metrics_baseline = compute_confusion_matrix_metrics(test_df["y_true"].tolist(), test_pred_baseline)
+
+    test_pred_calibrated = (test_df["y_prob"] >= threshold).astype(int).tolist()
+    test_metrics_calibrated = compute_confusion_matrix_metrics(test_df["y_true"].tolist(), test_pred_calibrated)
+
+    return {
+        "threshold": threshold,
+        "objective": objective,
+        "val": val_metrics,
+        "test_baseline_0.5": test_metrics_baseline,
+        "test_calibrated": test_metrics_calibrated,
+    }
+
+
 def calibrate(run_dir: Path, objective: str) -> dict[str, object]:
-    """Corre la calibración completa para un `run_dir` y persiste `test/metrics_calibrated.json`.
+    """Corre la calibración completa (global) para un `run_dir` y persiste `test/metrics_calibrated.json`.
 
     Args:
         run_dir: carpeta de una corrida ya evaluada (`config.train.run_dir`),
@@ -135,33 +185,77 @@ def calibrate(run_dir: Path, objective: str) -> dict[str, object]:
     val_df = _load_predictions(run_dir / "val")
     test_df = _load_predictions(run_dir / "test")
 
-    threshold, val_metrics = find_best_threshold(val_df["y_true"], val_df["y_prob"], objective)
-
-    # Baseline: el umbral 0.5 fijo que evaluate_split() ya usó para escribir
-    # test/confusion_matrix_metrics.json -- recalculado acá (no leído de
-    # disco) para que ambas filas de la comparación vengan de la misma
-    # función en la misma corrida del script.
-    test_pred_baseline = (test_df["y_prob"] >= 0.5).astype(int).tolist()
-    test_metrics_baseline = compute_confusion_matrix_metrics(test_df["y_true"].tolist(), test_pred_baseline)
-
-    test_pred_calibrated = (test_df["y_prob"] >= threshold).astype(int).tolist()
-    test_metrics_calibrated = compute_confusion_matrix_metrics(test_df["y_true"].tolist(), test_pred_calibrated)
-
-    result = {
-        "threshold": threshold,
-        "objective": objective,
-        "val": val_metrics,
-        "test_baseline_0.5": test_metrics_baseline,
-        "test_calibrated": test_metrics_calibrated,
-    }
+    result = _calibrate_pair(val_df, test_df, objective)
 
     output_path = run_dir / "test" / "metrics_calibrated.json"
     output_path.write_text(json.dumps(result, indent=2))
     return result
 
 
-def _print_comparison(result: dict[str, object]) -> None:
-    """Imprime una tabla legible baseline-vs-calibrado para las métricas clínicas usuales."""
+def calibrate_by_database(run_dir: Path, objective: str) -> dict[str, dict[str, object]]:
+    """Corre la calibración una vez POR BASE DE DATOS y persiste `test/metrics_calibrated_by_database.json`.
+
+    Descubre las bases de datos disponibles listando
+    `run_dir/val/predictions_*.csv` -- requiere haber corrido la corrida (o
+    re-evaluado el checkpoint con `src.evaluate`) con la versión de
+    `evaluate_by_database()` que también persiste val por base (ver su
+    docstring en `src/eval_pipeline.py`); una corrida vieja, evaluada antes
+    de ese cambio, no tiene esos archivos y esta función levanta
+    `FileNotFoundError`.
+
+    Args:
+        run_dir: carpeta de una corrida evaluada con `by_database_manifests`
+            (`DataConfig.by_database_manifests`, `src/config.py`).
+        objective: ver `find_best_threshold()`.
+
+    Returns:
+        dict[str, dict[str, object]]: `{nombre_base_de_datos: resultado}`,
+            mismo `resultado` que devuelve `_calibrate_pair()`. Una base
+            cuyo `predictions_{db}.csv` de test no exista (aunque sí el de
+            val) se omite con un aviso -- no debería ocurrir si ambos
+            provienen de la misma corrida de `evaluate_by_database()`.
+
+    Raises:
+        FileNotFoundError: si `run_dir/val/` no tiene ningún
+            `predictions_*.csv`.
+    """
+    val_dir = run_dir / "val"
+    test_dir = run_dir / "test"
+
+    db_names = sorted(p.stem.removeprefix("predictions_") for p in val_dir.glob("predictions_*.csv"))
+    if not db_names:
+        raise FileNotFoundError(
+            f"No hay {val_dir}/predictions_<base_de_datos>.csv -- ¿esta corrida se evaluó con "
+            "by_database_manifests fijado, y con la versión de evaluate_by_database() que también "
+            "persiste val por base? (ver src/eval_pipeline.py). Una corrida vieja solo tendría "
+            "estos archivos en test/, no en val/."
+        )
+
+    results: dict[str, dict[str, object]] = {}
+    for db_name in db_names:
+        test_path = test_dir / f"predictions_{db_name}.csv"
+        if not test_path.is_file():
+            print(f"Aviso: {test_path} no existe -- se omite '{db_name}'.")
+            continue
+        val_db_df = pd.read_csv(val_dir / f"predictions_{db_name}.csv")
+        test_db_df = pd.read_csv(test_path)
+        results[db_name] = _calibrate_pair(val_db_df, test_db_df, objective)
+
+    output_path = test_dir / "metrics_calibrated_by_database.json"
+    output_path.write_text(json.dumps(results, indent=2))
+    return results
+
+
+def _print_comparison(result: dict[str, object], label: str | None = None) -> None:
+    """Imprime una tabla legible baseline-vs-calibrado para las métricas clínicas usuales.
+
+    Args:
+        result: salida de `_calibrate_pair()`/`calibrate()`.
+        label: si se pasa (modo `--by-database`), se imprime como encabezado
+            antes de la tabla -- el nombre de la base de datos.
+    """
+    if label is not None:
+        print(f"--- {label} ---")
     baseline = result["test_baseline_0.5"]
     calibrated = result["test_calibrated"]
     print(f"Umbral calibrado en val (objective={result['objective']}): {result['threshold']:.4f}")
@@ -183,14 +277,29 @@ def parse_args() -> argparse.Namespace:
         default="f1_macro",
         help="Métrica de validación a maximizar al elegir el umbral (default: f1_macro).",
     )
+    parser.add_argument(
+        "--by-database",
+        action="store_true",
+        help=(
+            "Calibra un umbral POR BASE DE DATOS en vez de uno global -- requiere "
+            "val/predictions_<db>.csv (ver evaluate_by_database() en src/eval_pipeline.py). "
+            "Escribe test/metrics_calibrated_by_database.json en vez de test/metrics_calibrated.json."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    result = calibrate(args.run_dir, args.objective)
-    _print_comparison(result)
-    print(f"\nEscrito: {args.run_dir / 'test' / 'metrics_calibrated.json'}")
+    if args.by_database:
+        results = calibrate_by_database(args.run_dir, args.objective)
+        for db_name, result in results.items():
+            _print_comparison(result, label=db_name)
+        print(f"\nEscrito: {args.run_dir / 'test' / 'metrics_calibrated_by_database.json'}")
+    else:
+        result = calibrate(args.run_dir, args.objective)
+        _print_comparison(result)
+        print(f"\nEscrito: {args.run_dir / 'test' / 'metrics_calibrated.json'}")
 
 
 if __name__ == "__main__":
