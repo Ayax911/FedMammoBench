@@ -23,6 +23,14 @@ Thumbs.db
 runs/**/*.pt
 runs/**/*.pth
 
+# Trials de sweeps de hiperparámetros: configs materializadas y run_dirs que
+# genera scripts/sweep_train.py, decenas por sweep. Fuera de configs/ (YAML
+# escritos a mano, sin herencia) y de runs/ (registro de resultados
+# commiteado) a propósito -- ver el docstring de scripts/sweep_train.py. La
+# DEFINICIÓN del sweep (sweeps/*.yaml) sí se commitea: es el registro
+# metodológico de qué espacio se buscó.
+sweeps/*/
+
 checkpoints/
 *.pth
 *.pt

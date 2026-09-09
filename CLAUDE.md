@@ -41,6 +41,33 @@ alongside the usual `test/` artifacts.
 
 Cheap sanity check that the tree imports: `.venv/bin/python -c "import src.cli; import src.evaluate"`.
 
+### Hyperparameter sweeps (W&B), and the three post-hoc scripts
+
+`scripts/sweep_train.py` is a **shim, not a third entrypoint**: a W&B agent hands it sampled
+hyperparameters as CLI flags, it applies them onto a base YAML, materializes the trial's config, and
+runs `python -m src.cli --config <that>` **as a subprocess** — never `import src.cli`, which would
+break the "nothing imports `cli.py`" rule, and which also buys a clean process per trial (no CUDA
+memory, global seed, or W&B state carried between 100 runs). The search space lives in
+`sweeps/hpsearch_v1.yaml`, which is committed as the methodological record.
+
+```bash
+wandb sweep sweeps/hpsearch_v1.yaml
+wandb agent <entity>/fedmammobench2.0/<sweep_id>
+```
+
+Trial artifacts go to `sweeps/<sweep_id>/{configs,runs}/` — deliberately **not** `configs/` (hand-written
+YAML, no inheritance) or `runs/` (the committed results record); `sweeps/*/` is gitignored, and the
+winning config gets promoted by hand to a permanent `configs/expNN_*.yaml`. **Check
+`grep -q "api.wandb.ai" ~/.netrc` before launching**: `MetricsLogger` silently falls back to
+`mode="offline"` without credentials, and an agent whose trials run offline never gets metrics back —
+the Bayesian sampler would learn nothing while appearing to progress.
+
+Three scripts read a finished `run_dir` and never retrain (all invoked with `-m`, since they import
+`src.*`): `scripts/calibrate_threshold.py` picks a decision threshold on val and applies it to test
+(`--by-database` does it per database — the fixed 0.5 leaves KAU-BCMD at ~0 sensitivity despite
+AUC ~0.9), `scripts/ensemble_eval.py` averages `y_prob` across runs into a directory shaped like a
+real `run_dir`, and `scripts/split_manifest_by_database.py` regenerates `manifests/by_database/`.
+
 ## Repo state — what is real, what is stale
 
 `main` is the live branch and holds the rewritten `src/` package. A lot of checked-in documentation

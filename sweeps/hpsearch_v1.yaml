@@ -1,0 +1,133 @@
+# hpsearch_v1 -- primera búsqueda de hiperparámetros sistemática del proyecto.
+#
+# Por qué existe: exp05-exp32 son ablaciones one-at-a-time (un YAML escrito a
+# mano por experimento, moviendo un escalar respecto de su padre). Eso no
+# puede ver INTERACCIONES: exp29 midió weight_decay=1e-2 con lr fijo en 1e-3,
+# así que si el weight decay alto solo paga acompañado de otro lr, ese
+# experimento era estructuralmente incapaz de detectarlo. Este sweep busca
+# sobre el espacio CONJUNTO.
+#
+# Base: configs/exp31_antioverfit_no_inputdrop.yaml -- el mejor individual del
+# proyecto (val AUC 0.908, test AUC 0.889, F1-macro 0.795). Todos los valores
+# de exp31 caen DENTRO de los rangos de abajo, así que el sweep puede
+# reencontrar la receta actual: si el óptimo que halla coincide con exp31, ese
+# es un resultado legítimo (la receta ya estaba en un óptimo local del
+# espacio), no un fracaso del sweep.
+#
+# Lo que este sweep NO busca, a propósito: backbone (ImageNet fijo, la
+# ablación de pretraining ya se hizo en exp17-23 y exp32), manifest y
+# normalización (acoplados al backbone -- ver el header de exp28), pesos de
+# clase de la loss, augmentación, y seed (fijo en 42; la varianza entre
+# semillas se mide aparte con exp34-36, y mezclarla acá haría que el sweep
+# persiga ruido).
+#
+# Correr (en la workstation -- requiere credenciales de W&B en ~/.netrc, ver
+# abajo):
+#   wandb sweep sweeps/hpsearch_v1.yaml
+#   wandb agent <entity>/fedmammobench2.0/<sweep_id>
+#
+# ATENCIÓN antes de lanzar: verificar `grep -q "api.wandb.ai" ~/.netrc`.
+# MetricsLogger cae a mode="offline" si no encuentra credenciales (ver
+# src/tracking.py), y un agente cuyos trials corren offline nunca recibe las
+# métricas de vuelta: el sweep parecería avanzar mientras el muestreo bayesiano
+# no aprende absolutamente nada de los trials anteriores.
+
+program: scripts/sweep_train.py
+method: bayes
+
+metric:
+  # val_auc lo escribe evaluate_split() vía MetricsLogger.log_summary() al
+  # final de cada trial, re-evaluando el MEJOR checkpoint sobre val (ver
+  # src/eval_pipeline.py) -- no es el val_auc de la última época. Es
+  # exactamente la cantidad que se quiere maximizar.
+  #
+  # OJO con cómo se reporta esto después: el máximo de val_auc sobre ~100
+  # trials está inflado por selección, no es un resultado publicable. Ver la
+  # sección "Cómo leer el resultado" del plan -- el ganador se re-corre con
+  # varias semillas y el test se toca una sola vez, al final.
+  name: val_auc
+  goal: maximize
+
+early_terminate:
+  # Hyperband sobre el val_auc que Trainer loguea cada época. min_iter=8 y no
+  # menos: las mejores épocas observadas en exp28-32 caen entre la 3 y la 12,
+  # así que podar antes de la 8 mataría trials que todavía no mostraron lo
+  # que tienen.
+  type: hyperband
+  min_iter: 8
+  eta: 3
+
+command:
+  - ${env}
+  - ${interpreter}
+  - -m
+  - scripts.sweep_train
+  - --base_config
+  - configs/exp31_antioverfit_no_inputdrop.yaml
+  - ${args}
+
+parameters:
+  # --- Optimización ---
+  lr:
+    # LR de la cabeza. Nunca se barrió en el proyecto: todos los configs de la
+    # serie anti-overfitting usan 1e-3 fijo.
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.003
+  backbone_lr:
+    # LR del backbone (LR discriminativo, ver el ensamblado de param groups en
+    # src/cli.py). Lo que importa de verdad es su RAZÓN contra lr; se muestrean
+    # independientes y se deja que la búsqueda encuentre la razón buena, porque
+    # W&B no expresa parámetros dependientes.
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.0003
+  weight_decay:
+    # exp28 (1e-4) vs exp29 (1e-2) no se distinguieron, pero ambos con lr fijo.
+    # Rango ancho a propósito: la hipótesis a testear es que weight_decay solo
+    # importa en conjunto con lr.
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.1
+  beta1:
+    # exp05-exp27 heredaron beta1=0.5 del proyecto INC (default de GAN, sin
+    # justificación para clasificación supervisada); exp28+ lo cambió a 0.9
+    # junto con otras cinco cosas, así que su efecto aislado nunca se midió.
+    values: [0.5, 0.9]
+
+  # --- Loss ---
+  label_smoothing:
+    # exp30 probó exactamente 0.1 y fue el de mejor val AUC (0.914) y la curva
+    # de val_loss más plana de la serie -- vale la pena barrer el rango.
+    distribution: uniform
+    min: 0.0
+    max: 0.15
+
+  # --- Cabeza ---
+  input_dropout:
+    # Dropout tras Flatten(). exp28 (0.5) vs exp31 (0.0) solo probó los
+    # extremos. NO se busca sobre `dropout`: con hidden_layers=[] ese
+    # hiperparámetro es un no-op (ConfigurableMLPHead lo inserta dentro del
+    # bucle de capas ocultas).
+    distribution: uniform
+    min: 0.0
+    max: 0.5
+  hidden_layers:
+    # String separado por comas, lo parsea parse_hidden_layers() en el shim --
+    # una lista viajando por ${args} se serializa de forma ambigua. El barrido
+    # de profundidad de cabeza (exp11-13) es de la era pre-receta, con
+    # optimizer y schedule completamente distintos: no transfiere.
+    values: ["", "512", "1024"]
+
+  # --- Datos ---
+  batch_size:
+    # Nunca se tocó en todo el proyecto (64 en cada config). drop_last=True en
+    # el loader de train ya protege al BatchNorm1d de la cabeza de un batch
+    # final de tamaño 1, así que los tres valores son seguros.
+    values: [32, 64, 128]
+
+  # --- Schedule ---
+  epochs:
+    # El shim fija scheduler.T_max al mismo valor -- nunca se muestrean por
+    # separado (ver build_trial_config() en scripts/sweep_train.py).
+    values: [25, 40, 60]
