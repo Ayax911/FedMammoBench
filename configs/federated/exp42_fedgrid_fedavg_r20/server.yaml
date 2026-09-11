@@ -1,0 +1,85 @@
+# exp42_fedgrid_fedavg_r20 -- grid federado exp41-exp52: misma receta de
+# configs/exp37_hpsearch_v1_e7u7fprr.yaml (el mejor experimento centralizado
+# del proyecto -- test AUC 0.9016, test F1-macro 0.8071, ganador de
+# hpsearch_v1 elegido por generalizacion por-base-de-datos, no por AUC
+# agregado bruto) portada a los 4 nodos de exp40, con DOS ejes de grid:
+#
+#   strategy: fedavg | fedprox (mu=0.1) | fedadam | fedyogi  (strategies.py)
+#   rounds:   10 | 20 | 30, local_epochs=2 fijo -> 20/40/60 epocas efectivas
+#             (bracket alrededor de las 25 epocas que uso exp37 centralizado
+#             y las 60 del diseno original de exp40)
+#
+# Esta celda: strategy=fedavg, rounds=20 (-> 40 epocas efectivas).
+#
+# UNICO cambio respecto de "copiar exp37 tal cual" (aparte de lo que el
+# diseno federado ya fuerza -- scheduler null, sin epochs/patience en el
+# nodo, ver NodeRunConfig): loss.hparams.weight, personalizado POR NODO sobre
+# el train split de CADA base de datos (formula sklearn "balanced":
+# weight_c = N_train / (2 * n_c_train), la misma que produjo el
+# [0.7593, 1.4642] global de exp31/exp37 -- verificado: 6671/(2*4393)=0.7593,
+# 6671/(2*2278)=1.4642). Ver el header de cada node_*.yaml para el numero
+# exacto y el porque: los 4 nodos tienen desbalances radicalmente distintos
+# (cmmd ~49% maligno vs kau-bcmd ~4.6%) y una unica weight global les
+# aplicaria a todos el desbalance PROMEDIO, que no es el de ninguno.
+#
+# aggregation_scope: full (como exp37: un solo modelo, no cabeza por nodo) --
+# comparable directo contra el AUC pooled de exp37 evaluando el checkpoint
+# global con src.evaluate (ver CUIDADO en tracking.best_metric_name abajo).
+#
+# server_address puerto 8081: cada celda del grid tiene el suyo (8080+i)
+# para poder lanzar mas de una celda a la vez en esta workstation (ver nota
+# de docker-compose.federated.yaml sobre SERVER_HEALTHCHECK_PORT -- si se
+# lanza via compose, exportar SERVER_HEALTHCHECK_PORT=8081 tambien).
+#
+# RIESGO ABIERTO, a verificar antes de correr las 12 celdas: unfreeze_from
+# conv1 (todo el backbone entrenable) + batch_size 64 en los 4 nodos a la vez
+# contra una sola GPU es MAS pesado que el diseno original de exp40
+# (unfreeze_from layer4, batch_size 32/16) -- la GPU de esta workstation
+# tiene ~48GB (medido con nvidia-smi), el doble de los 24GB que asumia el
+# comentario de exp40/node_cmmd.yaml, pero no esta verificado en vivo con
+# las 4 arquitecturas full-unfrozen simultaneas. Si aparece OOM: bajar
+# data.batch_size en los node_*.yaml de esta celda (no hace falta que sea
+# igual entre nodos, ver ese mismo comentario en exp40).
+#
+# Lanzamiento:
+#   EXPERIMENT=exp42_fedgrid_fedavg_r20 SERVER_HEALTHCHECK_PORT=8081 \
+#     docker compose -f docker-compose.federated.yaml up
+
+experiment_id: exp42_fedgrid_fedavg_r20
+
+federation:
+  server_address: "127.0.0.1:8081"
+  rounds: 20
+  local_epochs: 2
+  num_nodes: 4
+  aggregation_scope: full
+  accept_failures: false
+
+strategy:
+  name: fedavg
+  hparams: {}
+
+architecture:
+  name: resnet50_imagenet_v2
+  unfreeze_from: conv1
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [512]
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.0
+    input_dropout: 0.446757081317639
+    num_classes: 2
+
+tracking:
+  best_metric_name: auc         # promedio ponderado federado -- NO es el AUC pooled, ver docs/FEDERATED_DESIGN.md
+  best_metric_mode: max
+  save_every_rounds: null
+  run_dir: runs/exp42_fedgrid_fedavg_r20/server
+  checkpoint_dir: runs/exp42_fedgrid_fedavg_r20/server/weights
+  device: cpu
+  wandb_project: fedmammobench2.0
+  wandb_group: exp42_fedgrid_fedavg_r20
