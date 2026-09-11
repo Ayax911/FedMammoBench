@@ -48,6 +48,16 @@ program: scripts/sweep_train.py
 name: hpsearch_v1
 method: bayes
 
+# `project` explícito: sin este campo, `wandb sweep` no cae en el proyecto por
+# defecto de la cuenta (sería "Uncategorized") sino que infiere uno propio a
+# partir del repo + la carpeta de `program` ("FedMammoBench-scripts", visto en
+# la práctica) -- que NO es "fedmammobench2.0", el proyecto donde
+# `MetricsLogger` (vía `train.wandb_project` en cada config, ver src/tracking.py)
+# efectivamente loguea cada trial. Sin este campo el sweep y sus trials quedan
+# en proyectos distintos: el agente reporta actividad, pero el sampler
+# bayesiano nunca ve las métricas de los trials anteriores.
+project: fedmammobench2.0
+
 metric:
   # val_auc lo escribe evaluate_split() vía MetricsLogger.log_summary() al
   # final de cada trial, re-evaluando el MEJOR checkpoint sobre val (ver
@@ -71,8 +81,17 @@ early_terminate:
   eta: 3
 
 command:
-  - ${env}
-  - ${interpreter}
+  # Ruta absoluta al intérprete del .venv, NO ${env}/${interpreter}: ese
+  # combo se expande a "/usr/bin/env python", que resuelve contra el PATH
+  # del proceso del agente -- en esta workstation eso es
+  # /home/imagenesmedicas/miniconda3/bin/python, cuyo numpy/torch son
+  # incompatibles entre sí (`AttributeError: module 'numpy' has no
+  # attribute 'ndarray'` en el primer `import torch`). Verificado en vivo:
+  # los 3 primeros trials de un intento anterior murieron así en <60s y el
+  # flapping guard de W&B mató al agente antes de gastar GPU. CLAUDE.md ya
+  # exige `.venv/bin/python` explícito en todo el resto del repo (ver "The
+  # one command") -- esto extiende la misma regla al command: del sweep.
+  - /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/.venv/bin/python
   - -m
   - scripts.sweep_train
   - --base_config
