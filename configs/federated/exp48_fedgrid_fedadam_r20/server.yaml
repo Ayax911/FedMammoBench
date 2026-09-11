@@ -57,7 +57,10 @@ federation:
 
 strategy:
   name: fedadam
-  hparams: {}
+  # Ver exp47_fedgrid_fedadam_r10/server.yaml para el diagnostico completo:
+  # los defaults stock de flwr (eta=0.1, tau=1e-9) divergen a NaN desde la
+  # ronda 1 con esta receta de fine-tuning. eta=0.01, tau=1e-3 es el fix.
+  hparams: {eta: 0.01, tau: 0.001}
 
 architecture:
   name: resnet50_imagenet_v2
