@@ -1,0 +1,41 @@
+{
+  "os":  "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.12.8",
+  "startedAt":  "2026-09-11T12:36:21.903069Z",
+  "args":  [
+    "--config",
+    "configs/federated/exp53_fedgrid_fedprox_mu001_r30/node_kau-bcmd.yaml"
+  ],
+  "program":  "-m src.federated.client",
+  "git":  {
+    "remote":  "git@github.com:Ayax911/FedMammoBench.git",
+    "commit":  "ed29442c2110ea99d23043d33d7dfa911187972d"
+  },
+  "root":  "runs/exp53_fedgrid_fedprox_mu001_r30/nodes/kau-bcmd",
+  "host":  "labmirp-Precision-5860-Tower",
+  "executable":  "/media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/.venv/bin/python",
+  "cpu_count":  6,
+  "cpu_count_logical":  12,
+  "gpu":  "NVIDIA RTX 6000 Ada Generation",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "195722883072",
+      "used":  "139341516800"
+    }
+  },
+  "memory":  {
+    "total":  "134269358080"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA RTX 6000 Ada Generation",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  18176,
+      "architecture":  "Ada",
+      "uuid":  "GPU-c5b5be7b-8c3e-86ad-6240-79778baae0e8"
+    }
+  ],
+  "cudaVersion":  "13.0",
+  "writerId":  "6p53td6cf0bjimm6hvaerfy4c74l0arp"
+}
