@@ -1,0 +1,63 @@
+experiment_id: exp44_fedgrid_fedprox_r10
+node_name: inbreast
+server_address: 127.0.0.1:8083
+aggregation_scope: full
+architecture:
+  name: resnet50_imagenet_v2
+  weights_path: null
+  unfreeze_from: conv1
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers:
+    - 512
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.0
+    input_dropout: 0.446757081317639
+    num_classes: 2
+optimizer:
+  name: adamw
+  hparams:
+    lr: 0.0006453040132730183
+    backbone_lr: 0.00020959745042706368
+    betas:
+    - 0.5
+    - 0.999
+    weight_decay: 0.0003423573093420121
+scheduler: null
+loss:
+  name: cross_entropy
+  hparams:
+    weight:
+    - 0.6666666666666666
+    - 2.0
+    label_smoothing: 0.013689308712627246
+data:
+  manifest_path: manifests/by_database/inbreast_norm_0_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 0
+  seed: 42
+  image_size: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  normalize_mean:
+  - 0.449
+  normalize_std:
+  - 0.226
+  by_database_manifests: null
+run:
+  device: cuda
+  freeze_bn_stats: true
+  run_dir: runs/exp44_fedgrid_fedprox_r10/nodes/inbreast
+  checkpoint_dir: runs/exp44_fedgrid_fedprox_r10/nodes/inbreast/weights
+  wandb_project: fedmammobench2.0
+  wandb_group: exp44_fedgrid_fedprox_r10
