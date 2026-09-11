@@ -76,8 +76,8 @@ weighted-AUC-≠-pooled-AUC caveat: **`docs/FEDERATED_DESIGN.md`**. Per-method c
 **`src/federated/DOCS.md`**.
 
 ```bash
-.venv/bin/python -m src.federated.server --config configs/federated/exp40_fedavg_full/server.yaml
-.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_cmmd.yaml
+.venv/bin/python -m src.federated.server --config configs/federated/exp37_fedavg_full/server.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp37_fedavg_full/node_cmmd.yaml
 # ... one client process per node (kau-bcmd, cdd-cesm, inbreast)
 ```
 
@@ -86,7 +86,7 @@ command, host networking so `server_address: 127.0.0.1:<port>` in the YAMLs work
 and outside containers):
 
 ```bash
-EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
+EXPERIMENT=exp37_fedavg_full docker compose -f docker-compose.federated.yaml up
 ```
 
 `aggregation_scope: full | backbone` (server.yaml) picks whether the whole model or only the backbone

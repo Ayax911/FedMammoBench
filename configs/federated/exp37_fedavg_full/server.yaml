@@ -1,4 +1,4 @@
-# exp40_fedavg_full -- primer experimento federado real: 4 nodos (cmmd,
+# exp37_fedavg_full -- primer experimento federado real: 4 nodos (cmmd,
 # kau-bcmd, cdd-cesm, inbreast, un nodo por base de datos de
 # manifests/by_database/), FedAvg, agregación del modelo COMPLETO
 # (aggregation_scope: full), backbone RadImageNet con layer4 descongelada.
@@ -18,12 +18,12 @@
 # con architecture/head/scope distinto aborta la corrida en la ronda 1.
 #
 # Lanzamiento (workstation):
-#   EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
+#   EXPERIMENT=exp37_fedavg_full docker compose -f docker-compose.federated.yaml up
 # o a mano: python -m src.federated.server --config <este archivo> + un
-# python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_<n>.yaml
+# python -m src.federated.client --config configs/federated/exp37_fedavg_full/node_<n>.yaml
 # por nodo.
 
-experiment_id: exp40_fedavg_full
+experiment_id: exp37_fedavg_full
 
 federation:
   server_address: "127.0.0.1:8080"
@@ -63,8 +63,8 @@ tracking:
   best_metric_name: auc         # sobre el promedio ponderado federado de val
   best_metric_mode: max
   save_every_rounds: null       # solo el mejor: ~100 MB por checkpoint full
-  run_dir: runs/exp40_fedavg_full/server
-  checkpoint_dir: runs/exp40_fedavg_full/server/weights
+  run_dir: runs/exp37_fedavg_full/server
+  checkpoint_dir: runs/exp37_fedavg_full/server/weights
   device: cpu                   # el modelo plantilla nunca hace forward
   wandb_project: fedmammobench2.0
-  wandb_group: exp40_fedavg_full   # mismo grupo en servidor y nodos -> una fila en la UI
+  wandb_group: exp37_fedavg_full   # mismo grupo en servidor y nodos -> una fila en la UI

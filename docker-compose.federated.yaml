@@ -5,8 +5,8 @@
 # comandos son de antes del rewrite -- ver CLAUDE.md).
 #
 # Uso:
-#   EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
-#   EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml down
+#   EXPERIMENT=exp37_fedavg_full docker compose -f docker-compose.federated.yaml up
+#   EXPERIMENT=exp37_fedavg_full docker compose -f docker-compose.federated.yaml down
 #
 # `network_mode: host` en TODOS los servicios, a propósito -- igual que el
 # despliegue legacy (scripts/docker-deploy-federated.sh en ec55408): así
@@ -42,7 +42,7 @@ x-node-common: &node-common
   # pero se deja margen explícito en vez de heredar el default de Docker (64m).
   shm_size: "2gb"
   environment:
-    - EXPERIMENT=${EXPERIMENT:?Definí EXPERIMENT, ej. EXPERIMENT=exp40_fedavg_full}
+    - EXPERIMENT=${EXPERIMENT:?Definí EXPERIMENT, ej. EXPERIMENT=exp37_fedavg_full}
 
 services:
   server:
@@ -56,7 +56,7 @@ services:
       - ${HOME}/.netrc:/root/.netrc:ro
     restart: "no"
     environment:
-      - EXPERIMENT=${EXPERIMENT:?Definí EXPERIMENT, ej. EXPERIMENT=exp40_fedavg_full}
+      - EXPERIMENT=${EXPERIMENT:?Definí EXPERIMENT, ej. EXPERIMENT=exp37_fedavg_full}
       - SERVER_HEALTHCHECK_PORT=${SERVER_HEALTHCHECK_PORT:-8080}
     # El servidor no procesa imágenes (requisito de diseño) -- sin volumen
     # de datos, sin GPU, sin shm_size ampliado.

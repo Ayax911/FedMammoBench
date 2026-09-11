@@ -1,14 +1,19 @@
-# Nodo inbreast de exp40_fedavg_full -- el nodo chico: 410 filas (train
-# 328: 246 benignas / 82 malignas -> pos_weight = 246/82 = 3.0000 sobre el
-# train de ESTE nodo). batch_size 16 (no 32): con 328 filas y
-# drop_last=True en train, 32 dejaría solo 10 pasos por época local.
-# Antecedente centralizado: inbreast (y kau-bcmd) no tienen poder
-# estadístico para diferencias finas por nodo -- leer sus métricas
-# individuales con esa reserva. Estructura y racionales: ver
-# node_cmmd.yaml.
+# Nodo kau-bcmd de exp37_fedavg_full -- el nodo desbalanceado: 2206 filas
+# (train 1764: 1682 benignas / 82 malignas, ~4.6% maligno ->
+# pos_weight = 1682/82 = 20.5122 sobre el train de ESTE nodo). Este
+# desbalance extremo es la razón de que loss NO entre al hash del
+# handshake: cada nodo pondera su pérdida según SU prevalencia local.
+# Antecedente centralizado: con umbral fijo 0.5, kau-bcmd quedaba en
+# sensibilidad ~0 pese a AUC ~0.9 (ver scripts/calibrate_threshold.py) --
+# esperar lo mismo acá y calibrar umbral post-hoc sobre val si se reporta
+# sensibilidad/especificidad por nodo.
+#
+# Resto de la estructura: ver node_cmmd.yaml (mismo modelo por handshake,
+# mismos data-settings del pipeline TIFF float; cambian manifest, pos_weight
+# y rutas de salida).
 
-experiment_id: exp40_fedavg_full
-node_name: inbreast
+experiment_id: exp37_fedavg_full
+node_name: kau-bcmd
 server_address: "127.0.0.1:8080"
 aggregation_scope: full         # duplicado del server.yaml -- cubierto por el hash
 
@@ -36,12 +41,12 @@ scheduler: null
 loss:
   name: bce
   hparams:
-    pos_weight: [3.0000]        # benignas/malignas del train de inbreast
+    pos_weight: [20.5122]       # benignas/malignas del train de kau-bcmd
 
 data:
-  manifest_path: manifests/by_database/inbreast_norm_neg1_1.csv
+  manifest_path: manifests/by_database/kau-bcmd_norm_neg1_1.csv
   image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
-  batch_size: 16
+  batch_size: 32
   num_workers: 0
   seed: 42
   image_size: null
@@ -59,7 +64,7 @@ data:
 run:
   device: cuda
   freeze_bn_stats: true
-  run_dir: runs/exp40_fedavg_full/nodes/inbreast
-  checkpoint_dir: runs/exp40_fedavg_full/nodes/inbreast/weights
+  run_dir: runs/exp37_fedavg_full/nodes/kau-bcmd
+  checkpoint_dir: runs/exp37_fedavg_full/nodes/kau-bcmd/weights
   wandb_project: fedmammobench2.0
-  wandb_group: exp40_fedavg_full
+  wandb_group: exp37_fedavg_full

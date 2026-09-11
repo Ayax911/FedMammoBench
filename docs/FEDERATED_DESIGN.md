@@ -119,7 +119,7 @@ importen) fue descartada a propósito: rompería la convención "cada YAML es au
 resto del repo ya sigue. En cambio, la coherencia se vigila en RUNTIME — ver §4.
 
 Ejemplo completo de las 5 YAMLs de un experimento de 4 nodos:
-[`configs/federated/exp40_fedavg_full/`](../configs/federated/exp40_fedavg_full/).
+[`configs/federated/exp37_fedavg_full/`](../configs/federated/exp37_fedavg_full/).
 
 ---
 
@@ -330,7 +330,7 @@ Decisiones:
 
 Verificado en esta sesión (máquina de desarrollo, sin GPU): build de la imagen CPU, y
 `docker compose -f docker-compose.federated.yaml config` validando la topología completa de 4 nodos
-para `exp40_fedavg_full`. El build/run con GPU real es verificación exclusiva de la workstation
+para `exp37_fedavg_full`. El build/run con GPU real es verificación exclusiva de la workstation
 (riesgo §11.6).
 
 ---
@@ -341,7 +341,7 @@ Cada fase se verificó de forma independiente (espíritu PHASES.md), con scripts
 datos sintéticos (no hay mount de datos en la máquina de desarrollo — ver la nota de memoria
 correspondiente):
 
-1. **Config + handshake** (Fase 1): las 5 YAML de `exp40_fedavg_full` cargan; una clave mal escrita
+1. **Config + handshake** (Fase 1): las 5 YAML de `exp37_fedavg_full` cargan; una clave mal escrita
    o `by_database_manifests` en un nodo levantan `ValidationError`; el hash de servidor y los 4
    nodos coincide; cambiar `head.hparams.hidden_dim` lo cambia, cambiar `weights_path` no.
 2. **`param_utils` + refactors** (Fase 2): round-trip bit-exacto de un ResNet50 real en ambos

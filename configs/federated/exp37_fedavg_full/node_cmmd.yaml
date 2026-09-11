@@ -1,4 +1,4 @@
-# Nodo cmmd de exp40_fedavg_full -- el nodo grande: 4722 filas
+# Nodo cmmd de exp37_fedavg_full -- el nodo grande: 4722 filas
 # (train 3776: 1930 benignas / 1846 malignas, casi balanceado ->
 # pos_weight = 1930/1846 = 1.0455, calculado sobre el train de ESTE nodo,
 # no sobre el manifest global).
@@ -12,7 +12,7 @@
 # 24 GB con layer4 descongelada; si aparece OOM, bajar batch_size aquí (el
 # gradiente por nodo no necesita ser comparable entre nodos).
 
-experiment_id: exp40_fedavg_full
+experiment_id: exp37_fedavg_full
 node_name: cmmd
 server_address: "127.0.0.1:8080"
 aggregation_scope: full         # duplicado del server.yaml -- cubierto por el hash
@@ -68,7 +68,7 @@ data:
 run:                            # variante recortada de TrainConfig: sin epochs ni
   device: cuda                  # patience/metric_name -- rondas, parada y mejor
   freeze_bn_stats: true         # modelo son decisiones del SERVIDOR
-  run_dir: runs/exp40_fedavg_full/nodes/cmmd
-  checkpoint_dir: runs/exp40_fedavg_full/nodes/cmmd/weights
+  run_dir: runs/exp37_fedavg_full/nodes/cmmd
+  checkpoint_dir: runs/exp37_fedavg_full/nodes/cmmd/weights
   wandb_project: fedmammobench2.0
-  wandb_group: exp40_fedavg_full
+  wandb_group: exp37_fedavg_full

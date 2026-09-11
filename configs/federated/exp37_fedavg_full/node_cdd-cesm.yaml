@@ -1,8 +1,8 @@
-# Nodo cdd-cesm de exp40_fedavg_full -- 1003 filas (train 803: 535 benignas
+# Nodo cdd-cesm de exp37_fedavg_full -- 1003 filas (train 803: 535 benignas
 # / 268 malignas -> pos_weight = 535/268 = 1.9963 sobre el train de ESTE
 # nodo). Estructura y racionales: ver node_cmmd.yaml.
 
-experiment_id: exp40_fedavg_full
+experiment_id: exp37_fedavg_full
 node_name: cdd-cesm
 server_address: "127.0.0.1:8080"
 aggregation_scope: full         # duplicado del server.yaml -- cubierto por el hash
@@ -54,7 +54,7 @@ data:
 run:
   device: cuda
   freeze_bn_stats: true
-  run_dir: runs/exp40_fedavg_full/nodes/cdd-cesm
-  checkpoint_dir: runs/exp40_fedavg_full/nodes/cdd-cesm/weights
+  run_dir: runs/exp37_fedavg_full/nodes/cdd-cesm
+  checkpoint_dir: runs/exp37_fedavg_full/nodes/cdd-cesm/weights
   wandb_project: fedmammobench2.0
-  wandb_group: exp40_fedavg_full
+  wandb_group: exp37_fedavg_full

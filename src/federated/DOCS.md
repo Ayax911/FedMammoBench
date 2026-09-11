@@ -8,25 +8,25 @@
 
 ```bash
 # Servidor -- nunca ve imágenes.
-.venv/bin/python -m src.federated.server --config configs/federated/exp40_fedavg_full/server.yaml
+.venv/bin/python -m src.federated.server --config configs/federated/exp37_fedavg_full/server.yaml
 
 # Un proceso por nodo, cada uno con su YAML.
-.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_cmmd.yaml
-.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_kau-bcmd.yaml
-.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_cdd-cesm.yaml
-.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_inbreast.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp37_fedavg_full/node_cmmd.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp37_fedavg_full/node_kau-bcmd.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp37_fedavg_full/node_cdd-cesm.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp37_fedavg_full/node_inbreast.yaml
 
 # Fallback: re-evaluar un nodo contra el mejor modelo global sin reentrenar
 # (nodo que murió a mitad de corrida, o re-generar val/test después).
 .venv/bin/python -m src.federated.evaluate_node \
-    --config configs/federated/exp40_fedavg_full/node_cmmd.yaml \
-    --server-run-dir runs/exp40_fedavg_full/server
+    --config configs/federated/exp37_fedavg_full/node_cmmd.yaml \
+    --server-run-dir runs/exp37_fedavg_full/server
 ```
 
 Con Docker (ver `docker-compose.federated.yaml`):
 
 ```bash
-EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
+EXPERIMENT=exp37_fedavg_full docker compose -f docker-compose.federated.yaml up
 ```
 
 ---
@@ -51,8 +51,8 @@ Snapshot YAML de un `FederatedServerConfig`/`FederatedNodeConfig`, mismo patrón
 ```python
 from src.federated.config import load_server_config, load_node_config
 
-server_cfg = load_server_config("configs/federated/exp40_fedavg_full/server.yaml")
-node_cfg = load_node_config("configs/federated/exp40_fedavg_full/node_cmmd.yaml")
+server_cfg = load_server_config("configs/federated/exp37_fedavg_full/server.yaml")
+node_cfg = load_node_config("configs/federated/exp37_fedavg_full/node_cmmd.yaml")
 print(server_cfg.federation.rounds, node_cfg.node_name)
 ```
 
@@ -144,7 +144,7 @@ Un nodo. `fit()`: handshake -> `set_model_ndarrays` -> optimizer/scheduler FRESC
 
 ##### Cómo usar `client.py`:
 ```bash
-.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_cmmd.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp37_fedavg_full/node_cmmd.yaml
 ```
 
 ---
@@ -176,7 +176,7 @@ Arma el modelo plantilla (`architecture` + `head`, semilla fija `_TEMPLATE_SEED=
 
 ##### Cómo usar `server.py`:
 ```bash
-.venv/bin/python -m src.federated.server --config configs/federated/exp40_fedavg_full/server.yaml
+.venv/bin/python -m src.federated.server --config configs/federated/exp37_fedavg_full/server.yaml
 ```
 
 ---
@@ -192,6 +192,6 @@ Espera hasta 60s (poll cada 2s) a que `best.json` exista antes de levantar `File
 ##### Cómo usar `evaluate_node.py`:
 ```bash
 .venv/bin/python -m src.federated.evaluate_node \
-    --config configs/federated/exp40_fedavg_full/node_cmmd.yaml \
-    --server-run-dir runs/exp40_fedavg_full/server
+    --config configs/federated/exp37_fedavg_full/node_cmmd.yaml \
+    --server-run-dir runs/exp37_fedavg_full/server
 ```
