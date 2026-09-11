@@ -31,6 +31,14 @@ runs/**/*.pth
 # metodológico de qué espacio se buscó.
 sweeps/*/
 
+# Cache local del AGENTE de `wandb sweep`/`wandb agent` en la raíz del repo
+# (wandb/sweep-<id>/config-*.yaml, uno por trial) -- sincronización interna
+# de wandb, no el registro de resultados. Con "/" al inicio para anclarlo a
+# la raíz: sin eso también apagaría runs/<exp>/wandb/, que SÍ se commitea
+# (plots/predicciones sincronizados de cada corrida, ver "Run artifacts" en
+# CLAUDE.md).
+/wandb/
+
 checkpoints/
 *.pth
 *.pt
