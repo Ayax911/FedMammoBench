@@ -57,7 +57,17 @@ federation:
 
 strategy:
   name: fedyogi
-  hparams: {}
+  # Igual que fedadam (ver exp47_fedgrid_fedadam_r10/server.yaml), pero MAS
+  # agresivo: con los defaults stock de flwr (eta=0.01, tau=1e-3 -- que son
+  # EXACTAMENTE los valores que le pusimos a mano a fedadam para arreglar
+  # su NaN) FedYogi colapso en la ronda 6: las 4 bases quedaron con
+  # val_auc=0.5000 EXACTO (salida degenerada) y val_loss en 30-52. Peor que
+  # fedadam con el mismo eta/tau -- la regla de actualizacion propia de
+  # Yogi (el truco de signo sobre la varianza, v -= (1-beta2)*sign(v-g^2)*g^2
+  # en vez del EMA estandar de Adam) amplifica mas el ruido de gradientes
+  # chicos que el EMA de FedAdam. Fix: eta 10x mas chico (0.001) y tau 10x
+  # mas grande (0.01) que los defaults.
+  hparams: {eta: 0.001, tau: 0.01}
 
 architecture:
   name: resnet50_imagenet_v2

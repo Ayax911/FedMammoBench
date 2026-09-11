@@ -57,7 +57,10 @@ federation:
 
 strategy:
   name: fedyogi
-  hparams: {}
+  # Ver exp50_fedgrid_fedyogi_r10/server.yaml para el diagnostico completo:
+  # los defaults stock de flwr colapsan las 4 bases a val_auc=0.5000 exacto
+  # hacia la ronda 6. eta=0.001, tau=0.01 es el fix.
+  hparams: {eta: 0.001, tau: 0.01}
 
 architecture:
   name: resnet50_imagenet_v2
