@@ -53,6 +53,55 @@ def build_optimizer(params: ParamsT, name: str, **hparams: Any) -> Optimizer:
     return _OPTIMIZERS[name](params, **hparams)
 
 
+def build_param_groups(
+    model: nn.Sequential, optimizer_hparams: dict[str, Any]
+) -> tuple[ParamsT, dict[str, Any]]:
+    """Arma los param groups para LR discriminativo backbone/cabeza.
+
+    Extraído de `cli.py` (donde vivía inline) para que TODO ensamblador de
+    optimizador — `cli.run()` y el cliente federado (`federated/client.py`),
+    que reconstruye su optimizer fresco cada ronda — pase por el mismo
+    código: si esta lógica viviera solo en `cli.py`, un cliente federado
+    con `backbone_lr` en su YAML la perdería en silencio y entrenaría con
+    un solo LR plano.
+
+    `backbone_lr`, si viene en `optimizer_hparams`, separa `model[0]` (el
+    backbone) en su propio param group con ese LR, dejando `model[1]` (la
+    cabeza) en el LR general del resto de los hparams. Filtra por
+    `requires_grad` para no meterle al estado del optimizer parámetros del
+    backbone que `unfreeze_from` dejó congelados (un freeze parcial, ej.
+    `layer4`, no debería aportarle momentum/weight_decay a conv1-layer3).
+    Sin `backbone_lr`, comportamiento idéntico a no llamar esta función:
+    un solo grupo con `model.parameters()` completo.
+
+    Args:
+        model: el `nn.Sequential(backbone, head)` ensamblado — se indexa
+            `model[0]`/`model[1]`, así que debe tener exactamente esa forma.
+        optimizer_hparams: los `hparams` del YAML del optimizador. NO se
+            muta: se copia, y `backbone_lr` se extrae de la copia.
+
+    Returns:
+        tuple: `(params, hparams_restantes)` — `params` es lo que se le
+        pasa a `build_optimizer()` (param groups o `model.parameters()`), y
+        `hparams_restantes` los hparams sin `backbone_lr` (que no es un
+        argumento válido del constructor de ningún optimizer de PyTorch).
+
+    Example:
+        >>> params, hparams = build_param_groups(model, {"lr": 1e-3, "backbone_lr": 1e-4})
+        >>> optimizer = build_optimizer(params, "adamw", **hparams)
+    """
+    hparams = dict(optimizer_hparams)
+    backbone_lr = hparams.pop("backbone_lr", None)
+    if backbone_lr is not None:
+        params: ParamsT = [
+            {"params": [p for p in model[0].parameters() if p.requires_grad], "lr": backbone_lr},
+            {"params": model[1].parameters()},
+        ]
+    else:
+        params = model.parameters()
+    return params, hparams
+
+
 _SCHEDULERS: dict[str, Callable[..., LRScheduler]] = {
     "reduceonplateu": torch.optim.lr_scheduler.ReduceLROnPlateau,
     "cosine": torch.optim.lr_scheduler.CosineAnnealingLR,

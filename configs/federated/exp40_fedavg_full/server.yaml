@@ -1,0 +1,70 @@
+# exp40_fedavg_full -- primer experimento federado real: 4 nodos (cmmd,
+# kau-bcmd, cdd-cesm, inbreast, un nodo por base de datos de
+# manifests/by_database/), FedAvg, agregación del modelo COMPLETO
+# (aggregation_scope: full), backbone RadImageNet con layer4 descongelada.
+#
+# El servidor NUNCA ve imágenes: este YAML no tiene sección data ni loss.
+# La evaluación es federada pura -- cada nodo evalúa el modelo agregado
+# sobre su val local y el servidor promedia ponderado por n muestras.
+# CUIDADO con leer ese promedio como si fuera métrica centralizada: el AUC
+# promedio-ponderado de 4 nodos NO es el AUC del pool combinado de
+# predicciones (ver docs/FEDERATED_DESIGN.md). Para la métrica pooled,
+# evaluar el checkpoint global con src.evaluate sobre el manifest completo.
+#
+# Las secciones architecture/head van DUPLICADAS en cada node_*.yaml
+# (convención del repo: cada YAML se lee de punta a punta, sin herencia).
+# La coherencia NO depende de este comentario: el hash del handshake
+# (src/federated/handshake.py) viaja en el config de cada ronda y un nodo
+# con architecture/head/scope distinto aborta la corrida en la ronda 1.
+#
+# Lanzamiento (workstation):
+#   EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
+# o a mano: python -m src.federated.server --config <este archivo> + un
+# python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_<n>.yaml
+# por nodo.
+
+experiment_id: exp40_fedavg_full
+
+federation:
+  server_address: "127.0.0.1:8080"
+  rounds: 30                    # fijas -- sin early stopping federado (decisión de
+                                # diseño, ver docs/FEDERATED_DESIGN.md); el mejor
+                                # modelo global se trackea por ronda en best.json
+  local_epochs: 2               # épocas locales por nodo por ronda: 30x2 = presupuesto
+                                # de 60 épocas efectivas, comparable con las corridas
+                                # centralizadas de 80 con early stopping
+  num_nodes: 4                  # min_fit = min_evaluate = min_available: una ronda sin
+                                # los 4 nodos no es el experimento diseñado
+  aggregation_scope: full       # full | backbone -- backbone dejaría una cabeza
+                                # personalizada por nodo (ver FEDERATED_DESIGN.md)
+  accept_failures: false        # un nodo caído o incoherente aborta la corrida
+
+strategy:
+  name: fedavg                  # fedavg | fedprox | fedadam | fedyogi (strategies.py)
+  hparams: {}                   # passthrough al constructor stock de flwr
+                                # (ej. fedprox: {proximal_mu: 0.1})
+
+architecture:                   # DUPLICADO en cada node_*.yaml -- cubierto por el hash
+  name: resnet50_radimagenet
+  # weights_path NO entra al hash (ruta local por máquina); los pesos
+  # efectivos salen de acá UNA vez, como parámetros iniciales de la ronda 1.
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: layer4
+
+head:                           # DUPLICADO en cada node_*.yaml -- cubierto por el hash
+  name: standard_mlp
+  hparams:
+    in_features: 2048
+    hidden_dim: 512
+    dropout: 0.2
+    num_classes: 1              # 1 logit -> los nodos usan bce (ver sus YAML)
+
+tracking:
+  best_metric_name: auc         # sobre el promedio ponderado federado de val
+  best_metric_mode: max
+  save_every_rounds: null       # solo el mejor: ~100 MB por checkpoint full
+  run_dir: runs/exp40_fedavg_full/server
+  checkpoint_dir: runs/exp40_fedavg_full/server/weights
+  device: cpu                   # el modelo plantilla nunca hace forward
+  wandb_project: fedmammobench2.0
+  wandb_group: exp40_fedavg_full   # mismo grupo en servidor y nodos -> una fila en la UI

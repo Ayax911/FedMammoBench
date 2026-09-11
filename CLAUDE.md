@@ -3,9 +3,9 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 FedMammoBench: binary mammography classification (benign / malignant) with a RadImageNet-pretrained
-ResNet50 in PyTorch. **Current scope is centralized training only** — the federated half (Flower/Ray)
-is postponed until the centralized pipeline is validated, and nothing under `src/` imports `flwr` or
-`ray` today.
+ResNet50 in PyTorch. Centralized training (`src/`) is the validated baseline. A federated layer
+(`src/federated/`, real gRPC deployment on Flower — no simulation, no Ray) now sits on top of it; see
+"Federated training" below and `docs/FEDERATED_DESIGN.md` for the full design and rationale.
 
 ## The one command (plus one more for re-evaluation)
 
@@ -68,6 +68,41 @@ Three scripts read a finished `run_dir` and never retrain (all invoked with `-m`
 AUC ~0.9), `scripts/ensemble_eval.py` averages `y_prob` across runs into a directory shaped like a
 real `run_dir`, and `scripts/split_manifest_by_database.py` regenerates `manifests/by_database/`.
 
+## Federated training (`src/federated/`)
+
+Real gRPC deployment on Flower — one server process (never sees images) + one process per node, each
+with its own YAML. Full design, every decision vs. the deleted legacy federated package, and the
+weighted-AUC-≠-pooled-AUC caveat: **`docs/FEDERATED_DESIGN.md`**. Per-method contracts:
+**`src/federated/DOCS.md`**.
+
+```bash
+.venv/bin/python -m src.federated.server --config configs/federated/exp40_fedavg_full/server.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_cmmd.yaml
+# ... one client process per node (kau-bcmd, cdd-cesm, inbreast)
+```
+
+or, via Docker (the primary way to launch on the workstation — server + all node containers in one
+command, host networking so `server_address: 127.0.0.1:<port>` in the YAMLs works identically inside
+and outside containers):
+
+```bash
+EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
+```
+
+`aggregation_scope: full | backbone` (server.yaml) picks whether the whole model or only the backbone
+aggregates, mirroring the `_backbone.pt`/`_head.pt` checkpoint split centralized runs already produce.
+Strategies (`strategy.name`): `fedavg`, `fedprox`, `fedadam`, `fedyogi` — stock `flwr.server.strategy`
+classes, no custom aggregation math. Each node writes its own `runs/<exp>/nodes/<node_name>/`, shaped
+exactly like a centralized `run_dir` (`config.yaml`, `metrics.csv`, `plots/`, `val/`, `test/`); the
+server writes `runs/<exp>/server/` (`metrics.csv` per round, `best.json`, global checkpoints).
+Fallback to re-evaluate a node against the best global model without rejoining a live run:
+
+```bash
+.venv/bin/python -m src.federated.evaluate_node --config <node.yaml> --server-run-dir runs/<exp>/server
+```
+
+Sanity check: `.venv/bin/python -c "import src.federated.server; import src.federated.client; import src.federated.evaluate_node"`.
+
 ## Repo state — what is real, what is stale
 
 `main` is the live branch and holds the rewritten `src/` package. A lot of checked-in documentation
@@ -106,8 +141,10 @@ predates that and describes things that no longer exist anywhere:
 
 `.venv/` (Python **3.12.8**) is the interpreter, and it already has everything in `requirements.txt`:
 torch 2.13 + CUDA, torchvision 0.28, torchmetrics, pandas 3.0, pydantic 2.13, PyYAML, tensorboard,
-matplotlib, wandb, scikit-learn. Always call it explicitly (`.venv/bin/python`) — there is no
-installed package and no activation step in any of the run instructions.
+matplotlib, wandb, scikit-learn, and (for `src/federated/`) `flwr==1.31.0` pinned exactly — see the
+comment above it in `requirements.txt` before bumping. Always call it explicitly
+(`.venv/bin/python`) — there is no installed package and no activation step in any of the run
+instructions.
 
 `src/__init__.py` makes `src` a package, so `from src.datasets import ...` works from the repo root
 with no `PYTHONPATH` tweak. Do **not** use `PYTHONPATH=src` + `from datasets import ...`; that name
@@ -121,8 +158,10 @@ produces. `pyright` is configured (`pyrightconfig.json`, `strict`, `include: ["s
 installed in the venv either — the type annotations and `# pyright: ignore` comments in `src/` exist
 to satisfy it, so keep them consistent even though nothing checks them here.
 
-`Dockerfile` still targets Python 3.11 + `pip install -e .` + `scripts/`; it cannot build against this
-tree.
+`Dockerfile` builds an **environment-only** image (Python 3.12, `pip install -r requirements.txt`,
+no code copied — the repo is bind-mounted at `/workspace` by `docker-compose.federated.yaml`, so a
+code change never needs a rebuild). The old Python-3.11-`pip install -e .` Dockerfile it replaced
+could not build against this tree at all; this one is exercised by the federated deployment above.
 
 ## Architecture
 
@@ -130,8 +169,13 @@ One direction of dependency, no exceptions:
 
 ```
 config.py → seed / metrics / checkpoint / tracking / reporting / datasets / models → train/
-    → eval_pipeline.py → cli.py / evaluate.py
+    → eval_pipeline.py → cli.py / evaluate.py / federated/
 ```
+
+`src/federated/` sits at the same layer as `cli.py`/`evaluate.py` — it imports everything above
+`eval_pipeline.py` in that chain, never `cli.py`, and nothing outside `federated/` imports from it.
+All contact with the `flwr` API is confined to `federated/server.py` and `federated/client.py`. See
+"Federated training" above and `docs/FEDERATED_DESIGN.md` for the full module layout.
 
 Nothing imports `cli.py`. `evaluate.py` (re-evaluate an already-trained checkpoint, no retraining —
 see "The one command" above) sits at the same layer as `cli.py` and imports `eval_pipeline.py`
@@ -257,8 +301,8 @@ evaluated split — `val/` and `test/`, each with `metrics.json`, `confusion_mat
 set, `test/` also gets `metrics_by_database.json`, `confusion_matrix_by_database.png` and
 `metrics_by_database.png` (see `eval_pipeline.evaluate_by_database()`). Weights go to `checkpoint_dir`
 (`runs/<experiment_id>/weights/`) as `best_epoch<N>.pt` plus `best_epoch<N>_backbone.pt` /
-`_head.pt` (split out for the eventual federated work, where only the backbone aggregates) and
-`epoch<N>.pt` every `save_every` epochs.
+`_head.pt` (split out for `src/federated/`'s `aggregation_scope: backbone`, where only the backbone
+aggregates — see "Federated training" above) and `epoch<N>.pt` every `save_every` epochs.
 
 `ls runs/` is the fastest way to see which experiments have actually been executed. Checkpoints
 (`*.pt`/`*.pth`), `events.out.tfevents.*` and `*.log` are gitignored; `metrics.csv`, `metrics.json`,
@@ -271,16 +315,19 @@ a missing key never blocks a run.
 
 ## Conventions
 
-- **Language is per-file and mixed on purpose.** `config.py`, `cli.py`, `train/`, `datasets/build.py`
-  and every `DOCS.md` are Spanish; `datasets/dataset.py`, `datasets/manifest.py` and `models/` are
-  English. Match the file you are editing rather than imposing one. Config YAML comments and
-  `PHASES.md`/`REFACTOR.md` are Spanish.
+- **Language is per-file and mixed on purpose.** `config.py`, `cli.py`, `train/`, `datasets/build.py`,
+  every `DOCS.md`, and all of `src/federated/` are Spanish; `datasets/dataset.py`,
+  `datasets/manifest.py` and `models/` are English. Match the file you are editing rather than
+  imposing one. Config YAML comments and `PHASES.md`/`REFACTOR.md`/`docs/FEDERATED_DESIGN.md` are
+  Spanish.
 - **Comments carry the *why*, at length.** The existing docstrings and inline comments record which
   bug a line prevents and what the INC project does differently. That density is the house style —
   when you change behavior here, extend that record rather than trimming it.
 - **`.claude/commands/`** (`/docker-run`, `/docker-queue`, `/new-exp`, `/eval-experiments`, `/plot`,
   `/compare`, `/check-manifest`, `/validate-configs`) all predate the rewrite and assume the legacy
   package or the Docker image. Verify one actually applies before reaching for it.
+  `docker-compose.federated.yaml` supersedes `/docker-run`/`/docker-queue` for federated experiments —
+  see "Federated training" above.
 - Commit subjects follow `<Verb>: description` (`<Feat>:`, `<Fix>:`, `<Docs>:`, `<add>:`, `<exp>:`),
   with `<exp>:` reserved for committing a run's results.
 
@@ -289,8 +336,12 @@ a missing key never blocks a run.
 Trustworthiness for the current tree, highest first:
 
 - `PHASES.md` — what was ported from INC and why each default is what it is. Current.
-- `src/DOCS.md`, `src/datasets/DOCS.md`, `src/models/DOCS.md`, `src/train/DOCS.md` — per-method
-  contracts (args, raises, returns) with worked examples. Current; update them alongside code.
+- `docs/FEDERATED_DESIGN.md` — the federated layer's design: why Flower, why real gRPC and not
+  simulation, the config/handshake/aggregation-scope mechanics, and every decision mapped against the
+  pain point it fixes in the deleted legacy federated package. Current.
+- `src/DOCS.md`, `src/datasets/DOCS.md`, `src/models/DOCS.md`, `src/train/DOCS.md`,
+  `src/federated/DOCS.md` — per-method contracts (args, raises, returns) with worked examples.
+  Current; update them alongside code.
 - `configs/*.yaml` header comments — the real experiment log. `exp04_inc_strict_replica.yaml` in
   particular documents the four divergences from INC it corrects and the one it deliberately does not.
 - `REFACTOR.md` — rationale current, status sections stale (see above).
@@ -304,5 +355,7 @@ Trustworthiness for the current tree, highest first:
   `docs/CHECKPOINT_COMPATIBILITY.md`, `docs/RADIMAGENET_IMPLEMENTATION.md`,
   `docs/TRANSFER_LEARNING_GUIDE.md`, `docs/FEDERATED_DEPLOYMENT_GUIDE.md`, `docs/SETUP_6NODES.md`,
   `docs/QUICK_START_6NODES.md`, `docs/NODE_CONFIGURATION_MATRIX.md`, `docs/DOCKER.md`, `docs/audit/`,
-  `docs/audit-plan.md`. Still useful for *what the legacy did* — the new code is meant to reproduce
-  its results — just not for what exists today.
+  `docs/audit-plan.md`. All describe the *legacy* federated package (`ec55408:src/fedmammobench/federated/`)
+  and its 6-node deployment — superseded by `src/federated/` (see "Federated training" above and
+  `docs/FEDERATED_DESIGN.md`, which explicitly maps every design decision against the pain points these
+  documents' audits recorded). Still useful for *what the legacy did*, not for what to run today.

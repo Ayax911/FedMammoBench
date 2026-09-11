@@ -31,7 +31,7 @@ from .models.heads import get_head_strategy
 from .reporting import plot_loss_curve, plot_metric_curve
 from .seed import set_global_seed
 from .tracking import MetricsLogger
-from .train.build import build_loss, build_optimizer, build_scheduler
+from .train.build import build_loss, build_optimizer, build_param_groups, build_scheduler
 from .train.trainer import Trainer
 
 
@@ -120,24 +120,12 @@ def run(config: ExperimentConfig) -> None:
     model = model.to(config.train.device)
 
     # LR discriminativo backbone/cabeza: `backbone_lr`, si viene en
-    # optimizer.hparams, separa model[0] (backbone) en su propio param group
-    # con ese LR, dejando model[1] (cabeza) en el LR general de `hparams`.
-    # build_optimizer() ya acepta param groups tal cual (ver su docstring en
-    # train/build.py) -- lo único que faltaba era este ensamblado. Filtra
-    # por requires_grad para no meterle al estado de AdamW parámetros del
-    # backbone que unfreeze_from dejó congelados (un freeze parcial, ej.
-    # layer4, no debería aportarle momentum/weight_decay a conv1-layer3).
-    # Sin `backbone_lr`, comportamiento idéntico a antes de que existiera:
-    # un solo param group con model.parameters() completo.
-    optimizer_hparams = dict(config.optimizer.hparams)
-    backbone_lr = optimizer_hparams.pop("backbone_lr", None)
-    if backbone_lr is not None:
-        params = [
-            {"params": [p for p in model[0].parameters() if p.requires_grad], "lr": backbone_lr},
-            {"params": model[1].parameters()},
-        ]
-    else:
-        params = model.parameters()
+    # optimizer.hparams, separa model[0] en su propio param group. La lógica
+    # vivía inline acá y se movió a train/build.py:build_param_groups() para
+    # que el cliente federado (que reconstruye su optimizer cada ronda) use
+    # exactamente el mismo ensamblado en vez de perderla en silencio -- el
+    # porqué completo está en su docstring.
+    params, optimizer_hparams = build_param_groups(model, config.optimizer.hparams)
     optimizer = build_optimizer(params, config.optimizer.name, **optimizer_hparams)
     scheduler = (
         build_scheduler(optimizer, config.scheduler.name, **config.scheduler.hparams)

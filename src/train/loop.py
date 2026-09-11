@@ -14,8 +14,11 @@ Ejemplo de uso:
     >>> val_metrics = evaluate(model, val_loader, loss_spec, device="cpu")
 """
 
+from typing import Callable
+
 import torch
 import torch.nn as nn
+from torch import Tensor
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
@@ -30,6 +33,7 @@ def train_one_epoch(
     loss_spec: LossSpec,
     device: str,
     freeze_bn_stats: bool = True,
+    regularizer: Callable[[], Tensor] | None = None,
 ) -> dict[str, float]:
     """Entrena el modelo durante una época completa.
 
@@ -49,6 +53,20 @@ def train_one_epoch(
             llamada y reproduce el comportamiento del proyecto INC, donde las
             estadísticas de BN sí derivan durante el entrenamiento aunque los
             pesos estén congelados.
+        regularizer: término aditivo opcional de pérdida, `() -> Tensor`
+            escalar, evaluado una vez por batch DESPUÉS del forward. Existe
+            para el término proximal de FedProx (`federated/client.py`):
+            `LossSpec.compute` no ve el modelo, así que la penalización
+            (mu/2)·||w - w_global||² no puede vivir dentro del `LossSpec` —
+            entra acá como closure sobre los parámetros del modelo. Con
+            regularizer, el backward corre sobre `task_loss + regularizer()`
+            pero la clave `"loss"` devuelta sigue siendo SOLO la task loss
+            (misma semántica que `evaluate()` y comparable entre estrategias
+            — el legacy reportaba la suma y contaminaba toda comparación
+            FedAvg-vs-FedProx, su auditoría N8); el término penal se reporta
+            aparte en `"prox_loss"`. `None` (default) = comportamiento
+            byte-idéntico a antes de que este parámetro existiera: ni un
+            `if` extra en la ruta del backward ni clave nueva en el dict.
 
     Returns:
         dict[str, float]: mismas claves que `evaluate()` -- `"loss"` +
@@ -59,7 +77,10 @@ def train_one_epoch(
         `Trainer.fit()` ya prefija cada clave con `train_` al combinarlas en
         `trainer.history` (ver `Trainer.fit()`), así que agregar claves acá
         las hace aparecer automáticamente ahí, en `metrics.csv`, TensorBoard
-        y W&B (`MetricsLogger.log()`) sin tocar nada más.
+        y W&B (`MetricsLogger.log()`) sin tocar nada más. Con
+        `regularizer` fijado se suma la clave `"prox_loss"` (media del
+        término penal por batch) — SOLO en ese caso, para que el keyset de
+        `MetricsLogger.log()` sea estable dentro de una corrida dada.
 
     Example:
         >>> train_metrics = train_one_epoch(model, train_loader, optimizer, loss_spec, "cuda")
@@ -71,6 +92,7 @@ def train_one_epoch(
 
     metrics = build_metric_collection(device)
     total_loss = 0.0
+    total_reg = 0.0
     n_batches = 0
 
     for images, labels in loader:
@@ -79,7 +101,14 @@ def train_one_epoch(
         optimizer.zero_grad()
         outputs = model(images)
         loss = loss_spec.compute(outputs, labels)
-        loss.backward()  # pyright: ignore[reportUnknownMemberType]
+        if regularizer is not None:
+            # El backward corre sobre la suma, pero `loss` (task) y `reg`
+            # se acumulan por separado -- ver el docstring de `regularizer`.
+            reg = regularizer()
+            (loss + reg).backward()  # pyright: ignore[reportUnknownMemberType]
+            total_reg += reg.item()
+        else:
+            loss.backward()  # pyright: ignore[reportUnknownMemberType]
         optimizer.step()
 
         # Sin gradiente -- el paso de optimización ya terminó, esto solo
@@ -96,6 +125,8 @@ def train_one_epoch(
 
     result = {k: v.item() for k, v in metrics.compute().items()}
     result["loss"] = total_loss / n_batches
+    if regularizer is not None:
+        result["prox_loss"] = total_reg / n_batches
     return result
 
 
