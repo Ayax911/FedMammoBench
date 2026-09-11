@@ -1,0 +1,57 @@
+# exp56_fedgrid_fedprox_mu05_r30 -- grid chico de proximal_mu para fedprox, rounds=30 fijo.
+# Misma receta que exp41-52 (arquitectura/head/optimizer de exp37, class
+# weight por nodo). Motivacion: exp46 (fedprox r30, mu=0.1 default) fue la
+# MEJOR celda de todo el grid exp41-52 (auc agregado 0.8647) -- este grid
+# barre mu alrededor de ese 0.1 para ver si hay margen: [0.01, 0.05, 0.2, 0.5] (0.1 ya
+# medido en exp46, no se repite).
+#
+# proximal_mu penaliza que el modelo LOCAL de cada nodo se aleje del
+# global (ver docs/FEDERATED_DESIGN.md, "FedProx: donde vive el termino
+# proximal") -- mu mas alto ata mas los nodos al global (mas parecido a
+# menos rondas de entrenamiento local efectivo), mu mas bajo se acerca a
+# FedAvg puro (mu=0 séria FedAvg exacto, no probado: para eso ya esta
+# exp43).
+#
+# Lanzamiento:
+#   EXPERIMENT=exp56_fedgrid_fedprox_mu05_r30 SERVER_HEALTHCHECK_PORT=8095 \
+#     docker compose -f docker-compose.federated.yaml up
+# o a mano (usado en exp41-52): .venv/bin/python -m src.federated.server/client
+
+experiment_id: exp56_fedgrid_fedprox_mu05_r30
+
+federation:
+  server_address: "127.0.0.1:8095"
+  rounds: 30
+  local_epochs: 2
+  num_nodes: 4
+  aggregation_scope: full
+  accept_failures: false
+
+strategy:
+  name: fedprox
+  hparams: {proximal_mu: 0.5}
+
+architecture:
+  name: resnet50_imagenet_v2
+  unfreeze_from: conv1
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [512]
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.0
+    input_dropout: 0.446757081317639
+    num_classes: 2
+
+tracking:
+  best_metric_name: auc
+  best_metric_mode: max
+  save_every_rounds: null
+  run_dir: runs/exp56_fedgrid_fedprox_mu05_r30/server
+  checkpoint_dir: runs/exp56_fedgrid_fedprox_mu05_r30/server/weights
+  device: cpu
+  wandb_project: fedmammobench2.0
+  wandb_group: exp56_fedgrid_fedprox_mu05_r30
