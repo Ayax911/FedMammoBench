@@ -1,0 +1,74 @@
+# Nodo cmmd de exp40_fedavg_full -- el nodo grande: 4722 filas
+# (train 3776: 1930 benignas / 1846 malignas, casi balanceado ->
+# pos_weight = 1930/1846 = 1.0455, calculado sobre el train de ESTE nodo,
+# no sobre el manifest global).
+#
+# architecture/head son copia textual del server.yaml (sin herencia entre
+# YAMLs); el handshake por hash aborta la ronda 1 si esta copia deriva.
+# loss/optimizer/data son locales del nodo y NO entran al hash.
+#
+# VRAM: los 4 nodos corren a la vez contra una sola GPU en la workstation.
+# batch_size 32 en los nodos grandes + 16 en inbreast cabe en una RTX de
+# 24 GB con layer4 descongelada; si aparece OOM, bajar batch_size aquí (el
+# gradiente por nodo no necesita ser comparable entre nodos).
+
+experiment_id: exp40_fedavg_full
+node_name: cmmd
+server_address: "127.0.0.1:8080"
+aggregation_scope: full         # duplicado del server.yaml -- cubierto por el hash
+
+architecture:                   # copia del server.yaml (hash)
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: layer4
+
+head:                           # copia del server.yaml (hash)
+  name: standard_mlp
+  hparams:
+    in_features: 2048
+    hidden_dim: 512
+    dropout: 0.2
+    num_classes: 1
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 1.0e-4                  # backbone_lr admitido (LR discriminativo, mismo
+                                # mecanismo que cli.py via build_param_groups)
+    weight_decay: 1.0e-4
+
+scheduler: null                 # se reconstruiría CADA ronda (2 épocas locales):
+                                # un cosine con T_max de corrida completa no tiene
+                                # sentido acá -- ver FederatedNodeConfig.scheduler
+
+loss:
+  name: bce
+  hparams:
+    pos_weight: [1.0455]        # benignas/malignas del train de cmmd
+
+data:
+  manifest_path: manifests/by_database/cmmd_norm_neg1_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 32
+  num_workers: 0                # obligatorio en federado: fork de workers con el
+                                # canal gRPC abierto cuelga (ver DOCS.md)
+  seed: 42
+  image_size: null              # TIFFs float 224x224 ya preprocesados en [-1, 1]
+  normalize_mean: null          # (RadImageNet espera [-1, 1]): ni resize ni
+  normalize_std: null           # normalize -- ver "El contrato YAML" en CLAUDE.md
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+
+run:                            # variante recortada de TrainConfig: sin epochs ni
+  device: cuda                  # patience/metric_name -- rondas, parada y mejor
+  freeze_bn_stats: true         # modelo son decisiones del SERVIDOR
+  run_dir: runs/exp40_fedavg_full/nodes/cmmd
+  checkpoint_dir: runs/exp40_fedavg_full/nodes/cmmd/weights
+  wandb_project: fedmammobench2.0
+  wandb_group: exp40_fedavg_full
