@@ -1,0 +1,139 @@
+# Despliegue federado real: 1 servidor + 1 contenedor por nodo, cada uno
+# corriendo `python -m src.federated.{server,client}` contra el YAML de su
+# experimento bajo configs/federated/${EXPERIMENT}/. Reemplaza a
+# .claude/commands/docker-run|docker-queue para corridas federadas (esos
+# comandos son de antes del rewrite -- ver CLAUDE.md).
+#
+# Uso:
+#   EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
+#   EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml down
+#
+# `network_mode: host` en TODOS los servicios, a propósito -- igual que el
+# despliegue legacy (scripts/docker-deploy-federated.sh en ec55408): así
+# `server_address: "127.0.0.1:8080"` en los YAMLs funciona IDÉNTICO dentro
+# y fuera de Docker, sin mapeo de puertos ni DNS de servicio. Esto ata el
+# despliegue a Linux (host networking no funciona igual en Docker
+# Desktop/Mac/Windows) -- aceptable: el target es la workstation Linux.
+#
+# El repo se monta rw en /workspace (sin COPY en la imagen, ver
+# Dockerfile): cambiar código no requiere rebuild, solo reiniciar el
+# contenedor. El mount de datos es READ-ONLY y apunta a la MISMA ruta
+# absoluta que usan los YAML (`image_root`/`weights_path` en
+# configs/federated/*/*.yaml son rutas absolutas de la workstation) --
+# ajustar DATA_MOUNT abajo si la ruta real difiere.
+
+x-node-common: &node-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  network_mode: host
+  working_dir: /workspace
+  volumes:
+    - .:/workspace
+    - ${DATA_MOUNT:-/media/imagenesmedicas/DATA1}:${DATA_MOUNT:-/media/imagenesmedicas/DATA1}:ro
+    - ${HOME}/.netrc:/root/.netrc:ro
+  # Nodo caído sin arreglo automático: un contenedor que revienta debe
+  # verse (y quedarse abajo para inspección de logs), no reiniciar en bucle
+  # entrenando desde cero contra rondas ya avanzadas.
+  restart: "no"
+  # Deficit de shared memory documentado en el legacy ("unable to allocate
+  # shared memory" con imágenes grandes sin --shm-size). num_workers: 0 en
+  # los YAMLs federados (ver FederatedNodeConfig) ya reduce la necesidad,
+  # pero se deja margen explícito en vez de heredar el default de Docker (64m).
+  shm_size: "2gb"
+  environment:
+    - EXPERIMENT=${EXPERIMENT:?Definí EXPERIMENT, ej. EXPERIMENT=exp40_fedavg_full}
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - ${HOME}/.netrc:/root/.netrc:ro
+    restart: "no"
+    environment:
+      - EXPERIMENT=${EXPERIMENT:?Definí EXPERIMENT, ej. EXPERIMENT=exp40_fedavg_full}
+      - SERVER_HEALTHCHECK_PORT=${SERVER_HEALTHCHECK_PORT:-8080}
+    # El servidor no procesa imágenes (requisito de diseño) -- sin volumen
+    # de datos, sin GPU, sin shm_size ampliado.
+    command: >
+      python -m src.federated.server
+      --config configs/federated/${EXPERIMENT}/server.yaml
+    healthcheck:
+      # TCP puro contra el puerto del server.yaml del experimento (default
+      # de los configs de ejemplo: 127.0.0.1:8080). Si tu server_address usa
+      # otro puerto, ajustá SERVER_HEALTHCHECK_PORT.
+      test: ["CMD", "python", "-c",
+             "import socket,sys,os; socket.create_connection(('127.0.0.1', int(os.environ.get('SERVER_HEALTHCHECK_PORT', 8080))), 2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 24  # ~2 min para que el servidor cargue el backbone plantilla y bindee
+      start_period: 5s
+
+  client-cmmd:
+    <<: *node-common
+    depends_on:
+      server:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      python -m src.federated.client
+      --config configs/federated/${EXPERIMENT}/node_cmmd.yaml
+
+  client-kau-bcmd:
+    <<: *node-common
+    depends_on:
+      server:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      python -m src.federated.client
+      --config "configs/federated/${EXPERIMENT}/node_kau-bcmd.yaml"
+
+  client-cdd-cesm:
+    <<: *node-common
+    depends_on:
+      server:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      python -m src.federated.client
+      --config "configs/federated/${EXPERIMENT}/node_cdd-cesm.yaml"
+
+  client-inbreast:
+    <<: *node-common
+    depends_on:
+      server:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      python -m src.federated.client
+      --config configs/federated/${EXPERIMENT}/node_inbreast.yaml

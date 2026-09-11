@@ -68,3 +68,8 @@ PROMPT_PARA_MODIFICACIONES.md
 
 
 graphify-out/
+
+# Scratch dirs for a local docker-compose.federated.yaml smoke run (data +
+# generated configs) -- never committed, see docs/FEDERATED_DESIGN.md §11.
+.docker_smoke/
+configs/federated/_docker_smoke/

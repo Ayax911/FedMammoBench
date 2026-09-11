@@ -1,0 +1,70 @@
+# Nodo kau-bcmd de exp40_fedavg_full -- el nodo desbalanceado: 2206 filas
+# (train 1764: 1682 benignas / 82 malignas, ~4.6% maligno ->
+# pos_weight = 1682/82 = 20.5122 sobre el train de ESTE nodo). Este
+# desbalance extremo es la razón de que loss NO entre al hash del
+# handshake: cada nodo pondera su pérdida según SU prevalencia local.
+# Antecedente centralizado: con umbral fijo 0.5, kau-bcmd quedaba en
+# sensibilidad ~0 pese a AUC ~0.9 (ver scripts/calibrate_threshold.py) --
+# esperar lo mismo acá y calibrar umbral post-hoc sobre val si se reporta
+# sensibilidad/especificidad por nodo.
+#
+# Resto de la estructura: ver node_cmmd.yaml (mismo modelo por handshake,
+# mismos data-settings del pipeline TIFF float; cambian manifest, pos_weight
+# y rutas de salida).
+
+experiment_id: exp40_fedavg_full
+node_name: kau-bcmd
+server_address: "127.0.0.1:8080"
+aggregation_scope: full         # duplicado del server.yaml -- cubierto por el hash
+
+architecture:                   # copia del server.yaml (hash)
+  name: resnet50_radimagenet
+  weights_path: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/13-PregradoJulian/Federal Learning/infraestructura federada/FedMammoBench/weights/ResNet50.pt
+  unfreeze_from: layer4
+
+head:                           # copia del server.yaml (hash)
+  name: standard_mlp
+  hparams:
+    in_features: 2048
+    hidden_dim: 512
+    dropout: 0.2
+    num_classes: 1
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+
+scheduler: null
+
+loss:
+  name: bce
+  hparams:
+    pos_weight: [20.5122]       # benignas/malignas del train de kau-bcmd
+
+data:
+  manifest_path: manifests/by_database/kau-bcmd_norm_neg1_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 32
+  num_workers: 0
+  seed: 42
+  image_size: null
+  normalize_mean: null
+  normalize_std: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+
+run:
+  device: cuda
+  freeze_bn_stats: true
+  run_dir: runs/exp40_fedavg_full/nodes/kau-bcmd
+  checkpoint_dir: runs/exp40_fedavg_full/nodes/kau-bcmd/weights
+  wandb_project: fedmammobench2.0
+  wandb_group: exp40_fedavg_full
