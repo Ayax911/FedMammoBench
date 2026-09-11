@@ -1,0 +1,8 @@
+{
+  "best_round": 6,
+  "metric_name": "auc",
+  "metric_value": 0.6812631171285821,
+  "checkpoint": "runs/exp48_fedgrid_fedadam_r20/server/weights/best_round6.pt",
+  "aggregation_scope": "full",
+  "model_hash": "bde06eca4c7160b3"
+}
