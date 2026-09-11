@@ -9,6 +9,16 @@ manifests/
 *.pth
 *.pt
 
+# Trials de sweeps de W&B (sweeps/<id>/runs/trial_*/weights/*.pt) y sus logs
+# locales de W&B -- gitignored, pero NO estaban acá: un build real (build
+# de exp40_fedavg_full, 2026-09-10) mandó un build context de 52+ GB
+# (sweeps/hf6m1r5d por sí solo trae 300 trials con checkpoints) y AGOTÓ EL
+# DISCO a mitad de "sending build context to docker daemon" -- el build
+# reportó exit 0 solo porque el pipe con `| tail -100` se traga el código
+# de salida real de `docker compose build` (pipefail no estaba activo).
+sweeps/
+wandb/
+
 # Tests (not needed in the production image)
 tests/
 
