@@ -1,0 +1,98 @@
+# exp39_hpsearch_v1_e7u7fprr -- duplicado de exp38_hpsearch_v1_e7u7fprr.yaml
+# (que a su vez partió de exp37, la config promovida del sweep hpsearch_v1 --
+# ver su header para la justificación de por qué ese trial). Cadena de
+# cambios manuales sobre la cabeza, cada vez más profunda/ancha:
+#
+#   exp37: hidden_layers=[512]                                  dropout=0.0
+#   exp38: hidden_layers=[2048,2048,1024,1024,512,512]  (6 capas) dropout=0.5
+#   exp39: hidden_layers=[2048,2048,2048,1024,1024,1024,512,512,512] (9 capas) dropout=0.5
+#
+# Todo lo demás (arquitectura del backbone, optimizer, loss, data, epochs)
+# queda idéntico a exp37/exp38 -- incluido seed=42, así que esto AÚN no es
+# una réplica de ruido de inicialización (ver la nota pendiente en el
+# header de exp37).
+#
+# input_dropout=0.4468 sigue actuando tras Flatten() (antes de la primera
+# capa oculta); dropout=0.5 ahora sí es un no-op real dentro del loop de
+# capas ocultas de ConfigurableMLPHead (con hidden_layers=[] en exp37 no
+# hacía nada). Con 9 capas + 2 dropouts activos, este es el head más
+# grande y más regularizado probado en el proyecto hasta ahora -- riesgo
+# de overfitting/underfitting no verificado, no hay antecedente directo en
+# exp05-38 con esta profundidad.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp39_hpsearch_v1_e7u7fprr.yaml
+
+experiment_id: exp39_hpsearch_v1_e7u7fprr
+
+architecture:
+  name: resnet50_imagenet_v2
+  unfreeze_from: conv1
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [2048, 2048, 2048, 1024, 1024, 1024, 512, 512, 512]
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.5
+    input_dropout: 0.446757081317639
+    num_classes: 2
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 0.0006453040132730183
+    backbone_lr: 0.00020959745042706368
+    betas: [0.5, 0.999]
+    weight_decay: 0.0003423573093420121
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 25
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.7593, 1.4642]
+    label_smoothing: 0.013689308712627246
+
+data:
+  manifest_path: manifests/fedmammobench_norm_0_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null
+  normalize_mean: [0.449]
+  normalize_std: [0.226]
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_0_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+    inbreast: manifests/by_database/inbreast_norm_0_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+
+train:
+  epochs: 25
+  metric_name: auc
+  metric_mode: max
+  patience: 20
+  min_delta: 0.001
+  save_every: 10
+  freeze_bn_stats: true
+  checkpoint_dir: runs/exp39_hpsearch_v1_e7u7fprr/weights
+  run_dir: runs/exp39_hpsearch_v1_e7u7fprr
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: hpsearch_v1_promoted

@@ -1,0 +1,38 @@
+experiment_id: exp53_fedgrid_fedprox_mu001_r30
+federation:
+  server_address: 127.0.0.1:8092
+  rounds: 30
+  local_epochs: 2
+  num_nodes: 4
+  aggregation_scope: full
+  accept_failures: false
+  round_timeout_seconds: null
+  grpc_max_message_length: 536870912
+strategy:
+  name: fedprox
+  hparams:
+    proximal_mu: 0.01
+architecture:
+  name: resnet50_imagenet_v2
+  weights_path: null
+  unfreeze_from: conv1
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers:
+    - 512
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.0
+    input_dropout: 0.446757081317639
+    num_classes: 2
+tracking:
+  best_metric_name: auc
+  best_metric_mode: max
+  save_every_rounds: null
+  run_dir: runs/exp53_fedgrid_fedprox_mu001_r30/server
+  checkpoint_dir: runs/exp53_fedgrid_fedprox_mu001_r30/server/weights
+  device: cpu
+  wandb_project: fedmammobench2.0
+  wandb_group: exp53_fedgrid_fedprox_mu001_r30

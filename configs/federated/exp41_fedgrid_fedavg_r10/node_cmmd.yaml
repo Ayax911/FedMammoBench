@@ -1,0 +1,76 @@
+# Nodo cmmd de exp41_fedgrid_fedavg_r10 -- ver server.yaml para el diseno completo del
+# grid (strategy x rounds) y la formula del balance de clases.
+#
+# cmmd: train 3776 filas (1930 benignas /
+# 1846 malignas) -> weight = [N/(2*n_benign), N/(2*n_malignant)]
+# = [0.9782, 1.0228], calculado sobre el train de ESTE nodo
+# (manifests/by_database/cmmd_norm_0_1.csv), no sobre el manifest global.
+# casi balanceado (ratio benigno/maligno 1.045) -- el nodo mas facil de los 4
+#
+# architecture/head/optimizer son copia textual del server.yaml y entre
+# nodos (sin herencia entre YAMLs, por diseno del repo) -- el handshake por
+# hash (src/federated/handshake.py) aborta la ronda 1 si esta copia deriva.
+# loss NO entra a ese hash a proposito (ver FederatedNodeConfig.loss): el
+# balance de clases es, precisamente, lo que este grid deja variar por nodo.
+
+experiment_id: exp41_fedgrid_fedavg_r10
+node_name: cmmd
+server_address: "127.0.0.1:8080"
+aggregation_scope: full
+
+architecture:
+  name: resnet50_imagenet_v2
+  unfreeze_from: conv1
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 2048
+    hidden_layers: [512]
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.0
+    input_dropout: 0.446757081317639
+    num_classes: 2
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 0.0006453040132730183
+    backbone_lr: 0.00020959745042706368
+    betas: [0.5, 0.999]
+    weight_decay: 0.0003423573093420121
+
+scheduler: null                 # se reconstruiria cada ronda (2 epocas locales) -- ver NodeRunConfig
+
+loss:
+  name: cross_entropy
+  hparams:
+    weight: [0.9781553398058253, 1.0227518960997832]
+    label_smoothing: 0.013689308712627246
+
+data:
+  manifest_path: manifests/by_database/cmmd_norm_0_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 0                 # obligatorio en federado (fork + canal gRPC abierto cuelga, ver DOCS.md)
+  seed: 42
+  image_size: null
+  normalize_mean: [0.449]
+  normalize_std: [0.226]
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+
+run:
+  device: cuda
+  freeze_bn_stats: true
+  run_dir: runs/exp41_fedgrid_fedavg_r10/nodes/cmmd
+  checkpoint_dir: runs/exp41_fedgrid_fedavg_r10/nodes/cmmd/weights
+  wandb_project: fedmammobench2.0
+  wandb_group: exp41_fedgrid_fedavg_r10
