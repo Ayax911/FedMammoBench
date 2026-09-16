@@ -4,7 +4,7 @@
 # variante norm_0_1), no los parches intratumorales de /mnt/Datos/Master_Camilo/.
 #
 # El objetivo es que esta corrida y la del INC lanzada con los MISMOS hiperparámetros
-# (ver ../run_comparativa.sh) sean comparables una contra otra. Por eso cada valor de
+# (ver ../run.sh) sean comparables una contra otra. Por eso cada valor de
 # abajo está atado a su flag del INC, y las tres únicas divergencias están marcadas
 # como DIVERGENCIA con su motivo.
 #
@@ -117,13 +117,21 @@ data:
 
 train:
   epochs: 200                  # n_epochs
-  # DIVERGENCIA 2 (obligatoria): el INC hace early stopping sobre Val F1 de la clase
-  # positiva (metrics.f1_score -> BinaryF1Score). Sobre este manifest 66/34 esa métrica
-  # vale 0.0 mientras el modelo no prediga ningún maligno, y como EarlyStopping exige
-  # mejora estricta, la corrida se quedaría con el checkpoint de la época 0 -- ver
-  # "Invariants that will silently ruin a run" en CLAUDE.md. f1_macro es la métrica
-  # equivalente utilizable acá. Es la única diferencia que cambia qué checkpoint gana.
-  metric_name: f1_macro
+  # MISMO criterio que el INC, a propósito: su EarlyStopping va sobre Val F1 de la clase
+  # positiva (metrics.f1_score -> BinaryF1Score), y acá `f1` es exactamente esa métrica
+  # (`f1_macro` sería el promedio de ambas clases). Igualar el criterio es lo que hace
+  # que "el mejor checkpoint" signifique lo mismo en las dos corridas.
+  #
+  # OJO, es la excepción documentada en "Invariants that will silently ruin a run" de
+  # CLAUDE.md: sobre este manifest 66/34, `f1` vale exactamente 0.0 mientras el modelo no
+  # prediga ningún maligno. Acá NO deja la corrida sin checkpoint -- EarlyStopping
+  # inicializa best_value en -inf, así que la época 0 siempre guarda -- pero si el F1 se
+  # queda en 0.0 durante `patience` (100) épocas seguidas, la corrida se corta con el
+  # checkpoint de la época 0, sin entrenar. Si eso pasa, se ve en metrics.csv como una
+  # columna val_f1 en cero: es señal de que hay que volver a f1_macro, no de que el
+  # modelo no sirva. La loss ponderada empuja a predecir la clase positiva desde el
+  # principio, que es lo que hace viable este criterio.
+  metric_name: f1
   metric_mode: max
   patience: 100                # patience_early
   min_delta: 0.005             # EarlyStopping(delta=0.005) del INC
