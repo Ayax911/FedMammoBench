@@ -1,7 +1,7 @@
 # exp57_camilo_centralizado -- Réplica centralizada de la corrida de Camilo
 # ("Classification Images_HL1024-512_lr1e-4_dr0.2", INC/src/models/classification_images)
 # sobre NUESTRAS imágenes: el manifest completo de FedMammoBench (8341 TIFF 224x224,
-# variante norm_0_1), no los parches intratumorales de /mnt/Datos/Master_Camilo/.
+# variante norm_neg1_1), no los parches intratumorales de /mnt/Datos/Master_Camilo/.
 #
 # El objetivo es que esta corrida y la del INC lanzada con los MISMOS hiperparámetros
 # (ver ../run.sh) sean comparables una contra otra. Por eso cada valor de
@@ -38,7 +38,7 @@
 #
 # PESOS RECALCULADOS sobre nuestro split de train (lo único que NO se copia de Camilo,
 # como se pidió -- sus 3.22/0.59 son de su cohorte TNBC, no de esta). Misma fórmula
-# total/(2*n_clase) que exp05, contada sobre manifests/fedmammobench_norm_0_1.csv:
+# total/(2*n_clase) que exp05, contada sobre manifests/fedmammobench_norm_neg1_1.csv:
 #   train: benigno (neg) = 4393, maligno (pos) = 2278, total = 6671
 #   neg_weight = 6671 / (2 * 4393) = 0.7593    (Camilo: 3.22)
 #   pos_weight = 6671 / (2 * 2278) = 1.4642    (Camilo: 0.59)
@@ -84,17 +84,23 @@ loss:
     weight: [0.7593, 1.4642]   # [neg, pos] recalculados sobre nuestro train
 
 data:
-  # DIVERGENCIA 1 (deliberada): variante norm_0_1, no norm_neg1_1 como exp05. El
-  # dataloader del INC solo aplica ToTensor(), sin Normalize, así que trabaja con
-  # píxeles en [0, 1]. Usar la misma variante acá es lo que hace que ambos modelos
-  # vean exactamente los mismos números de entrada.
-  manifest_path: manifests/fedmammobench_norm_0_1.csv
+  # Variante norm_neg1_1, la misma de exp05: es el rango con el que se entrenó el
+  # backbone RadImageNet (ver el docstring de datasets/dataset.py). Las imágenes ya
+  # vienen en [-1, 1] desde disco, así que ni se reescala ni se normaliza de nuevo.
+  #
+  # El INC corre sobre ESTOS MISMOS archivos .tiff (run.sh le pasa este image_root como
+  # --images_dir): su ImageDataset detecta el modo PIL "F" y los lee sin .convert(),
+  # replicando a 3 canales, y su dataloader no aplica Normalize. Verificado que el
+  # tensor de entrada es idéntico bit a bit en las dos rutas de código. Antes esto era
+  # la DIVERGENCIA 1 -- se usaba norm_0_1 porque la rama .tiff del INC no sabía leer
+  # modo "F" y devolvía imágenes negras; arreglado eso, ya no hay divergencia.
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv
   image_root: /home/labmirp/Escritorio/FL-JULIAN/FedMammoBench/data/preproccesed_julian
   batch_size: 64
   num_workers: 4
   seed: 42                     # = set_random_seed(42) de INC/main.py
   image_size: null             # ya están a 224x224 en disco
-  normalize_mean: null         # sin Normalize, como el INC
+  normalize_mean: null         # ya están en [-1, 1] en disco; el INC tampoco normaliza
   normalize_std: null
   # Exactamente las transformaciones de transforms_train del INC
   # (dataloaders/dataloader_images.py) cuando --augmentation está activo.
@@ -108,12 +114,12 @@ data:
     blur_p: 0.3
   # Desglose de test por base -- no tiene equivalente en el INC (que reporta un solo
   # test agregado), pero no altera el entrenamiento: se calcula después, sobre el mismo
-  # mejor checkpoint. Variante norm_0_1 para ser consistente con manifest_path.
+  # mejor checkpoint. Variante norm_neg1_1 para ser consistente con manifest_path.
   by_database_manifests:
-    cmmd: manifests/by_database/cmmd_norm_0_1.csv
-    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
-    inbreast: manifests/by_database/inbreast_norm_0_1.csv
-    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+    cmmd: manifests/by_database/cmmd_norm_neg1_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+    inbreast: manifests/by_database/inbreast_norm_neg1_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_neg1_1.csv
 
 train:
   epochs: 200                  # n_epochs
