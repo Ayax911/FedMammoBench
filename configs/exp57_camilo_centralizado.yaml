@@ -1,0 +1,136 @@
+# exp57_camilo_centralizado -- Réplica centralizada de la corrida de Camilo
+# ("Classification Images_HL1024-512_lr1e-4_dr0.2", INC/src/models/classification_images)
+# sobre NUESTRAS imágenes: el manifest completo de FedMammoBench (8341 TIFF 224x224,
+# variante norm_0_1), no los parches intratumorales de /mnt/Datos/Master_Camilo/.
+#
+# El objetivo es que esta corrida y la del INC lanzada con los MISMOS hiperparámetros
+# (ver ../run_comparativa.sh) sean comparables una contra otra. Por eso cada valor de
+# abajo está atado a su flag del INC, y las tres únicas divergencias están marcadas
+# como DIVERGENCIA con su motivo.
+#
+# Mapa hiperparámetro INC -> clave de este YAML:
+#
+#   image_model: ResNet + path_image_model: .../ResNet50.pt -> architecture.name/weights_path
+#   num_freeze: 159 (= todos los params del ResNet50)       -> architecture.unfreeze_from: none
+#   hidden_layers: [1024, 512]                              -> head.hparams.hidden_layers
+#   activation: LeakyReLU  (INC usa nn.LeakyReLU(0.2))      -> activation + negative_slope: 0.2
+#   dropout: 0.2                                            -> head.hparams.dropout
+#   output_size: 2                                          -> head.hparams.num_classes: 2
+#   loss: BCE + class_balance: True                         -> loss.name: cross_entropy  (ver abajo)
+#   neg_weight / pos_weight                                 -> loss.hparams.weight: [neg, pos]
+#   lr: 1e-4, b1: 0.5, b2: 0.999                            -> optimizer adam, lr/betas
+#   n_epochs: 200 + min_lr: 1e-6 (CosineAnnealingLR)        -> scheduler cosine, T_max/eta_min
+#   batch_size: 64                                          -> data.batch_size
+#   augmentation: True                                      -> data.augmentation (ver abajo)
+#   patience_early: 100 + EarlyStopping(delta=0.005)        -> train.patience / min_delta
+#   init_epoch: 0, train: True, test: False                 -> sin equivalente: src.cli siempre
+#                                                              entrena desde 0 y evalúa test al final
+#   activation_image_model: LeakyReLU                       -> SIN EFECTO en el INC: options.py lo
+#                                                              parsea pero get_model() nunca lo usa
+#                                                              (el backbone ResNet50 queda con sus
+#                                                              ReLU). No se replica nada acá.
+#
+# "loss: BCE" del INC NO es BCEWithLogits: classification_images/losses.py devuelve
+#   nn.CrossEntropyLoss(weight=torch.tensor([neg_weight, pos_weight]))
+# cuando class_balance=True, con output_size=2. El equivalente exacto en este repo es
+# `cross_entropy` con `weight: [neg, pos]` y una cabeza de 2 logits -- NO `bce`, que acá
+# sí es BCEWithLogitsLoss de 1 logit y daría otro modelo.
+#
+# PESOS RECALCULADOS sobre nuestro split de train (lo único que NO se copia de Camilo,
+# como se pidió -- sus 3.22/0.59 son de su cohorte TNBC, no de esta). Misma fórmula
+# total/(2*n_clase) que exp05, contada sobre manifests/fedmammobench_norm_0_1.csv:
+#   train: benigno (neg) = 4393, maligno (pos) = 2278, total = 6671
+#   neg_weight = 6671 / (2 * 4393) = 0.7593    (Camilo: 3.22)
+#   pos_weight = 6671 / (2 * 2278) = 1.4642    (Camilo: 0.59)
+# La relación se invierte respecto a la suya porque en nuestro manifest la clase rara es
+# la maligna (34%), mientras que en el suyo lo raro era el negativo.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp57_camilo_centralizado.yaml
+
+experiment_id: exp57_camilo_centralizado
+
+architecture:
+  name: resnet50_radimagenet
+  # Mismo checkpoint RadImageNet que --path_image_model de Camilo.
+  weights_path: /mnt/Datos/Master_Camilo/DL/weights/RadImageNet_pytorch/ResNet50.pt
+  unfreeze_from: none          # = num_freeze: 159 (backbone 100% congelado)
+
+head:
+  name: configurable_mlp       # sin BatchNorm, igual que el MLP del INC
+  hparams:
+    in_features: 2048          # ResNetModel.features del INC (resnet50.fc.in_features)
+    hidden_layers: [1024, 512]
+    activation: leakyrelu
+    negative_slope: 0.2        # nn.LeakyReLU(0.2) de mlp_models.get_activation()
+    dropout: 0.2
+    num_classes: 2             # = output_size: 2
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 1.0e-4
+    betas: [0.5, 0.999]        # b1 / b2
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200                 # CosineAnnealingLR(T_max=n_epochs) del INC
+    eta_min: 1.0e-6            # min_lr
+
+loss:
+  name: cross_entropy          # = "BCE" + class_balance del INC, ver cabecera
+  hparams:
+    weight: [0.7593, 1.4642]   # [neg, pos] recalculados sobre nuestro train
+
+data:
+  # DIVERGENCIA 1 (deliberada): variante norm_0_1, no norm_neg1_1 como exp05. El
+  # dataloader del INC solo aplica ToTensor(), sin Normalize, así que trabaja con
+  # píxeles en [0, 1]. Usar la misma variante acá es lo que hace que ambos modelos
+  # vean exactamente los mismos números de entrada.
+  manifest_path: manifests/fedmammobench_norm_0_1.csv
+  image_root: /home/labmirp/Escritorio/FL-JULIAN/FedMammoBench/data/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42                     # = set_random_seed(42) de INC/main.py
+  image_size: null             # ya están a 224x224 en disco
+  normalize_mean: null         # sin Normalize, como el INC
+  normalize_std: null
+  # Exactamente las transformaciones de transforms_train del INC
+  # (dataloaders/dataloader_images.py) cuando --augmentation está activo.
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  # Desglose de test por base -- no tiene equivalente en el INC (que reporta un solo
+  # test agregado), pero no altera el entrenamiento: se calcula después, sobre el mismo
+  # mejor checkpoint. Variante norm_0_1 para ser consistente con manifest_path.
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_0_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+    inbreast: manifests/by_database/inbreast_norm_0_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+
+train:
+  epochs: 200                  # n_epochs
+  # DIVERGENCIA 2 (obligatoria): el INC hace early stopping sobre Val F1 de la clase
+  # positiva (metrics.f1_score -> BinaryF1Score). Sobre este manifest 66/34 esa métrica
+  # vale 0.0 mientras el modelo no prediga ningún maligno, y como EarlyStopping exige
+  # mejora estricta, la corrida se quedaría con el checkpoint de la época 0 -- ver
+  # "Invariants that will silently ruin a run" en CLAUDE.md. f1_macro es la métrica
+  # equivalente utilizable acá. Es la única diferencia que cambia qué checkpoint gana.
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100                # patience_early
+  min_delta: 0.005             # EarlyStopping(delta=0.005) del INC
+  save_every: 10
+  freeze_bn_stats: false       # el INC nunca re-evalúa las BN congeladas
+  checkpoint_dir: runs/exp57_camilo_centralizado/weights
+  run_dir: runs/exp57_camilo_centralizado
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: camilo_hparams_centralizado_vs_inc
