@@ -1,0 +1,134 @@
+_wandb:
+    value:
+        cli_version: 0.29.0
+        e:
+            42vidjsmn99mmouauz1cn6batec03uli:
+                args:
+                    - --config
+                    - configs/exp57_camilo_centralizado.yaml
+                cpu_count: 8
+                cpu_count_logical: 16
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "97829425152"
+                        used: "54598414336"
+                email: j.mast8924@gmail.com
+                executable: /home/labmirp/Escritorio/FL-JULIAN/FedMammoBench/.venv/bin/python
+                git:
+                    commit: 6bd332b3a60767a1f6b40e9438d886b6520b96bd
+                    remote: https://github.com/Ayax911/FedMammoBench.git
+                gpu: NVIDIA GeForce GTX 1080 Ti
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Pascal
+                      cudaCores: 3584
+                      memoryTotal: "11811160064"
+                      name: NVIDIA GeForce GTX 1080 Ti
+                      uuid: GPU-64614e17-1a1f-cb3b-b1b4-9947cd7dabed
+                host: labmirp-ws
+                memory:
+                    total: "16682229760"
+                os: Linux-7.0.0-31-generic-x86_64-with-glibc2.39
+                program: -m src.cli
+                python: CPython 3.12.3
+                root: runs/exp57_camilo_centralizado
+                startedAt: "2026-09-16T05:57:53.080004Z"
+                writerId: 42vidjsmn99mmouauz1cn6batec03uli
+        m: []
+        python_version: 3.12.3
+        t:
+            "1":
+                - 1
+                - 41
+            "2":
+                - 1
+                - 41
+            "3":
+                - 2
+                - 13
+                - 16
+                - 62
+                - 61
+                - 78
+            "4": 3.12.3
+            "5": 0.29.0
+            "12": 0.29.0
+            "13": linux-x86_64
+architecture:
+    value:
+        name: resnet50_radimagenet
+        unfreeze_from: none
+        weights_path: /mnt/Datos/Master_Camilo/DL/weights/RadImageNet_pytorch/ResNet50.pt
+data:
+    value:
+        augmentation:
+            blur: true
+            blur_p: 0.3
+            horizontal_flip: true
+            horizontal_flip_p: 0.5
+            rotation_degrees: 15
+            vertical_flip: true
+            vertical_flip_p: 0.2
+        batch_size: 64
+        by_database_manifests:
+            cdd-cesm: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+            cmmd: manifests/by_database/cmmd_norm_neg1_1.csv
+            inbreast: manifests/by_database/inbreast_norm_neg1_1.csv
+            kau-bcmd: manifests/by_database/kau-bcmd_norm_neg1_1.csv
+        image_root: /home/labmirp/Escritorio/FL-JULIAN/FedMammoBench/data/preproccesed_julian
+        image_size: null
+        manifest_path: manifests/fedmammobench_norm_neg1_1.csv
+        normalize_mean: null
+        normalize_std: null
+        num_workers: 4
+        seed: 42
+experiment_id:
+    value: exp57_camilo_centralizado
+head:
+    value:
+        hparams:
+            activation: leakyrelu
+            dropout: 0.2
+            hidden_layers:
+                - 1024
+                - 512
+            in_features: 2048
+            negative_slope: 0.2
+            num_classes: 2
+        name: configurable_mlp
+loss:
+    value:
+        hparams:
+            weight:
+                - 0.7593
+                - 1.4642
+        name: cross_entropy
+optimizer:
+    value:
+        hparams:
+            betas:
+                - 0.5
+                - 0.999
+            lr: 0.0001
+        name: adam
+scheduler:
+    value:
+        hparams:
+            T_max: 200
+            eta_min: 1e-06
+        name: cosine
+train:
+    value:
+        checkpoint_dir: runs/exp57_camilo_centralizado/weights
+        device: cuda
+        epochs: 200
+        freeze_bn_stats: false
+        metric_mode: max
+        metric_name: f1
+        min_delta: 0.005
+        patience: 100
+        run_dir: runs/exp57_camilo_centralizado
+        save_every: 10
+        wandb_group: camilo_hparams_centralizado_vs_inc
+        wandb_project: fedmammobench2.0
