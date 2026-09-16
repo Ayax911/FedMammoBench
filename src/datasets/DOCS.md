@@ -109,7 +109,6 @@ transform = TransformBuilder(image_size=(224, 224)).build()
 # Instanciar Dataset de PyTorch para validación
 val_dataset = MammoBenchDataset(
     df=split.val_df(),
-    grayscale=False,
     transform=transform
 )
 
