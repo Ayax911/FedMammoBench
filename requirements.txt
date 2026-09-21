@@ -41,6 +41,11 @@ tensorboard>=2.21,<3.0
 # (PHASES.md fase 4). Backend "Agg" -- no requiere display/X11.
 matplotlib>=3.11,<4.0
 
+# src/registry.py: motor de escritura .xlsx que usa pandas.ExcelWriter
+# (engine="openpyxl") para experiment_registry.xlsx -- pandas no trae un
+# motor xlsx por defecto, hay que instalarlo aparte.
+openpyxl>=3.1,<4.0
+
 # Optional -- only imported at runtime if train.wandb_project is set in the
 # experiment YAML (see tracking.py's lazy `import wandb`). Safe to omit if
 # you never use it; nothing else in src/ depends on it.
