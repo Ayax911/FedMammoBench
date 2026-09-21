@@ -1,4 +1,4 @@
-# exp60_pretrain_ablation_imagenet -- par con exp18_pretrain_ablation_radimagenet:
+# exp59_pretrain_ablation_imagenet_512 -- par con exp18_pretrain_ablation_radimagenet:
 # mismo optimizer/scheduler/loss/augmentation/train que exp05_fedmammobench_full_weighted
 # (la receta "full dataset, CrossEntropy ponderada" ya validada) -- pero head en h1024/dropout 0.5
 # de una sola capa (el ganador del barrido de dropout de exp16, no el h1024-512/dropout 0.2 de
@@ -30,9 +30,9 @@
 #   cercana a la distribución real de ImageNet que dejar los píxeles en [-1, 1] o sin normalizar.
 #
 # Correr:
-#   .venv/bin/python -m src.cli --config configs/exp60_pretrain_ablation_imagenet.yaml
+#   .venv/bin/python -m src.cli --config configs/exp59_pretrain_ablation_imagenet_512.yaml
 
-experiment_id: exp60_pretrain_ablation_imagenet
+experiment_id: exp59_pretrain_ablation_imagenet_512
 
 architecture:
   name: resnet50_imagenet_v2   # pesos de ImageNet embebidos en torchvision -- sin weights_path,
@@ -46,7 +46,7 @@ head:
   name: configurable_mlp
   hparams:
     in_features: 2048
-    hidden_layers: [256]
+    hidden_layers: [512]
     activation: leakyrelu
     negative_slope: 0.2         # idéntico a exp05/exp18
     dropout: 0.5
@@ -103,8 +103,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false        # idéntico a exp05/exp18 -- ver su nota en src/config.py
-  checkpoint_dir: runs/exp60_pretrain_ablation_imagenet/weights
-  run_dir: runs/exp60_pretrain_ablation_imagenet
+  checkpoint_dir: runs/exp59_pretrain_ablation_imagenet_512/weights
+  run_dir: runs/exp59_pretrain_ablation_imagenet_512
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # junta este par en la UI de W&B

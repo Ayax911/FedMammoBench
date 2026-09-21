@@ -1,0 +1,42 @@
+{
+  "os":  "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.12.3",
+  "startedAt":  "2026-09-16T16:44:58.231725Z",
+  "args":  [
+    "--config",
+    "configs/exp60_pretrain_ablation_imagenet_256.yaml"
+  ],
+  "program":  "-m src.cli",
+  "git":  {
+    "remote":  "git@github.com:Ayax911/FedMammoBench.git",
+    "commit":  "0d3d1f0249e6adf918d44d4e5e3a63bcc7f021d7"
+  },
+  "email":  "j.mast8924@gmail.com",
+  "root":  "runs/exp60_pretrain_ablation_imagenet_256",
+  "host":  "labmirp-ws",
+  "executable":  "/home/labmirp/Escritorio/FL-JULIAN/FedMammoBench/.venv/bin/python",
+  "cpu_count":  8,
+  "cpu_count_logical":  16,
+  "gpu":  "NVIDIA GeForce GTX 1080 Ti",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "97829425152",
+      "used":  "55133061120"
+    }
+  },
+  "memory":  {
+    "total":  "16682229760"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce GTX 1080 Ti",
+      "memoryTotal":  "11811160064",
+      "cudaCores":  3584,
+      "architecture":  "Pascal",
+      "uuid":  "GPU-64614e17-1a1f-cb3b-b1b4-9947cd7dabed"
+    }
+  ],
+  "cudaVersion":  "13.0",
+  "writerId":  "lgkkzbj2eih45sz8fck311eeday6azpo"
+}
