@@ -64,15 +64,16 @@ class Manifest:
         """Verifies that no rows contain missing or null patient_id values.
 
         Raises:
-            ValueError: If one or more rows contain null patient IDs (necessary to
+            ValueError: If one or more rows contain null or blank patient IDs (necessary to
                 prevent patient data leakage across train/val/test splits).
         """
-        null_mask = self.df["patient_id"].isna()
-        if null_mask.any():
-            n_null = int(null_mask.sum())
+        stripped = self.df["patient_id"].astype(str).str.strip()
+        invalid_mask = self.df["patient_id"].isna() | (stripped == "") | (stripped.str.lower() == "nan")
+        if invalid_mask.any():
+            n_invalid = int(invalid_mask.sum())
             raise ValueError(
-                f"{n_null} row(s) have a missing patient_id. "
-                "Every row must have a patient id — this is what prevents "
+                f"{n_invalid} row(s) have a missing or blank patient_id. "
+                "Every row must have a non-empty patient id — this is what prevents "
                 "the same patient from landing in both train and test."
             )
 

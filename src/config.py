@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ArchitectureConfig(BaseModel):
@@ -274,6 +274,19 @@ class TrainConfig(BaseModel):
     wandb_group: str | None = None  # agrupa corridas en la UI de W&B, ver tracking.py
 
 
+_VALID_METRIC_NAMES: set[str] = {
+    "loss",
+    "accuracy",
+    "auc",
+    "sensitivity",
+    "specificity",
+    "f1",
+    "f1_macro",
+    "precision",
+}
+_LOWER_IS_BETTER: set[str] = {"loss"}
+
+
 class ExperimentConfig(BaseModel):
     """Modelo contenedor principal que valida el experimento completo desde YAML.
 
@@ -302,6 +315,36 @@ class ExperimentConfig(BaseModel):
     loss: NamedComponentConfig
     data: DataConfig
     train: TrainConfig
+
+    @model_validator(mode="after")
+    def _validate_metric_consistency(self) -> "ExperimentConfig":
+        name = self.train.metric_name
+        mode = self.train.metric_mode
+
+        if name not in _VALID_METRIC_NAMES:
+            raise ValueError(
+                f"train.metric_name={name!r} no es una clave válida. "
+                f"Opciones: {sorted(_VALID_METRIC_NAMES)}"
+            )
+
+        expected_mode = "min" if name in _LOWER_IS_BETTER else "max"
+        if mode != expected_mode:
+            raise ValueError(
+                f"train.metric_name={name!r} espera train.metric_mode={expected_mode!r}, "
+                f"pero el config trae metric_mode={mode!r}. "
+                "Con 'loss' hay que minimizar; con el resto de métricas clínicas, maximizar."
+            )
+
+        if self.scheduler is not None and self.scheduler.name == "reduceonplateu":
+            sched_mode = self.scheduler.hparams.get("mode")
+            if sched_mode is not None and sched_mode != mode:
+                raise ValueError(
+                    f"scheduler.hparams.mode={sched_mode!r} no coincide con "
+                    f"train.metric_mode={mode!r}. ReduceLROnPlateau debe optimizar en la "
+                    "misma dirección que la métrica de selección de checkpoint."
+                )
+
+        return self
 
 
 def load_config(path: str | Path) -> ExperimentConfig:
