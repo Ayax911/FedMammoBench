@@ -2,360 +2,232 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-FedMammoBench: binary mammography classification (benign / malignant) with a RadImageNet-pretrained
-ResNet50 in PyTorch. Centralized training (`src/`) is the validated baseline. A federated layer
-(`src/federated/`, real gRPC deployment on Flower — no simulation, no Ray) now sits on top of it; see
-"Federated training" below and `docs/FEDERATED_DESIGN.md` for the full design and rationale.
+FedMammoBench: clasificación binaria de mamografía (benigno / maligno) con un ResNet50 pre-entrenado en
+RadImageNet, en PyTorch. El entrenamiento centralizado (`src/`) es la línea base validada. Encima hay
+una capa federada (`src/federated/`, despliegue gRPC real sobre Flower — sin simulación, sin Ray).
 
-## The one command (plus one more for re-evaluation)
+**Este archivo es un enrutador, no el contexto completo.** Carga la hoja que corresponda a la tarea
+antes de trabajar; no las cargues todas.
+
+---
+
+## Hacia dónde ir
+
+### Rama de código — `.claude/context/code/`
+
+| si vas a… | lee |
+|---|---|
+| tocar cualquier cosa bajo `src/` (empieza siempre aquí) | [ARCHITECTURE.md](.claude/context/code/ARCHITECTURE.md) |
+| escribir o editar un `configs/*.yaml`, o lanzar un sweep | [CONFIG.md](.claude/context/code/CONFIG.md) |
+| manifests, splits, `Dataset`, transforms, dataloaders | [DATASETS.md](.claude/context/code/DATASETS.md) |
+| backbones, heads, congelamiento, carga de pesos | [MODELS.md](.claude/context/code/MODELS.md) |
+| el loop, optimizadores, pérdidas, early stopping, `Trainer` | [TRAIN.md](.claude/context/code/TRAIN.md) |
+| servidor/cliente/estrategias de Flower | [FEDERATED.md](.claude/context/code/FEDERATED.md) |
+
+Los contratos por método (args, raises, returns, ejemplos) están en los `DOCS.md` que viven **dentro**
+de `src/`: `src/DOCS.md`, `src/datasets/DOCS.md`, `src/models/DOCS.md`, `src/train/DOCS.md`,
+`src/federated/DOCS.md`. Las hojas de arriba no los duplican — aportan el porqué y los invariantes.
+Actualiza ambos junto al código.
+
+### Rama experimental — `.claude/context/experiments/`
+
+| si vas a… | lee |
+|---|---|
+| citar, comparar o extender resultados centralizados (exp01–39, 57–60) | [CENTRALIZED.md](.claude/context/experiments/CENTRALIZED.md) |
+| citar, comparar o extender resultados federados (exp40–56) | [FEDERATED.md](.claude/context/experiments/FEDERATED.md) |
+
+Esas dos hojas guardan los **números medidos**. La *receta* de cada experimento vive en el encabezado
+de su `configs/expNN_*.yaml`, que es el log experimental real.
+
+---
+
+## El comando
 
 ```bash
 .venv/bin/python -m src.cli --config configs/exp05_fedmammobench_full_weighted.yaml
 ```
 
-That is the entire training interface. `src/cli.py:run()` does everything end to end — seed →
-manifest → split → transforms → dataloaders → backbone + head → `Trainer.fit()` → re-evaluate the
-**best** checkpoint on val *and* test (+ per-database test breakdown, opt-in — see below) → plots,
-JSONs, `predictions.csv`, W&B. There is still no resume.
+Esa es toda la interfaz de entrenamiento: semilla → manifest → split → transforms → dataloaders →
+backbone + head → `Trainer.fit()` → re-evaluar el **mejor** checkpoint sobre val y test → plots,
+JSONs, `predictions.csv`, W&B. No hay resume.
 
-There **is** a second entrypoint, `src/evaluate.py`, for the one gap that used to be real: scoring an
-already-trained checkpoint without re-running training (e.g. to backfill `test/*_by_database.*` for a
-run trained before `DataConfig.by_database_manifests` existed). It takes the same YAML plus
-`--checkpoint <path>.pt`, rebuilds the identical manifest/split/transforms/model, and calls
-`eval_pipeline.evaluate_split()`/`evaluate_by_database()` directly instead of `Trainer.fit()` — never
-touches `config.yaml`/`metrics.csv`/`plots/` in `run_dir`, only `run_dir/val/` and `run_dir/test/`.
-`eval_pipeline.py` is where that evaluation logic actually lives now (moved out of `cli.py`, which
-nothing else is allowed to import) so both entrypoints share it instead of duplicating it.
+Segundo entrypoint, para evaluar un checkpoint ya entrenado sin reentrenar:
 
 ```bash
-.venv/bin/python -m src.evaluate --config configs/exp05_fedmammobench_full_weighted.yaml \
-    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt
+.venv/bin/python -m src.evaluate --config configs/expNN.yaml --checkpoint runs/expNN/weights/best_epoch123.pt
 ```
 
-Per-database test breakdown (`DataConfig.by_database_manifests`, opt-in, `None` by default): derived
-manifests live in `manifests/by_database/` (one CSV per `source_dataset`, generated from
-`manifests/fedmammobench_norm_{0_1,neg1_1}.csv` by `scripts/split_manifest_by_database.py` — rerun that
-script if the source manifests change; it never touches image data). When set, both entrypoints write
-`test/metrics_by_database.json`, `test/confusion_matrix_by_database.png` and `test/metrics_by_database.png`
-alongside the usual `test/` artifacts.
-
-Cheap sanity check that the tree imports: `.venv/bin/python -c "import src.cli; import src.evaluate"`.
-
-### Hyperparameter sweeps (W&B), and the three post-hoc scripts
-
-`scripts/sweep_train.py` is a **shim, not a third entrypoint**: a W&B agent hands it sampled
-hyperparameters as CLI flags, it applies them onto a base YAML, materializes the trial's config, and
-runs `python -m src.cli --config <that>` **as a subprocess** — never `import src.cli`, which would
-break the "nothing imports `cli.py`" rule, and which also buys a clean process per trial (no CUDA
-memory, global seed, or W&B state carried between 100 runs). The search space lives in
-`sweeps/hpsearch_v1.yaml`, which is committed as the methodological record.
-
-```bash
-wandb sweep sweeps/hpsearch_v1.yaml
-wandb agent <entity>/fedmammobench2.0/<sweep_id>
-```
-
-Trial artifacts go to `sweeps/<sweep_id>/{configs,runs}/` — deliberately **not** `configs/` (hand-written
-YAML, no inheritance) or `runs/` (the committed results record); `sweeps/*/` is gitignored, and the
-winning config gets promoted by hand to a permanent `configs/expNN_*.yaml`. **Check
-`grep -q "api.wandb.ai" ~/.netrc` before launching**: `MetricsLogger` silently falls back to
-`mode="offline"` without credentials, and an agent whose trials run offline never gets metrics back —
-the Bayesian sampler would learn nothing while appearing to progress.
-
-Three scripts read a finished `run_dir` and never retrain (all invoked with `-m`, since they import
-`src.*`): `scripts/calibrate_threshold.py` picks a decision threshold on val and applies it to test
-(`--by-database` does it per database — the fixed 0.5 leaves KAU-BCMD at ~0 sensitivity despite
-AUC ~0.9), `scripts/ensemble_eval.py` averages `y_prob` across runs into a directory shaped like a
-real `run_dir`, and `scripts/split_manifest_by_database.py` regenerates `manifests/by_database/`.
-
-## Federated training (`src/federated/`)
-
-Real gRPC deployment on Flower — one server process (never sees images) + one process per node, each
-with its own YAML. Full design, every decision vs. the deleted legacy federated package, and the
-weighted-AUC-≠-pooled-AUC caveat: **`docs/FEDERATED_DESIGN.md`**. Per-method contracts:
-**`src/federated/DOCS.md`**.
+Federado (un proceso servidor + uno por nodo), o todo junto con Docker:
 
 ```bash
 .venv/bin/python -m src.federated.server --config configs/federated/exp40_fedavg_full/server.yaml
 .venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_cmmd.yaml
-# ... one client process per node (kau-bcmd, cdd-cesm, inbreast)
-```
-
-or, via Docker (the primary way to launch on the workstation — server + all node containers in one
-command, host networking so `server_address: 127.0.0.1:<port>` in the YAMLs works identically inside
-and outside containers):
-
-```bash
 EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
 ```
 
-`aggregation_scope: full | backbone` (server.yaml) picks whether the whole model or only the backbone
-aggregates, mirroring the `_backbone.pt`/`_head.pt` checkpoint split centralized runs already produce.
-Strategies (`strategy.name`): `fedavg`, `fedprox`, `fedadam`, `fedyogi` — stock `flwr.server.strategy`
-classes, no custom aggregation math. Each node writes its own `runs/<exp>/nodes/<node_name>/`, shaped
-exactly like a centralized `run_dir` (`config.yaml`, `metrics.csv`, `plots/`, `val/`, `test/`); the
-server writes `runs/<exp>/server/` (`metrics.csv` per round, `best.json`, global checkpoints).
-Fallback to re-evaluate a node against the best global model without rejoining a live run:
+Comprobación barata de que el árbol importa:
 
 ```bash
-.venv/bin/python -m src.federated.evaluate_node --config <node.yaml> --server-run-dir runs/<exp>/server
+.venv/bin/python -c "import src.cli; import src.evaluate"
+.venv/bin/python -c "import src.federated.server; import src.federated.client; import src.federated.evaluate_node"
 ```
 
-Sanity check: `.venv/bin/python -c "import src.federated.server; import src.federated.client; import src.federated.evaluate_node"`.
+---
 
-## Repo state — what is real, what is stale
+## Las trampas que matan una corrida en silencio
 
-`main` is the live branch and holds the rewritten `src/` package. A lot of checked-in documentation
-predates that and describes things that no longer exist anywhere:
+Resumen; el detalle y el porqué están en las hojas.
 
-- **The legacy `src/fedmammobench/` package is gone from every branch** (71 files: registries,
-  strategies, weight loaders, its own `Trainer`, `configs/base.yaml` inheritance, the
-  `fedmammobench-*` console scripts). There is no `pyproject.toml` in this tree at all, so
-  `pip install -e .` and every `fedmammobench-*` command are dead by construction.
-- **The exp01–exp32 standalone notebook series is also gone from every branch**, deleted in `0e934ec`
-  ("remove notebook-era configs/ and runs/"), along with `scripts/gen_*.py` and every
-  `scripts/run-expNN-*.sh`/`eval-expNN-*.sh`. `configs/` is now YAML only and `scripts/` holds nothing
-  but `DOCS.md`.
-- **`ec55408` is the last commit holding both** — the complete legacy package *and* the notebook series
-  with its generators. Use it to consult either:
+- **`metric_name: f1` vs `f1_macro`** — `f1` se clava en `0.0` sobre `fedmammobench.csv` y devuelve el
+  checkpoint sin entrenar. → [CONFIG.md](.claude/context/code/CONFIG.md)
+- **Evaluar el mejor checkpoint, nunca el último.** Nunca agregues un flag "qué checkpoint".
+  → [TRAIN.md](.claude/context/code/TRAIN.md)
+- **Los writers de `MetricsLogger` se abren perezosamente**, nunca en `__init__`: abrirlos con ansia
+  trunca el `metrics.csv` commiteado al re-evaluar. → [ARCHITECTURE.md](.claude/context/code/ARCHITECTURE.md)
+- **`load_weights()` lanza cuando `matched == 0`** — sin eso, la corrida entrena desde random y solo
+  parece mediocre. → [MODELS.md](.claude/context/code/MODELS.md)
+- **Deriva de BatchNorm bajo congelamiento** (`_set_frozen_bn_eval`), y `freeze_bn_stats: false` como
+  eje experimental deliberado. → [TRAIN.md](.claude/context/code/TRAIN.md)
+- **`drop_last=True` solo en train**; **`.iloc`, nunca `.loc`**; **nunca crear `src/data/`**.
+  → [DATASETS.md](.claude/context/code/DATASETS.md)
+- **Defaults de `fedadam`/`fedyogi` = corrida muerta** (NaN, o AUC 0,5000 exacto).
+  → [FEDERATED.md](.claude/context/code/FEDERATED.md)
+- **El AUC agregado del servidor no se compara contra un AUC centralizado** — re-evalúa pooled.
+  → [experiments/FEDERATED.md](.claude/context/experiments/FEDERATED.md)
+- **Recalibra el umbral antes de reportar por base de datos** — con 0,5 fijo, kau-bcmd queda en ~0 de
+  sensibilidad pese a AUC ~0,9. → [experiments/CENTRALIZED.md](.claude/context/experiments/CENTRALIZED.md)
+
+---
+
+## Entorno
+
+`.venv/` (Python **3.12.8**) es el intérprete y ya tiene todo lo de `requirements.txt`: torch 2.13 +
+CUDA, torchvision 0.28, torchmetrics, pandas 3.0, pydantic 2.13, PyYAML, tensorboard, matplotlib,
+wandb, scikit-learn, y `flwr==1.31.0` pinneado exacto. **Invócalo siempre explícitamente**
+(`.venv/bin/python`) — no hay paquete instalado ni paso de activación.
+
+`src/__init__.py` hace que `src` sea un paquete, así que `from src.datasets import ...` funciona desde
+la raíz sin tocar `PYTHONPATH`. **No** uses `PYTHONPATH=src` + `from datasets import ...`: ese nombre
+choca con el `datasets` de HuggingFace.
+
+**No hay suite de tests ni test runner.** `pytest` no está instalado; `tests/` solo tiene
+`__init__.py` y `test_wandb_writer.py`, que importa el paquete borrado y no puede correr. `pyright`
+está configurado (`pyrightconfig.json`, `strict`) pero tampoco está instalado — mantén consistentes
+las anotaciones y los `# pyright: ignore` aunque nada los verifique aquí. La verificación se hace como
+documenta `PHASES.md`: manejar el código real desde un script desechable con tensores sintéticos y
+hacer asserts sobre los artefactos.
+
+**Rutas absolutas por máquina.** Los configs cargan rutas absolutas de la workstation del laboratorio
+o de `labmirp`, con familias de manifest distintas (`*.csv` vs `*_local.csv`). Detalle en
+[CONFIG.md](.claude/context/code/CONFIG.md).
+
+W&B: `train.wandb_project` (`null` lo desactiva). Comprueba credenciales con
+`grep -q "api.wandb.ai" ~/.netrc` — **nunca hagas `cat` de ese archivo ni pegues una key**.
+`WANDB_API_KEY` en el entorno le gana a `~/.netrc` (ver `run_exp58_60.sh`).
+
+`Dockerfile` construye una imagen **solo-entorno** (sin código; el repo se monta en `/workspace`), así
+que un cambio de código nunca necesita rebuild. El **único CI** es
+`.github/workflows/docker-publish.yml`: publica `ayax911/federal-learning:<tag>` en Docker Hub con un
+tag `v*.*.*` o `workflow_dispatch`. Nada en CI lintea, tipa ni ejecuta el código.
+
+---
+
+## Estado del repo — qué es real y qué está obsoleto
+
+`main` es la rama viva y tiene el paquete `src/` reescrito. Mucha documentación commiteada es anterior
+a eso y describe cosas que ya no existen en ninguna rama:
+
+- **El paquete legacy `src/fedmammobench/` no existe en ninguna rama** (71 archivos: registries,
+  estrategias, cargadores de pesos, su propio `Trainer`, herencia vía `configs/base.yaml`, los scripts
+  de consola `fedmammobench-*`). **No hay `pyproject.toml` en este árbol**, así que `pip install -e .`
+  y todo comando `fedmammobench-*` están muertos por construcción.
+- **La serie de notebooks exp01–exp32 tampoco existe**, borrada en `0e934ec`, junto con
+  `scripts/gen_*.py` y los `scripts/run-expNN-*.sh`/`eval-expNN-*.sh`. `configs/` es solo YAML y
+  `scripts/` tiene únicamente los tres post-hoc, el shim de sweep y `DOCS.md`.
+- **`ec55408` es el último commit que tiene ambos** — el paquete legacy completo *y* la serie de
+  notebooks con sus generadores:
   ```bash
   git show ec55408:src/fedmammobench/training/trainer.py
-  git show ec55408:configs/exp28/exp28.ipynb          # the notebook src/ was written to reproduce
-  git worktree add ../fedmammobench-legacy ec55408    # to browse it as a full checkout
+  git show ec55408:configs/exp28/exp28.ipynb          # el notebook que src/ fue escrito para reproducir
+  git worktree add ../fedmammobench-legacy ec55408    # para navegarlo como checkout completo
   ```
-- **`REFACTOR.md` is a snapshot from 2026-08-26 and its status sections are wrong** — it claims `src/`
-  is 155 lines in 4 files and that `models/`/`train/` are unwritten. Its *rationale* sections are still
-  the best explanation of why the code looks the way it does (§4 architecture decisions, §6 the exact
-  transform pipeline and index gotcha, §7 legacy bugs to reproduce, §10 manifest statistics); its
-  checklists are not.
-- **`PHASES.md` is accurate and is the newest design document.** It logs, phase by phase, what was
-  ported from the INC project (`inc-project-models-classification-detection-main`, a sibling repo not
-  checked in here) into `src/`: F1/precision metrics, `drop_last`, cuDNN determinism, the
-  `weight`-as-list loss bug, `FocalLoss`, `EarlyStopping`, test-set evaluation and reporting,
-  `ConfigurableMLPHead`, vertical-flip/blur augmentation, periodic checkpoints. Read it before
-  touching those areas — most of the odd-looking defaults are "reproduces INC exactly" decisions.
-- The `develop` / `phaseN-*` branch convention PHASES.md describes is historical; those branches are
-  merged and deleted.
+- El convenio de ramas `develop` / `phaseN-*` que describe `PHASES.md` es histórico; esas ramas están
+  fusionadas y borradas.
 
-## Environment
+### Mapa de documentación, de mayor a menor confiabilidad
 
-`.venv/` (Python **3.12.8**) is the interpreter, and it already has everything in `requirements.txt`:
-torch 2.13 + CUDA, torchvision 0.28, torchmetrics, pandas 3.0, pydantic 2.13, PyYAML, tensorboard,
-matplotlib, wandb, scikit-learn, and (for `src/federated/`) `flwr==1.31.0` pinned exactly — see the
-comment above it in `requirements.txt` before bumping. Always call it explicitly
-(`.venv/bin/python`) — there is no installed package and no activation step in any of the run
-instructions.
-
-`src/__init__.py` makes `src` a package, so `from src.datasets import ...` works from the repo root
-with no `PYTHONPATH` tweak. Do **not** use `PYTHONPATH=src` + `from datasets import ...`; that name
-collides with HuggingFace `datasets`.
-
-**There is no test suite and no test runner.** `pytest` is not installed, and `tests/` contains only
-`__init__.py` plus `test_wandb_writer.py`, which imports the deleted package and cannot run. Nothing
-under `src/` has a test. Verification in this repo has been done the way `PHASES.md` documents it:
-drive the real code from a throwaway script with synthetic tensors and assert on the artifacts it
-produces. `pyright` is configured (`pyrightconfig.json`, `strict`, `include: ["src"]`) but is not
-installed in the venv either — the type annotations and `# pyright: ignore` comments in `src/` exist
-to satisfy it, so keep them consistent even though nothing checks them here.
-
-`Dockerfile` builds an **environment-only** image (Python 3.12, `pip install -r requirements.txt`,
-no code copied — the repo is bind-mounted at `/workspace` by `docker-compose.federated.yaml`, so a
-code change never needs a rebuild). The old Python-3.11-`pip install -e .` Dockerfile it replaced
-could not build against this tree at all; this one is exercised by the federated deployment above.
-
-## Architecture
-
-One direction of dependency, no exceptions:
-
-```
-config.py → seed / metrics / checkpoint / tracking / reporting / datasets / models → train/
-    → eval_pipeline.py → cli.py / evaluate.py / federated/
-```
-
-`src/federated/` sits at the same layer as `cli.py`/`evaluate.py` — it imports everything above
-`eval_pipeline.py` in that chain, never `cli.py`, and nothing outside `federated/` imports from it.
-All contact with the `flwr` API is confined to `federated/server.py` and `federated/client.py`. See
-"Federated training" above and `docs/FEDERATED_DESIGN.md` for the full module layout.
-
-Nothing imports `cli.py`. `evaluate.py` (re-evaluate an already-trained checkpoint, no retraining —
-see "The one command" above) sits at the same layer as `cli.py` and imports `eval_pipeline.py`
-directly, never `cli.py` — that's the whole reason `evaluate_split()`/`evaluate_by_database()` live in
-`eval_pipeline.py` instead of as private helpers inside `cli.py`. `datasets/` never imports `models/`
-or `train/`. `models/weights.py` never imports `models/build.py`. A late import inside a function to
-dodge a cycle is a design smell here, not an accepted workaround.
-
-Deliberate departures from the deleted package, all still in force:
-
-| Decision | Choice | Why |
-|---|---|---|
-| Config | Pydantic v2 + YAML, `extra="forbid"` | typos fail validation instead of being ignored |
-| Config inheritance | **None** — no `defaults:`/`base.yaml` | every experiment YAML reads start to end |
-| Decorator registries | **Dropped** — plain module-level dicts | `_ARCHITECTURES`, `_HEAD_STRATEGIES`, `_OPTIMIZERS`, `_SCHEDULERS`, `_LOSSES` are all greppable in one place |
-| One `Dataset` per source | **No** — a single `MammoBenchDataset` | everything is already consolidated into one manifest CSV |
-
-Where the pieces live:
-
-- **`src/datasets/`** — `Manifest` (loads the CSV, requires `preprocessed_image_path` /
-  `classification` / `split` / `patient_id`, normalizes labels to `label_norm`, resolves
-  `abs_image_path` against `image_root`), `Split` (**verifies** the manifest's existing `split` column
-  is patient-disjoint; it never generates a split — stratification happens upstream, outside this
-  repo), `MammoBenchDataset`, `TransformBuilder`, and `builder_dataloader()`. Per-method contracts in
-  **`src/datasets/DOCS.md`**.
-- **`src/models/`** — `build_model(name, weights_path=None, unfreeze_from, device)` returns
-  `(backbone, LoadReport)`: instantiates from `_ARCHITECTURES`, remaps the checkpoint's `backbone.N.`
-  keys onto torchvision names, and applies a `FreezeStrategy`. Registered architectures today:
-  `resnet50_radimagenet` (external `.pth` checkpoint, `weights_path` required) and
-  `resnet50_imagenet_v1`/`resnet50_imagenet_v2` (ImageNet weights bundled in torchvision itself —
-  `ArchitectureSpec.weights_from_factory=True`, no `weights_path`, torchvision downloads/caches on
-  first use). Heads are a separate axis: `get_head_strategy(name)` returns an unconstructed
-  `HeadBuilder` subclass (`standard_mlp` — one hidden layer, always `BatchNorm1d`; `configurable_mlp` —
-  N hidden layers, selectable activation, no BatchNorm by default). Details in **`src/models/DOCS.md`**.
-- **`src/train/`** — `build_optimizer`/`build_scheduler`/`build_loss`, the pure `train_one_epoch()` /
-  `evaluate()` functions, `EarlyStopping`, `FocalLoss`, `evaluate_checkpoint()`/`predict_on_loader()`,
-  and `Trainer`. See **`src/train/DOCS.md`**.
-- **`src/reporting.py`** — pure artifact writers: `save_metrics_json`, `save_predictions_csv`,
-  `plot_confusion_matrix`, `plot_roc_curve`, `compute_confusion_matrix_metrics()`, plus the
-  per-database-breakdown trio `save_metrics_by_database_json`, `plot_confusion_matrix_by_database`,
-  `plot_metrics_by_database`. Uses **torchmetrics**, not scikit-learn, for the confusion matrix and
-  ROC — sklearn is installed but deliberately unused here.
-- **`src/eval_pipeline.py`** — `evaluate_split()` (val/test, reused identically for both) and
-  `evaluate_by_database()` (opt-in per-database test breakdown), both taking a checkpoint path and an
-  already-open `MetricsLogger` — shared by `cli.py` (right after `Trainer.fit()`) and `evaluate.py`
-  (standalone re-evaluation).
-- **`cli.py` owns the training assembly**, on purpose: `nn.Sequential(backbone, head.build())`, the
-  W&B run (opened before `Trainer` so training and test land on one run), and calling
-  `eval_pipeline.evaluate_split()`/`evaluate_by_database()` after `fit()`.
-- **`evaluate.py`** rebuilds that same assembly minus `Trainer.fit()`, loading a given checkpoint
-  straight into `eval_pipeline.evaluate_split()`/`evaluate_by_database()` instead — see "The one
-  command" above.
-
-`LossSpec` (`train/build.py`) is the one abstraction worth understanding before editing the loop: it
-pairs the loss function with the correct logits→positive-class-probability conversion, because that
-conversion depends on how many logits the head emits (1 for BCE, 2 for CrossEntropy/Focal), not on the
-loss's name. `train_one_epoch()`/`evaluate()` call `spec.compute()`/`spec.probs()` with no branching
-of their own — the only `if` lives in `build_loss()` and runs once.
-
-## Invariants that will silently ruin a run
-
-These are the legacy failure modes the rewrite exists to prevent. Preserve them.
-
-- **`metric_name: f1` vs `f1_macro`.** `f1` is `BinaryF1Score` — positive class only — and sits at
-  exactly `0.0` while the model predicts no malignants, which is the normal state of early epochs on
-  the 66/34 `fedmammobench.csv`. `EarlyStopping` requires strict improvement, so that run of zeros
-  never resets the patience counter and `fit()` returns the epoch-0 (untrained) checkpoint. Use
-  `f1_macro` on that manifest. `f1` is correct only for the INC replicas, whose train split is 84%
-  malignant.
-- **Evaluate the best checkpoint, never the last.** `Trainer.fit()` returns the best checkpoint path
-  and `cli.run()` feeds exactly that into `eval_pipeline.evaluate_split()` for both val and test. Never
-  add a "which checkpoint" config flag — it can drift from what was actually best.
-- **`MetricsLogger`'s CSV/TensorBoard writers open lazily, on the first `log()` call — never in
-  `__init__`.** Opening eagerly would truncate a `run_dir`'s real `metrics.csv` (the committed training
-  history) the instant `evaluate.py:run_evaluation()` instantiates a logger to reuse
-  `log_summary()`/`log_image()`/`log_table()`, even though it never calls `log()`. Don't "simplify" this
-  back to eager — it silently destroys history the moment someone re-evaluates an old checkpoint.
-- **Silent weight-loading failure.** `load_weights()` raises when `matched == 0`. That is precisely the
-  state a `backbone.`-prefix mismatch produces, and without the raise the run trains from random init
-  and looks merely mediocre.
-- **BN drift under freeze.** `model.train()` re-enables frozen BatchNorm layers, whose
-  `running_mean`/`running_var` keep updating even at `requires_grad=False`.
-  `train/loop.py:_set_frozen_bn_eval()` re-`eval()`s them right after every `model.train()`.
-  `freeze_bn_stats: false` turns that off on purpose, to reproduce INC — with a fully frozen backbone
-  that is the difference between a backbone that still adapts and one pinned to RadImageNet statistics.
-- **`drop_last=True` on the train loader only.** `StandardMLPHead` uses `BatchNorm1d`, which throws on
-  a final batch of size 1.
-- **Never create `src/data/`.** `.gitignore` has a repo-wide `data/` rule that swallows the whole
-  module in silence; that is why the package is `src/datasets/`.
-- **`.iloc`, not `.loc`.** `Split`'s DataFrames keep their original non-contiguous indices, so
-  positional access is mandatory in `__getitem__`.
-
-## The YAML contract
-
-`ExperimentConfig` (`src/config.py`) is the schema, `extra="forbid"` throughout — an unknown or
-misspelled key is a `ValidationError`, not a silent no-op. Sections: `experiment_id`, `architecture`,
-`head`, `optimizer`, `scheduler` (optional), `loss`, `data`, `train`. `head`/`optimizer`/`scheduler`/
-`loss` are all `NamedComponentConfig` (`name` + free-form `hparams` splatted into the constructor), so
-adding a hyperparameter usually means only touching the factory, not the config models.
-
-Two `data` settings encode the **pre-processed float-TIFF pipeline** and must move together:
-`Preproccesed/preprocess_images.py` writes 32-bit float single-channel TIFFs (PIL mode `"F"`) already
-resized to 224×224 and normalized to `[0,1]` (`norm_0_1/`) or `[-1,1]` (`norm_neg1_1/`), with
-`manifests/fedmammobench_norm_{0_1,neg1_1}.csv` pointing at them. Configs consuming those set
-`image_size: null` **and** `normalize_mean: null` / `normalize_std: null` — resizing and normalizing
-again would be wrong. `MammoBenchDataset.__getitem__` detects mode `"F"` and skips `.convert()`
-entirely (PIL clips rather than rescales floats, which would collapse a `[-1,1]` image to near-zero),
-replicating to 3 channels on the tensor afterwards instead. Setting `normalize_mean: [0,0,0]` /
-`normalize_std: [1,1,1]` is the *other* meaningful value — identity, i.e. plain `[0,1]` pixels, which
-is what INC does; the `0.5/0.5` default is not equivalent.
-
-Every config carries **absolute lab-workstation paths** for `weights_path` and `image_root`; they do
-not resolve elsewhere. `configs/exp02`, `exp03_*` and `exp04_*` point at
-`manifests/dataset_split_formatted.csv`, the INC dataset manifest, which **is not in this repo and
-never was** — those three cannot be re-run as-is even on the workstation.
-
-## Run artifacts
-
-`run_dir` (`runs/<experiment_id>/`) gets `config.yaml` (a snapshot of exactly what ran), `metrics.csv`,
-TensorBoard events, `plots/` (loss plus one train-vs-val curve per clinical metric), and one folder per
-evaluated split — `val/` and `test/`, each with `metrics.json`, `confusion_matrix_metrics.json`,
-`predictions.csv`, `confusion_matrix.png`, `roc_curve.png`. If `DataConfig.by_database_manifests` is
-set, `test/` also gets `metrics_by_database.json`, `confusion_matrix_by_database.png` and
-`metrics_by_database.png` (see `eval_pipeline.evaluate_by_database()`). Weights go to `checkpoint_dir`
-(`runs/<experiment_id>/weights/`) as `best_epoch<N>.pt` plus `best_epoch<N>_backbone.pt` /
-`_head.pt` (split out for `src/federated/`'s `aggregation_scope: backbone`, where only the backbone
-aggregates — see "Federated training" above) and `epoch<N>.pt` every `save_every` epochs.
-
-`ls runs/` is the fastest way to see which experiments have actually been executed. Checkpoints
-(`*.pt`/`*.pth`), `events.out.tfevents.*` and `*.log` are gitignored; `metrics.csv`, `metrics.json`,
-`predictions.csv` and `plots/*.png` are committed and serve as the results record.
-
-W&B: `train.wandb_project` (`null` disables it) — the workstation authenticates through a shared team
-service account in `~/.netrc`. Never `cat` that file or paste a key anywhere; check credentials with
-`grep -q "api.wandb.ai" ~/.netrc`. `MetricsLogger` imports `wandb` lazily and degrades to a no-op, so
-a missing key never blocks a run.
-
-## Conventions
-
-- **Language is per-file and mixed on purpose.** `config.py`, `cli.py`, `train/`, `datasets/build.py`,
-  every `DOCS.md`, and all of `src/federated/` are Spanish; `datasets/dataset.py`,
-  `datasets/manifest.py` and `models/` are English. Match the file you are editing rather than
-  imposing one. Config YAML comments and `PHASES.md`/`REFACTOR.md`/`docs/FEDERATED_DESIGN.md` are
-  Spanish.
-- **Comments carry the *why*, at length.** The existing docstrings and inline comments record which
-  bug a line prevents and what the INC project does differently. That density is the house style —
-  when you change behavior here, extend that record rather than trimming it.
+- **`.claude/context/`** — las hojas de arriba. Actual; mantenlas al día con el código.
+- `PHASES.md` — qué se portó del proyecto INC (un repo hermano no commiteado aquí) y por qué cada
+  default es el que es. Actual. Léelo antes de tocar métricas F1/precision, `drop_last`, determinismo
+  de cuDNN, `FocalLoss`, `EarlyStopping`, `ConfigurableMLPHead` o los checkpoints periódicos.
+- `docs/FEDERATED_DESIGN.md` — el diseño de la capa federada. Actual.
+- `docs/AUDITORIA_SOBREAJUSTE.md` — brief de auditoría del sobreajuste (2026-09-20): qué ya se
+  descartó como causa con `archivo:línea`, el diagnóstico medido (el sobreajuste es del régimen de
+  entrenamiento, no un bug) y siete hipótesis priorizadas. Actual.
+- `docs/AUDITORIA_SOBREAJUSTE_RESULTADOS.md` — resultados de esa auditoría (Antigravity, 2026-09-20),
+  re-verificados independientemente: H1–H7 todas confirmadas. La más importante para leer resultados
+  de `CENTRALIZED.md`: exp37 vs exp28 **no es estadísticamente significativo** a nivel paciente
+  (p=0,933) — el ranking del sweep está inflado por medir AUC por imagen en vez de por paciente.
+  Actual, con dos números a verificar antes de citarlos en otro lado: el conteo de "505 mamas" de
+  test en H1 da 405 al recalcularlo con pandas, y la cita de línea de H6.b (`build.py:106`) señala el
+  registro del scheduler, no una instanciación con `mode="min"` hardcodeado.
+- `docs/FIXES_AUDITORIA_SOBREAJUSTE.md` — prompt de las cuatro correcciones de bajo riesgo derivadas
+  de esa auditoría (H5, H6.a, H6.b, H6.d), con la dirección de fix corregida donde el informe de
+  Antigravity se equivocó. Aplicar y luego archivar o borrar — es un prompt de encargo, no diseño
+  permanente.
+- `docs/FIXES_WANDB_METRICAS.md` — prompt para arreglar dos síntomas de W&B: métricas que no
+  coinciden con lo local, y el eje "Step" desalineado de época/ronda. Tres mecanismos distintos
+  diagnosticados con datos reales (`wandb-summary.json` vs `metrics.csv`): `log_image()`/`log_table()`
+  sin `step=` inflan el step (`+12` a `+13` steps fantasma por corrida, medido), el summary del mejor
+  checkpoint colisiona de nombre con la serie por-época (`val_auc` de summary y de la última época son
+  números distintos y correctos, no un bug de cómputo), y en federado "epoch"/step significa ronda en
+  el servidor y época local en el nodo. Aplicar y luego archivar o borrar, igual que el anterior.
+- `src/**/DOCS.md` — contratos por método. Actual.
+- `configs/*.yaml` (encabezados) — el log experimental real. `exp04_inc_strict_replica.yaml` documenta
+  las cuatro divergencias con el INC que corrige y la que deliberadamente no.
+- `REFACTOR.md` — **rationale** actual (§4 decisiones de arquitectura, §6 pipeline de transforms y la
+  trampa de índices, §7 bugs legacy a reproducir, §10 estadísticas del manifest); sus **secciones de
+  estado están mal** (afirma que `src/` son 155 líneas en 4 archivos). Usa el rationale, ignora los
+  checklists.
+- `docs/DATA_PREPARATION.md`, `docs/METHODOLOGY.md` — formato de manifest y diseño experimental; no
+  son específicos del paquete, siguen valiendo.
+- `graphify-out/` — grafo de conocimiento generado del árbol (salida de herramienta, gitignorada).
+  `GRAPH_REPORT.md` y `graph.json` responden rápido "qué toca qué"; regenéralo tras un refactor grande.
+- `docs/EXPERIMENTOS_CENTRALIZADOS.md`, `docs/INFORME_EXP01_22.md` — resultados de la serie de
+  notebooks borrada, incluida la falla de propagación de etiquetas a nivel paciente en CMMD que pone un
+  piso de ~0,44 de val-loss bajo todas. Históricos.
+- **Describen el paquete borrado — no los uses para decidir qué correr:** `README.md` hasta
+  "Documentation Architecture", `scripts/DOCS.md`. Describen el paquete federado *legacy* y su
+  despliegue de 6 nodos, superados por `src/federated/`.
+- **Borrados de `docs/` (2026-09-20)** por describir exclusivamente ese paquete legacy y su despliegue
+  de 6 nodos, sin nada rescatable para el árbol actual: `SRC_STRUCTURE.md`, `EXTENDING.md`,
+  `CHECKPOINT_COMPATIBILITY.md`, `EXPERIMENT_AUDIT.md`, `RADIMAGENET_IMPLEMENTATION.md`,
+  `TRANSFER_LEARNING_GUIDE.md`, `FEDERATED_DEPLOYMENT_GUIDE.md`, `SETUP_6NODES.md`,
+  `QUICK_START_6NODES.md`, `NODE_CONFIGURATION_MATRIX.md`, `DOCKER.md`, `audit-plan.md`, `audit/`
+  (4 archivos). Cada uno se verificó antes de borrar — importan de `fedmammobench.*` o de un
+  `@register_*`/`.samples` que ya no existen, o describen `docker-compose.yml` (singular, con 6
+  nodos), reemplazado por `docker-compose.federated.yaml` (4 nodos). Recuperables con
+  `git log --all --oneline -- docs/<nombre>.md` si hiciera falta consultar algo puntual.
 - **`.claude/commands/`** (`/docker-run`, `/docker-queue`, `/new-exp`, `/eval-experiments`, `/plot`,
-  `/compare`, `/check-manifest`, `/validate-configs`) all predate the rewrite and assume the legacy
-  package or the Docker image. Verify one actually applies before reaching for it.
-  `docker-compose.federated.yaml` supersedes `/docker-run`/`/docker-queue` for federated experiments —
-  see "Federated training" above.
-- Commit subjects follow `<Verb>: description` (`<Feat>:`, `<Fix>:`, `<Docs>:`, `<add>:`, `<exp>:`),
-  with `<exp>:` reserved for committing a run's results.
+  `/compare`, `/check-manifest`, `/validate-configs`) son anteriores a la reescritura y asumen el
+  paquete legacy o la imagen Docker vieja. Verifica que uno aplique antes de usarlo;
+  `docker-compose.federated.yaml` supera a `/docker-run` y `/docker-queue` para lo federado.
+- **`/antigravity`** (`.claude/commands/antigravity.md`, actual) — formaliza el ciclo
+  tarea→ejecución externa→revisión con Antigravity: `/antigravity tarea "<tema>"` escribe un brief
+  autocontenido en `docs/`, `/antigravity revisar <informe>` audita lo que Antigravity entregó
+  re-derivando sus números en vez de confiar en ellos. Nace de
+  `docs/AUDITORIA_SOBREAJUSTE.md`/`_RESULTADOS.md`/`FIXES_*.md` — léelos como ejemplo del formato
+  antes de usarlo por primera vez.
 
-## Documentation map
+---
 
-Trustworthiness for the current tree, highest first:
+## Convenciones
 
-- `PHASES.md` — what was ported from INC and why each default is what it is. Current.
-- `docs/FEDERATED_DESIGN.md` — the federated layer's design: why Flower, why real gRPC and not
-  simulation, the config/handshake/aggregation-scope mechanics, and every decision mapped against the
-  pain point it fixes in the deleted legacy federated package. Current.
-- `src/DOCS.md`, `src/datasets/DOCS.md`, `src/models/DOCS.md`, `src/train/DOCS.md`,
-  `src/federated/DOCS.md` — per-method contracts (args, raises, returns) with worked examples.
-  Current; update them alongside code.
-- `configs/*.yaml` header comments — the real experiment log. `exp04_inc_strict_replica.yaml` in
-  particular documents the four divergences from INC it corrects and the one it deliberately does not.
-- `REFACTOR.md` — rationale current, status sections stale (see above).
-- `docs/DATA_PREPARATION.md`, `docs/METHODOLOGY.md` — manifest format and experimental design; not
-  package-specific, still relevant.
-- `docs/EXPERIMENTOS_CENTRALIZADOS.md`, `docs/INFORME_EXP01_22.md` — results of the deleted notebook
-  series, including the CMMD patient-level label-propagation defect that puts a ~0.44 val-loss floor
-  under all of them. Historical, but the numbers are the ones the current pipeline is compared against.
-- **Describes the deleted package — do not use to decide what to run:** `README.md` down to
-  "Documentation Architecture", `scripts/DOCS.md`, `docs/SRC_STRUCTURE.md`, `docs/EXTENDING.md`,
-  `docs/CHECKPOINT_COMPATIBILITY.md`, `docs/RADIMAGENET_IMPLEMENTATION.md`,
-  `docs/TRANSFER_LEARNING_GUIDE.md`, `docs/FEDERATED_DEPLOYMENT_GUIDE.md`, `docs/SETUP_6NODES.md`,
-  `docs/QUICK_START_6NODES.md`, `docs/NODE_CONFIGURATION_MATRIX.md`, `docs/DOCKER.md`, `docs/audit/`,
-  `docs/audit-plan.md`. All describe the *legacy* federated package (`ec55408:src/fedmammobench/federated/`)
-  and its 6-node deployment — superseded by `src/federated/` (see "Federated training" above and
-  `docs/FEDERATED_DESIGN.md`, which explicitly maps every design decision against the pain points these
-  documents' audits recorded). Still useful for *what the legacy did*, not for what to run today.
+- **El idioma es por archivo y está mezclado a propósito.** Español: `config.py`, `cli.py`, `train/`,
+  `datasets/build.py`, todos los `DOCS.md`, todo `src/federated/`, `.claude/context/`. Inglés:
+  `datasets/dataset.py`, `datasets/manifest.py`, `models/`. Acompaña al archivo que edites.
+- **Los comentarios cargan el *porqué*, con extensión.** Los docstrings y comentarios registran qué bug
+  previene cada línea y qué hace distinto el INC. Esa densidad es el estilo de la casa: cuando cambies
+  comportamiento, **extiende** ese registro en vez de recortarlo.
+- Asuntos de commit: `<Verb>: descripción` (`<Feat>:`, `<Fix>:`, `<Docs>:`, `<add>:`, `<exp>:`), con
+  `<exp>:` reservado para commitear los resultados de una corrida.

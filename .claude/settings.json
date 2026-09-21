@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r \".tool_input.command\" 2>/dev/null | { read -r cmd; if echo \"$cmd\" | grep -qE \"\\-m[[:space:]]+src\\.(cli|federated\\.server|evaluate)([[:space:]]|$)\"; then cd /home/akira/snap/steam/federallearning/FedMammoBench && .venv/bin/python -m scripts.build_experiment_registry >/dev/null 2>&1; fi; } || true",
+            "statusMessage": "Regenerando experiment_registry.xlsx..."
+          }
+        ]
+      }
+    ]
+  }
+}
