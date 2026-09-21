@@ -120,6 +120,7 @@ class MetricsLogger:
         self._csv_file: TextIO | None = None
         self._csv_writer: csv.DictWriter[str] | None = None
         self._tb_writer: SummaryWriter | None = None
+        self._last_step: int | None = None
 
         self._wandb_run = None
         if wandb_project is not None:
@@ -135,7 +136,12 @@ class MetricsLogger:
                 config=config,
             )
 
-    def log(self, epoch: int, metrics: dict[str, float]) -> None:
+    def log(
+        self,
+        epoch: int,
+        metrics: dict[str, float],
+        wandb_extra: dict[str, float] | None = None,
+    ) -> None:
         """Escribe una fila de CSV y un scalar de TensorBoard por cada entrada de metrics.
 
         Args:
@@ -146,6 +152,12 @@ class MetricsLogger:
                 "val_accuracy": ...}`). Esta clase no distingue splits, solo
                 persiste lo que recibe — la combinación es responsabilidad
                 de quien llama (`Trainer.fit()`).
+            wandb_extra: pares adicionales que se mandan SOLO a W&B (nunca a
+                metrics.csv ni a TensorBoard) — para campos como "round" en el
+                servidor federado, donde el CSV local no debe cambiar de
+                esquema pero W&B sí necesita un campo nombrado además del
+                step posicional (ver docstring de módulo / CLAUDE.md). None
+                (default) no añade nada.
 
         Raises:
             ValueError: Si `metrics` no trae exactamente las mismas claves
@@ -173,17 +185,20 @@ class MetricsLogger:
             self._tb_writer.add_scalar(name, value, epoch)  # pyright: ignore[reportUnknownMemberType]
 
         if self._wandb_run is not None:
-            self._wandb_run.log(metrics, step=epoch)
+            payload = {**metrics, **(wandb_extra or {})}
+            self._wandb_run.log(payload, step=epoch)
+
+        self._last_step = epoch
 
     def log_image(self, name: str, path: str | Path) -> None:
         """Sube un PNG ya guardado en disco (`src/reporting.py`) a W&B. No-op sin W&B activo.
 
-        Deliberadamente sin `step=` -- se llama después de la última época
-        (curva de pérdida, matriz de confusión, ROC son todos productos de
-        `cli.run()` posteriores a `fit()`), así que un `step` menor a
-        `epochs - 1` haría que W&B descarte el log por ir "hacia atrás" en
-        la serie. Sin `step`, W&B lo trata como un evento suelto ligado al
-        summary de la corrida, no a un punto de la serie por época.
+        Si `log()` ya se llamó en esta corrida, reusa el último step real
+        con `commit=False` para fusionar la imagen en la fila de la última
+        época sin crear steps fantasma. Sin `step=` explícito, W&B
+        auto-incrementa un step nuevo por cada llamada no relacionado con
+        ninguna época real. Si `log()` nunca se llamó (ej. `evaluate.py`),
+        delega a `log()` sin step.
 
         Args:
             name: clave bajo la que aparece en W&B (ej. `"plots/loss_curve"`
@@ -197,7 +212,12 @@ class MetricsLogger:
         if self._wandb_run is not None:
             import wandb
 
-            self._wandb_run.log({name: wandb.Image(str(path))})
+            if self._last_step is not None:
+                self._wandb_run.log(
+                    {name: wandb.Image(str(path))}, step=self._last_step, commit=False
+                )
+            else:
+                self._wandb_run.log({name: wandb.Image(str(path))})
 
     def log_summary(self, metrics: dict[str, float]) -> None:
         """Registra métricas de una sola medición (test) en el summary de la corrida, no en una serie.
@@ -221,6 +241,11 @@ class MetricsLogger:
     def log_table(self, name: str, csv_path: str | Path) -> None:
         """Sube un CSV ya guardado en disco (`save_predictions_csv()`) como tabla explorable en W&B.
 
+        Si `log()` ya se llamó en esta corrida, reusa el último step real
+        con `commit=False` para fusionar la tabla en la fila de la última
+        época sin crear steps fantasma. Si `log()` nunca se llamó
+        (ej. `evaluate.py`), delega a `log()` sin step.
+
         Args:
             name: clave bajo la que aparece en W&B (ej. `"test/predictions"`).
             csv_path: ruta local del CSV (columnas `y_true`/`y_pred`/`y_prob`,
@@ -233,7 +258,11 @@ class MetricsLogger:
             import pandas as pd
             import wandb
 
-            self._wandb_run.log({name: wandb.Table(dataframe=pd.read_csv(csv_path))})
+            table = wandb.Table(dataframe=pd.read_csv(csv_path))
+            if self._last_step is not None:
+                self._wandb_run.log({name: table}, step=self._last_step, commit=False)
+            else:
+                self._wandb_run.log({name: table})
 
     def close(self) -> None:
         """Cierra el archivo CSV, el SummaryWriter, y la corrida de W&B.

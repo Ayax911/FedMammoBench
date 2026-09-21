@@ -156,7 +156,7 @@ class TrackedStrategy(Strategy):
         if loss is not None:
             row.setdefault("val_loss", float(loss))
         self.round_history.append({"round": float(server_round), **row})
-        self.logger.log(server_round, row)
+        self.logger.log(server_round, row, wandb_extra={"round": float(server_round)})
         self._append_server_log(
             f"ronda {server_round}: "
             + " ".join(f"{k}={v:.4f}" for k, v in sorted(row.items()))

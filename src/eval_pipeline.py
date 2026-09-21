@@ -121,7 +121,7 @@ def evaluate_split(
             inspeccionar en el caller.
     """
     split_metrics = evaluate_checkpoint(model, best_checkpoint, loader, loss_spec, device)
-    logger.log_summary({f"{split_name}_{k}": v for k, v in split_metrics.items()})
+    logger.log_summary({f"best_{split_name}_{k}": v for k, v in split_metrics.items()})
 
     y_true, y_pred, y_prob = predict_on_loader(model, loader, loss_spec, device)
 
@@ -130,7 +130,7 @@ def evaluate_split(
     # compute_confusion_matrix_metrics() para la lista completa (NPV, MCC,
     # kappa, likelihood ratios, etc.).
     cm_metrics = compute_confusion_matrix_metrics(y_true, y_pred)
-    logger.log_summary({f"{split_name}_{k}": v for k, v in cm_metrics.items()})
+    logger.log_summary({f"best_{split_name}_{k}": v for k, v in cm_metrics.items()})
 
     split_dir = run_dir / split_name
     save_metrics_json(split_metrics, split_dir / "metrics.json")
@@ -276,8 +276,8 @@ def evaluate_by_database(
         y_true, y_pred, y_prob = predict_on_loader(model, db_loader, loss_spec, device)
         cm_metrics = compute_confusion_matrix_metrics(y_true, y_pred)
 
-        logger.log_summary({f"test_by_database_{db_name}_{k}": v for k, v in db_metrics.items()})
-        logger.log_summary({f"test_by_database_{db_name}_{k}": v for k, v in cm_metrics.items()})
+        logger.log_summary({f"best_test_by_database_{db_name}_{k}": v for k, v in db_metrics.items()})
+        logger.log_summary({f"best_test_by_database_{db_name}_{k}": v for k, v in cm_metrics.items()})
 
         metrics_by_db[db_name] = {**db_metrics, **cm_metrics}
         cm_by_db[db_name] = (y_true, y_pred)
