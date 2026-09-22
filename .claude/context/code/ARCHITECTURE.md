@@ -85,10 +85,11 @@ manifest/split/transforms/modelo idénticos y llama a `eval_pipeline` directo. *
 Sirve para backfillear `test/*_by_database.*` en corridas viejas, y para sacar el **AUC pooled** de un
 checkpoint global federado (ver [../experiments/FEDERATED.md](../experiments/FEDERATED.md)).
 
-Dos runners de shell encadenan configs y tee-ean a `runs/<exp_id>.log`: `run.sh` (editar el array
-`configs=()`) y `run_exp58_60.sh`. El segundo además hace `source ../wandb.env` con `set -a`, porque
-**`WANDB_API_KEY` en el entorno le gana a `~/.netrc`** — así exp57–60 suben a la cuenta de W&B
-correcta. Copia ese patrón en vez de editar `~/.netrc`.
+`run.sh` es el runner de shell que encadena configs (editar el array `configs=()`) y tee-ea a
+`runs/<exp_id>.log`. Existió un segundo runner, `run_exp58_60.sh` — borrado del árbol una vez exp58–60
+terminaron de correr, ya no hace falta reproducirlo. Hacía `source ../wandb.env` con `set -a`, porque
+**`WANDB_API_KEY` en el entorno le gana a `~/.netrc`** — así exp57–60 subieron a la cuenta de W&B
+correcta; copia ese patrón (en `run.sh` o donde haga falta) en vez de editar `~/.netrc`.
 
 ---
 

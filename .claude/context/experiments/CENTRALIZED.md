@@ -48,6 +48,8 @@ en 0,0000 en casi todas las tablas de abajo pese a AUC alto: **el ranking es bue
 | exp20 imagenet_layer4 | 0,8596 | 0,7600 | 0,7974 | 0,6065 | 0,8923 | 1,0970 | 0,8833 |
 | exp32 antioverfit radimagenet | 0,8531 | 0,7464 | 0,7662 | 0,7329 | 0,7828 | 0,4400 | 0,8651 |
 | exp03 frozen_backbone | 0,8501 | 0,7471 | 0,8546 | 0,8906 | 0,6571 | 0,4177 | — |
+| exp59 pretrain_ablation_imagenet_512 | 0,8415 | 0,7351 | 0,7650 | 0,6462 | 0,8241 | 0,4603 | 0,8411 |
+| exp60 pretrain_ablation_imagenet_256 | 0,8399 | 0,7385 | 0,7686 | 0,6462 | 0,8294 | 0,4611 | 0,8438 |
 | exp17 imagenet (frozen) | 0,8396 | 0,7301 | 0,7674 | 0,5957 | 0,8528 | 0,4684 | 0,8438 |
 | exp23 radimagenet_all | 0,8376 | 0,7390 | 0,7770 | 0,5957 | 0,8671 | 1,4802 | 0,8801 |
 | exp11 layer4_bce_h1024 | 0,8374 | 0,7287 | 0,7602 | 0,6318 | 0,8241 | 0,7627 | 0,8308 |
@@ -56,6 +58,7 @@ en 0,0000 en casi todas las tablas de abajo pese a AUC alto: **el ranking es bue
 | exp08 layer4_bce_posweight | 0,8356 | 0,7422 | 0,7686 | 0,6751 | 0,8151 | 0,7347 | 0,8416 |
 | exp16 layer4_bce_h1024_dr05 | 0,8316 | 0,7234 | 0,7446 | 0,7040 | 0,7648 | 0,6096 | 0,8341 |
 | exp21 radimagenet_layer4 | 0,8287 | 0,7212 | 0,7554 | 0,6101 | 0,8276 | 0,4899 | 0,8398 |
+| exp58 pretrain_ablation_imagenet_2048_1024_1024_512_512 | 0,8287 | 0,7220 | 0,7518 | 0,6390 | 0,8079 | 0,4804 | 0,8469 |
 | exp06 full_unweighted | 0,8279 | 0,7113 | 0,7482 | 0,5884 | 0,8276 | 0,4376 | 0,8148 |
 | exp15 layer4_bce_h1024_dr04 | 0,8278 | 0,7271 | 0,7518 | 0,6787 | 0,7882 | 0,6238 | 0,8348 |
 | exp33 imagenet_mismatched_norm | 0,8277 | 0,6804 | 0,6823 | 0,9134 | 0,5673 | 1,0488 | 0,8389 |
@@ -68,10 +71,15 @@ en 0,0000 en casi todas las tablas de abajo pese a AUC alto: **el ranking es bue
 | exp07 fullfreeze_bce_posweight | 0,7921 | 0,6812 | 0,7146 | 0,5884 | 0,7774 | 0,7592 | 0,7963 |
 | exp09 fullfreeze_bce_2048_2 | 0,7916 | 0,6444 | 0,7110 | 0,4188 | 0,8564 | 0,5223 | 0,7915 |
 
-**No tienen `run_dir`** (nunca se ejecutaron en este árbol, o viven en otra máquina): exp02, exp34–36,
-exp58–60 (pendientes en `labmirp`). `exp01_resnet_layer4_test` y
-`Classification_Images_HL1024-512_lr1e-4_dr0.2` tienen carpeta pero no `test/metrics.json`: son
-corridas de humo previas al pipeline de evaluación actual.
+**No tienen `run_dir`** (nunca se ejecutaron en este árbol): exp02, exp34–36.
+`exp01_resnet_layer4_test` y `Classification_Images_HL1024-512_lr1e-4_dr0.2` tienen carpeta pero no
+`test/metrics.json`: son corridas de humo previas al pipeline de evaluación actual.
+
+**exp58–60 ya corrieron** (ablación de tamaño de head sobre ImageNet pretraining, con el manifest
+`fedmammobench_norm_0_1_local.csv`, ver §El fix del gotcha de rutas en
+[CONFIG.md](../code/CONFIG.md)) — resultados en la tabla maestra de arriba. `labmirp` **no es otra
+máquina**: es la misma workstation, solo un disco/ruta distinto (confirmado en
+`docs/AUDITORIA_IMAGENES_FASE2_RESULTADOS.md`, 2026-09-22).
 
 `exp03`/`exp04` no tienen `val/metrics.json`: son anteriores a que `cli.run()` re-evaluara val. Su
 `accuracy` alta (0,8546) con `specificity` baja (0,57–0,66) no es comparable con el resto — corren
@@ -133,8 +141,9 @@ conclusión.
 con `metric_name: f1` y `norm_neg1_1` para igualar el criterio del INC. Da 0,8213 — bastante por
 debajo de exp37, que es el punto: la receta del INC no transfiere a este manifest.
 
-**exp58–60** replican exp17 (ablación ImageNet) en `labmirp` con `*_local.csv` y `[0.449]`/`[0.226]`;
-todavía sin resultados aquí.
+**exp58–60** replican exp17 (ablación ImageNet, distintos tamaños de head) con `*_local.csv` y
+`[0.449]`/`[0.226]`; ya corrieron, resultados en la tabla maestra de arriba. Ninguno bate a exp37 ni
+a exp17 — ampliar/reducir el head sobre este pretraining no mueve la aguja.
 
 ---
 

@@ -131,7 +131,9 @@ o de `labmirp`, con familias de manifest distintas (`*.csv` vs `*_local.csv`). D
 
 W&B: `train.wandb_project` (`null` lo desactiva). Comprueba credenciales con
 `grep -q "api.wandb.ai" ~/.netrc` — **nunca hagas `cat` de ese archivo ni pegues una key**.
-`WANDB_API_KEY` en el entorno le gana a `~/.netrc` (ver `run_exp58_60.sh`).
+`WANDB_API_KEY` en el entorno le gana a `~/.netrc` (patrón `source ../wandb.env` con `set -a`, ver
+[ARCHITECTURE.md](.claude/context/code/ARCHITECTURE.md) — el runner que lo usaba, `run_exp58_60.sh`,
+se borró del árbol una vez esos tres experimentos terminaron).
 
 `Dockerfile` construye una imagen **solo-entorno** (sin código; el repo se monta en `/workspace`), así
 que un cambio de código nunca necesita rebuild. El **único CI** es
@@ -204,7 +206,7 @@ a eso y describe cosas que ya no existen en ninguna rama:
   cree por coherencia interna, no re-verificados a mano. **Caveat de alcance no declarado por el
   informe**: auditó 15 de los 21 manifests del repo — los 6 `*_local.csv` (`manifests/**/*_local.csv`)
   quedaron fuera sin decirlo; tres de ellos son los que usan `exp58`/`exp59`/`exp60`
-  (`image_root=/home/labmirp/...`, otra máquina) — esos tres siguen sin auditar con datos reales.
+  (`image_root=/home/labmirp/...`) — cerrado por la Fase 2 de abajo.
 - `docs/AUDITORIA_IMAGENES_FASE2.md` — brief de seguimiento: cierra los dos huecos de la vuelta
   anterior — integridad de los 3 manifests `_local.csv` de `exp58`/`59`/`60` en `labmirp` (T6),
   confirmar que `_local.csv` es la misma data que su contraparte de workstation salvo la ruta (T7), y
