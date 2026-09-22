@@ -192,6 +192,11 @@ a eso y describe cosas que ya no existen en ninguna rama:
   checkpoint colisiona de nombre con la serie por-época (`val_auc` de summary y de la última época son
   números distintos y correctos, no un bug de cómputo), y en federado "epoch"/step significa ronda en
   el servidor y época local en el nodo. Aplicar y luego archivar o borrar, igual que el anterior.
+- `docs/AUDITORIA_IMAGENES.md` — brief para Antigravity, para correr en la máquina con acceso real a
+  imágenes (esta sesión no lo tiene): integridad de archivos, modo PIL real vs. asumido, rango de
+  valores real vs. lo que promete el nombre del manifest, aspecto/resolución real por base de datos, y
+  que `mask_path`/`ROI_path` nunca se usen como fuente de imagen. Aplicar y luego archivar o borrar,
+  igual que los anteriores.
 - `src/**/DOCS.md` — contratos por método. Actual.
 - `configs/*.yaml` (encabezados) — el log experimental real. `exp04_inc_strict_replica.yaml` documenta
   las cuatro divergencias con el INC que corrige y la que deliberadamente no.
