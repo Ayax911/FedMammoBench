@@ -221,6 +221,11 @@ a eso y describe cosas que ya no existen en ninguna rama:
   throughput) dependen de hardware real que esta sesión no tiene — se les cree por coherencia interna.
   **Corrección de una idea previa**: `labmirp` NO es una máquina distinta de la workstation — ver
   [CONFIG.md](.claude/context/code/CONFIG.md) §Rutas absolutas, ya corregido.
+- `docs/GRADCAM.md` — brief de implementación (no auditoría): `src/interpretability.py` (núcleo Grad-CAM
+  puro, hooks en `model[0][7]`=`layer4`) + `src/gradcam.py` (entrypoint CLI, reconstrucción idéntica a
+  `src/evaluate.py`, selección de imágenes por ID/misclasificadas/muestra). Diseño ya decidido (capa
+  objetivo, uso de `LossSpec.probs()`, alineación posicional de `predictions.csv`) — verificable sin
+  datos reales con un tensor sintético. Aplicar y luego archivar o borrar, igual que los anteriores.
 - `src/**/DOCS.md` — contratos por método. Actual.
 - `configs/*.yaml` (encabezados) — el log experimental real. `exp04_inc_strict_replica.yaml` documenta
   las cuatro divergencias con el INC que corrige y la que deliberadamente no.
