@@ -197,6 +197,20 @@ a eso y describe cosas que ya no existen en ninguna rama:
   valores real vs. lo que promete el nombre del manifest, aspecto/resolución real por base de datos, y
   que `mask_path`/`ROI_path` nunca se usen como fuente de imagen. Aplicar y luego archivar o borrar,
   igual que los anteriores.
+- `docs/AUDITORIA_IMAGENES_RESULTADOS.md` — resultados (Antigravity, 2026-09-22, workstation con
+  `image_root=/media/imagenesmedicas/...`), re-verificados independientemente: conteos de fila de T1
+  coinciden exacto con los CSV reales del repo, T5 (`mask_path`/`ROI_path` sin uso) confirmado con
+  grep propio. T2–T4 dependen de abrir archivos de imagen reales que esta sesión no tiene — se les
+  cree por coherencia interna, no re-verificados a mano. **Caveat de alcance no declarado por el
+  informe**: auditó 15 de los 21 manifests del repo — los 6 `*_local.csv` (`manifests/**/*_local.csv`)
+  quedaron fuera sin decirlo; tres de ellos son los que usan `exp58`/`exp59`/`exp60`
+  (`image_root=/home/labmirp/...`, otra máquina) — esos tres siguen sin auditar con datos reales.
+- `docs/AUDITORIA_IMAGENES_FASE2.md` — brief de seguimiento: cierra los dos huecos de la vuelta
+  anterior — integridad de los 3 manifests `_local.csv` de `exp58`/`59`/`60` en `labmirp` (T6),
+  confirmar que `_local.csv` es la misma data que su contraparte de workstation salvo la ruta (T7), y
+  correr el `DataLoader` real (`num_workers=4`, fork, `TransformBuilder` completo) de punta a punta
+  sobre imágenes reales en la workstation (T8) — nunca ejercitado antes, la Fase 1 solo verificó
+  archivos y arrays crudos por separado. Aplicar y luego archivar o borrar, igual que los anteriores.
 - `src/**/DOCS.md` — contratos por método. Actual.
 - `configs/*.yaml` (encabezados) — el log experimental real. `exp04_inc_strict_replica.yaml` documenta
   las cuatro divergencias con el INC que corrige y la que deliberadamente no.
