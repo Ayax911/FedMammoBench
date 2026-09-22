@@ -107,16 +107,25 @@ exp19 y exp33, ver [../experiments/CENTRALIZED.md](../experiments/CENTRALIZED.md
 
 ---
 
-## Rutas absolutas: dos máquinas, dos familias de manifest
+## Rutas absolutas: dos discos, dos familias de manifest (misma workstation)
 
-Cada config carga **rutas absolutas específicas de máquina** en `weights_path` e `image_root`; no
-resuelven en otro lado.
+Cada config carga **rutas absolutas específicas de disco** en `weights_path` e `image_root`; no
+resuelven en otro lado. **`labmirp` no es una máquina distinta** — es el hostname/usuario de la
+*misma* workstation física (confirmado corriendo la auditoría de imágenes Fase 2,
+`docs/AUDITORIA_IMAGENES_FASE2_RESULTADOS.md`, 2026-09-22); son dos discos/rutas distintos accesibles
+desde ese mismo equipo, no dos PCs. Un `manifest_path`/`image_root` de la familia `_local` no requiere
+ssh a otra parte — solo un disco distinto montado ahí mismo.
 
-- **Workstation original**, `/media/imagenesmedicas/DATA1/.../FedMammoBench/`:
+- **Disco de red**, `/media/imagenesmedicas/DATA1/.../FedMammoBench/`:
   `manifests/fedmammobench_norm_{0_1,neg1_1}.csv` y `manifests/by_database/<base>_norm_*.csv`.
-- **`labmirp`**, `/home/labmirp/Escritorio/FL-JULIAN/FedMammoBench/data/preproccesed_julian`:
-  las variantes paralelas **`*_local.csv`** — mismas filas, distinto `preprocessed_image_path`
-  absoluto. exp57–60 corren ahí.
+- **Disco local del usuario `labmirp`**,
+  `/home/labmirp/Escritorio/FL-JULIAN/FedMammoBench/data/preproccesed_julian`: las variantes paralelas
+  **`*_local.csv`** — mismas filas, distinto `preprocessed_image_path` absoluto (confirmado con diff
+  columna-por-columna real, ver `AUDITORIA_IMAGENES_FASE2_RESULTADOS.md` T7). exp58–60 usan esta
+  familia. **Gotcha de `Manifest.resolve_image_paths()`** (`src/datasets/manifest.py:112-114`): como
+  `preprocessed_image_path` en estos manifests ya es absoluto, `self.image_root / p` (pathlib) ignora
+  `image_root` por completo y devuelve `p` tal cual — `image_root` en el config de estos experimentos
+  es efectivamente decorativo, no falla si está mal puesto.
 
 Al agregar un config, elige la familia que case con su `image_root`. Mezclarlas da un
 `FileNotFoundError` en el primer batch, **no** en la validación del config.

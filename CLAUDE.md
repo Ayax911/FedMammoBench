@@ -211,6 +211,14 @@ a eso y describe cosas que ya no existen en ninguna rama:
   correr el `DataLoader` real (`num_workers=4`, fork, `TransformBuilder` completo) de punta a punta
   sobre imágenes reales en la workstation (T8) — nunca ejercitado antes, la Fase 1 solo verificó
   archivos y arrays crudos por separado. Aplicar y luego archivar o borrar, igual que los anteriores.
+- `docs/AUDITORIA_IMAGENES_FASE2_RESULTADOS.md` — resultados (Antigravity, 2026-09-22), re-verificados
+  independientemente: conteos de fila T6/T7 coinciden exacto con los CSV reales, el diff columna por
+  columna de T7 (`fedmammobench_norm_0_1.csv` vs. `_local.csv`) da 0 filas distintas fuera de
+  `preprocessed_image_path` (verificado con pandas propio), y el comportamiento de
+  `pathlib.Path.__truediv__` con ruta absoluta (T6) se reprodujo exacto. T8/T9 (multiprocesamiento,
+  throughput) dependen de hardware real que esta sesión no tiene — se les cree por coherencia interna.
+  **Corrección de una idea previa**: `labmirp` NO es una máquina distinta de la workstation — ver
+  [CONFIG.md](.claude/context/code/CONFIG.md) §Rutas absolutas, ya corregido.
 - `src/**/DOCS.md` — contratos por método. Actual.
 - `configs/*.yaml` (encabezados) — el log experimental real. `exp04_inc_strict_replica.yaml` documenta
   las cuatro divergencias con el INC que corrige y la que deliberadamente no.
