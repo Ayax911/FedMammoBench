@@ -76,7 +76,7 @@ fuera de una sesión de Claude Code.
 Comprobación barata de que el árbol importa:
 
 ```bash
-.venv/bin/python -c "import src.cli; import src.evaluate"
+.venv/bin/python -c "import src.cli; import src.evaluate; import src.gradcam"
 .venv/bin/python -c "import src.federated.server; import src.federated.client; import src.federated.evaluate_node"
 ```
 

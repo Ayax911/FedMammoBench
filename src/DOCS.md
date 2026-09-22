@@ -8,17 +8,19 @@
 
 ```
 src/
-├── config.py         Validación y serialización de experimentos con Pydantic v2 y YAML.
-├── cli.py            Entrypoint de entrenamiento: ensambla datos, modelo, optimizador, Trainer.fit() y evaluación final.
-├── evaluate.py        Entrypoint de re-evaluación: mismo config, un checkpoint ya entrenado, CERO reentrenamiento.
-├── eval_pipeline.py   Evaluación de val/test/por-base-de-datos, compartida por cli.py y evaluate.py.
-├── checkpoint.py     Guardado y carga determinista de state_dict con metadata.
-├── metrics.py        Colección de métricas clínicas binarias (Accuracy, AUC, Sensibilidad, Especificidad).
-├── seed.py           Control de reproducibilidad global y por worker en PyTorch, NumPy y Random.
-├── tracking.py       Logger unificado para CSV, TensorBoard y Weights & Biases (W&B).
-├── datasets/         Carga de datos, manifests, splits anti-fuga y transformaciones (ver src/datasets/DOCS.md).
-├── models/           Factory de backbones, pesos preentrenados, estrategias de congelamiento y cabezas (ver src/models/DOCS.md).
-└── train/            Loss specs, bucle por época y orquestador Trainer (ver src/train/DOCS.md).
+├── config.py           Validación y serialización de experimentos con Pydantic v2 y YAML.
+├── cli.py              Entrypoint de entrenamiento: ensambla datos, modelo, optimizador, Trainer.fit() y evaluación final.
+├── evaluate.py         Entrypoint de re-evaluación: mismo config, un checkpoint ya entrenado, CERO reentrenamiento.
+├── eval_pipeline.py    Evaluación de val/test/por-base-de-datos, compartida por cli.py y evaluate.py.
+├── interpretability.py Núcleo puro de Grad-CAM: hooks, backward, upsampling y superposición con colormap.
+├── gradcam.py          Entrypoint CLI para generación e inspección post-hoc de mapas Grad-CAM.
+├── checkpoint.py       Guardado y carga determinista de state_dict con metadata.
+├── metrics.py          Colección de métricas clínicas binarias (Accuracy, AUC, Sensibilidad, Especificidad).
+├── seed.py             Control de reproducibilidad global y por worker en PyTorch, NumPy y Random.
+├── tracking.py         Logger unificado para CSV, TensorBoard y Weights & Biases (W&B).
+├── datasets/           Carga de datos, manifests, splits anti-fuga y transformaciones (ver src/datasets/DOCS.md).
+├── models/             Factory de backbones, pesos preentrenados, estrategias de congelamiento y cabezas (ver src/models/DOCS.md).
+└── train/              Loss specs, bucle por época y orquestador Trainer (ver src/train/DOCS.md).
 ```
 
 ---
@@ -258,3 +260,63 @@ from src.evaluate import run_evaluation
 config = load_config("configs/exp05_fedmammobench_full_weighted.yaml")
 run_evaluation(config, "runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt")
 ```
+
+---
+
+### `interpretability.py`
+
+Proporciona el cómputo puro de mapas Grad-CAM y superposición sobre imágenes PIL sin efectos colaterales de evaluación.
+
+* **`GradCAMResult`**: Dataclass inmutable (`heatmap: np.ndarray`, `target_score: float`). `heatmap` es un array 2D float32 en `[0, 1]` interpolado a la resolución de entrada; `target_score` es el escalar de probabilidad predicho sobre el que se calculó el gradiente.
+* **`compute_gradcam(model, image, loss_spec, device="cpu", target_layer_index=7)`**: Registra un hook sobre `model[0][target_layer_index]` (default `layer4`), habilita gradientes explícitamente (`torch.enable_grad()`), ejecuta el backward sobre la probabilidad positiva de `loss_spec.probs(logits)[0]`, interpola bilinealmente y normaliza con guardia `1e-8`.
+* **`overlay_heatmap(base_image, heatmap, alpha=0.4)`**: Superpone `heatmap` (colormap `'jet'`) sobre `base_image` (PIL RGB en `[0, 255]`) produciendo una composición `Image.Image` RGB.
+
+#### Cómo usar `interpretability.py`:
+```python
+import torch
+from PIL import Image
+from src.interpretability import compute_gradcam, overlay_heatmap
+
+# result.heatmap tiene shape (H, W) en rango [0, 1]
+result = compute_gradcam(model, image_tensor.unsqueeze(0), loss_spec, device="cpu")
+composite = overlay_heatmap(display_image, result.heatmap, alpha=0.4)
+composite.save("gradcam_overlay.png")
+```
+
+---
+
+### `gradcam.py`
+
+Entrypoint CLI para análisis e inspección post-hoc de mapas Grad-CAM sobre un split (`val` o `test`) a partir de una configuración YAML y un checkpoint `.pt`.
+
+Reconstruye el dataset y modelo de forma byte-idéntica a `src/evaluate.py` a partir del `--config` que
+se le pase (el mismo YAML usado para entrenar el checkpoint, igual que exige `evaluate.py` — no se
+autodetecta desde `run_dir`) y selecciona imágenes mediante tres modos deterministas:
+- `ids`: imágenes específicas pasadas por `--image-ids`.
+- `misclassified`: lee `run_dir/<split>/predictions.csv` preservando la alineación posicional con el DataFrame, filtra errores (`y_true != y_pred`) y selecciona los `n_per_class` errores más confiados (mayor `|y_prob - 0.5|`) para Falsos Positivos y Falsos Negativos.
+- `sample`: los primeros `n_per_class` ejemplos por clase.
+
+Maneja independientemente la imagen que ve el modelo (normalizada vía `eval_transform`) y la imagen para display visual (TIFFs modo `"F"` convertidos con percentiles `[1, 99]` a uint8 3 canales o RGB directo).
+
+* **`run_gradcam(config, checkpoint_path, split_name, select, image_ids=None, n_per_class=5, output_dir=None)`**: Orquesta la carga, filtrado, cómputo y guardado en disco de los mapas de calor.
+* **`parse_args()`** / **`main()`**: Interfaz de línea de comandos.
+
+#### Cómo usar `gradcam.py`:
+```bash
+# Inspeccionar errores más confiados del split de test
+python -m src.gradcam \
+    --config configs/exp05_fedmammobench_full_weighted.yaml \
+    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
+    --split test \
+    --select misclassified \
+    --n-per-class 5
+
+# Inspeccionar IDs puntuales
+python -m src.gradcam \
+    --config configs/exp05_fedmammobench_full_weighted.yaml \
+    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
+    --split test \
+    --select ids \
+    --image-ids CM000042,CM000107
+```
+
