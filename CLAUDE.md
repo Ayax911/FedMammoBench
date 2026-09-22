@@ -65,6 +65,14 @@ Federado (un proceso servidor + uno por nodo), o todo junto con Docker:
 EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
 ```
 
+Cada corrida centralizada regenera `experiment_registry.xlsx` (raíz del repo, un consolidado
+config+resultados por experimento) al terminar; un hook `PostToolUse` en `.claude/settings.json` lo
+vuelve a disparar tras cualquier `Bash` que matchee `-m src.(cli|federated.server|evaluate)` — cubre
+federado (que no lo llama desde código) y la re-evaluación pooled post-federada. Regenerarlo a mano:
+`.venv/bin/python -m scripts.build_experiment_registry` (lógica en
+[`src/registry.py`](src/registry.py)); hace falta si editaste un YAML sin reentrenar, o si entrenaste
+fuera de una sesión de Claude Code.
+
 Comprobación barata de que el árbol importa:
 
 ```bash
@@ -143,7 +151,9 @@ a eso y describe cosas que ya no existen en ninguna rama:
   y todo comando `fedmammobench-*` están muertos por construcción.
 - **La serie de notebooks exp01–exp32 tampoco existe**, borrada en `0e934ec`, junto con
   `scripts/gen_*.py` y los `scripts/run-expNN-*.sh`/`eval-expNN-*.sh`. `configs/` es solo YAML y
-  `scripts/` tiene únicamente los tres post-hoc, el shim de sweep y `DOCS.md`.
+  `scripts/` tiene los cuatro post-hoc (`calibrate_threshold.py`, `ensemble_eval.py`,
+  `split_manifest_by_database.py`, `build_experiment_registry.py`), el shim de sweep
+  (`sweep_train.py`) y `DOCS.md`.
 - **`ec55408` es el último commit que tiene ambos** — el paquete legacy completo *y* la serie de
   notebooks con sus generadores:
   ```bash

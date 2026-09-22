@@ -127,6 +127,84 @@ def classify_block(experiment_id: str) -> str:
     return "otros"
 
 
+# Qué se intentó cambiar/probar en cada bloque -- una frase, no un resumen de
+# resultados (los resultados van en las columnas val_*/test_*, no acá).
+# Fuente: la prosa ya escrita en `.claude/context/experiments/{CENTRALIZED,
+# FEDERATED}.md` para cada bloque -- se resume, no se inventa. Un bloque
+# nuevo en `_BLOCK_RULES` sin entrada acá cae en la descripción genérica de
+# `describe_block()`, visible en la hoja (no una fila en blanco silenciosa).
+_BLOCK_DESCRIPTIONS: dict[str, str] = {
+    "piloto_humo": "Corridas de humo previas al pipeline de evaluación actual, para validar que el árbol entrena sin errores.",
+    "piloto_manifest_inc": "Pilotos sobre el manifest del INC (no fedmammobench.csv) con backbone congelado o réplica estricta, antes de que existiera el pipeline de evaluación actual.",
+    "head_freeze_sweep": "Barrido de cuánto backbone se congela (fullfreeze vs layer4) cruzado con arquitectura del head (ancho/profundidad/dropout) y uso de pos_weight.",
+    "pretrain_ablation": "Ablación de pesos de pre-entrenamiento (ImageNet vs RadImageNet) y de cuánto backbone se descongela (frozen/layer4/entero), más el control de normalización cruzada (exp19/33).",
+    "full_dataset_baseline": "Primera corrida sobre el dataset pooled completo, con y sin ponderación de clase (weighted vs unweighted), sin ablaciones todavía.",
+    "bydatabase_individual": "Un modelo entrenado por base de datos en solitario (no sobre el pool), para ver si el pooling ayuda o perjudica por base.",
+    "antioverfit": "Variantes de regularización del head para cerrar el gap de sobreajuste (weight decay, label smoothing, sin input-dropout, cambio a RadImageNet) sobre la base de exp28.",
+    "hpsearch_v1": "Barrido bayesiano de hiperparámetros del head (sweeps/hpsearch_v1.yaml) sobre val_auc, más grid manual de profundidad/ancho encima del ganador (exp37).",
+    "inc_replica": "Réplica de los hiperparámetros exactos del INC (metric_name: f1, norm_neg1_1) sobre fedmammobench.csv, para ver si esa receta transfiere a este manifest.",
+    "federado_baseline": "Config plantilla de FedAvg con scope full que documenta el formato del grid federado; no tiene runs/ propio.",
+    "federado_grid_estrategia_rondas": "Grid principal federado: estrategia de agregación (fedavg/fedprox/fedadam/fedyogi) cruzada con número de rondas (10/20/30).",
+    "federado_grid_proximal_mu": "Barrido de proximal_mu de FedProx alrededor del default 0,1 (la mejor celda del grid de estrategias), buscando superarlo.",
+    "plantilla": "Config plantilla sin experimento real, documenta el formato de YAML esperado.",
+    "otros": "Experimento sin bloque narrativo asignado todavía en _BLOCK_RULES.",
+}
+
+# Orden narrativo/cronológico de los bloques -- NO alfabético -- para que
+# `_sort_by_block()` deje contiguo el mismo arco de la historia que cuentan
+# CENTRALIZED.md/FEDERATED.md (pilotos -> barridos centralizados -> réplica
+# INC -> federado), en vez del orden que da `sorted(configs_dir.glob(...))`
+# (alfabético por nombre de archivo, que separa bloques no contiguos como
+# antioverfit exp28-32/34-36 de pretrain_ablation exp58-60). Un bloque nuevo
+# que no esté listado acá cae al final, antes de "otros".
+_BLOCK_ORDER: list[str] = [
+    "piloto_humo",
+    "piloto_manifest_inc",
+    "head_freeze_sweep",
+    "pretrain_ablation",
+    "full_dataset_baseline",
+    "bydatabase_individual",
+    "antioverfit",
+    "hpsearch_v1",
+    "inc_replica",
+    "federado_baseline",
+    "federado_grid_estrategia_rondas",
+    "federado_grid_proximal_mu",
+    "plantilla",
+]
+
+
+def describe_block(block: str) -> str:
+    """Descripción de una frase de qué se intentó cambiar/probar en `block` -- ver `_BLOCK_DESCRIPTIONS`."""
+    return _BLOCK_DESCRIPTIONS.get(block, "otros")
+
+
+def _block_sort_key(block: str) -> tuple[int, str]:
+    """Posición de `block` en `_BLOCK_ORDER`; desconocidos y "otros" van al final, alfabetizados entre sí."""
+    try:
+        return (_BLOCK_ORDER.index(block), block)
+    except ValueError:
+        return (len(_BLOCK_ORDER), block)
+
+
+def _sort_by_block(df: pd.DataFrame) -> pd.DataFrame:
+    """Ordena por bloque narrativo (orden de `_BLOCK_ORDER`) y por experiment_id dentro de cada bloque.
+
+    Deja contiguas las filas de un mismo bloque para que `_format_workbook()`
+    pueda agruparlas como grupo colapsable de Excel (columna de esquema a la
+    izquierda) -- una agrupación real de la hoja, no solo una columna
+    `bloque` para filtrar a mano.
+    """
+    if df.empty:
+        return df
+    return (
+        df.assign(_order=df["bloque"].map(_block_sort_key))
+        .sort_values(by=["_order", "experiment_id"])
+        .drop(columns="_order")
+        .reset_index(drop=True)
+    )
+
+
 def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     """Aplana un dict anidado (un YAML ya parseado) a columnas `a.b.c`.
 
@@ -200,34 +278,40 @@ def build_centralized_tables(configs_dir: Path = CONFIGS_DIR) -> tuple[pd.DataFr
         test_metrics = _read_json(run_dir / "test" / "metrics.json")
         by_database = _read_json(run_dir / "test" / "metrics_by_database.json") or {}
 
+        block = classify_block(experiment_id)
         row: dict[str, Any] = {
             "experiment_id": experiment_id,
-            "bloque": classify_block(experiment_id),
+            "bloque": block,
+            "bloque_descripcion": describe_block(block),
             "config_file": str(config_path.relative_to(REPO_ROOT)),
             "run_dir": str(run_dir.relative_to(REPO_ROOT)),
             "status": _status(run_dir, val_metrics, test_metrics),
         }
+        row.update({f"cfg.{k}": v for k, v in _flatten(raw).items() if k != "experiment_id"})
         row.update({f"val_{k}": v for k, v in _metric_row(val_metrics).items()})
         row.update({f"test_{k}": v for k, v in _metric_row(test_metrics).items()})
-        row.update({f"cfg.{k}": v for k, v in _flatten(raw).items() if k != "experiment_id"})
         rows.append(row)
 
         for database, metrics in by_database.items():
             by_database_rows.append({
                 "experiment_id": experiment_id,
-                "bloque": classify_block(experiment_id),
+                "bloque": block,
                 "database": database,
                 **_metric_row(metrics),
             })
 
-    identity_cols = ["experiment_id", "bloque", "config_file", "run_dir", "status"]
+    # Orden de columnas: identidad -> QUÉ SE CAMBIÓ (el YAML, `cfg.*`) ->
+    # QUÉ DIO (resultados val_*/test_*) -- primero la causa, después el
+    # efecto, para leer la hoja de izquierda a derecha sin tener que saltar
+    # de vuelta a la config cada vez que una métrica llama la atención.
+    identity_cols = ["experiment_id", "bloque", "bloque_descripcion", "config_file", "run_dir", "status"]
+    cfg_cols = sorted({k for row in rows for k in row if k.startswith("cfg.")})
     val_cols = [f"val_{k}" for k in METRIC_KEYS]
     test_cols = [f"test_{k}" for k in METRIC_KEYS]
-    cfg_cols = sorted({k for row in rows for k in row if k.startswith("cfg.")})
-    main_df = pd.DataFrame(rows).reindex(columns=identity_cols + val_cols + test_cols + cfg_cols)
+    main_df = _sort_by_block(pd.DataFrame(rows).reindex(columns=identity_cols + cfg_cols + val_cols + test_cols))
 
     by_database_cols = ["experiment_id", "bloque", "database"] + METRIC_KEYS
-    by_database_df = pd.DataFrame(by_database_rows).reindex(columns=by_database_cols)
+    by_database_df = _sort_by_block(pd.DataFrame(by_database_rows).reindex(columns=by_database_cols))
 
     return main_df, by_database_df
 
@@ -253,7 +337,9 @@ def build_federated_tables(
     node_rows: list[dict[str, Any]] = []
 
     if not federated_configs_dir.exists():
-        empty_main = pd.DataFrame(columns=["experiment_id", "bloque", "config_file", "run_dir", "status"])
+        empty_main = pd.DataFrame(
+            columns=["experiment_id", "bloque", "bloque_descripcion", "config_file", "run_dir", "status"]
+        )
         empty_nodes = pd.DataFrame(columns=["experiment_id", "bloque", "node", "split", *METRIC_KEYS])
         return empty_main, empty_nodes
 
@@ -269,6 +355,7 @@ def build_federated_tables(
         nodes_dir = run_dir.parent / "nodes"
 
         best = _read_json(run_dir / "best.json")
+        block = classify_block(experiment_id)
 
         node_ids = sorted(p.stem.removeprefix("node_") for p in exp_dir.glob("node_*.yaml"))
         node_val_metrics: list[dict] = []
@@ -280,7 +367,7 @@ def build_federated_tables(
                     bucket.append(metrics)
                 node_rows.append({
                     "experiment_id": experiment_id,
-                    "bloque": classify_block(experiment_id),
+                    "bloque": block,
                     "node": node_id,
                     "split": split,
                     **_metric_row(metrics),
@@ -288,31 +375,34 @@ def build_federated_tables(
 
         row: dict[str, Any] = {
             "experiment_id": experiment_id,
-            "bloque": classify_block(experiment_id),
+            "bloque": block,
+            "bloque_descripcion": describe_block(block),
             "config_file": str(server_yaml.relative_to(REPO_ROOT)),
             "run_dir": str(run_dir.relative_to(REPO_ROOT)),
             "status": "sin_correr" if best is None else "completo",
-            "best_round": best.get("best_round") if best else None,
-            "best_metric_name": best.get("metric_name") if best else None,
-            "best_metric_value": (round(best["metric_value"], 4) if best else None),
         }
+        row.update({f"cfg.{k}": v for k, v in _flatten(raw).items() if k != "experiment_id"})
+        # best_* y mean_* son resultados (de best.json y de las métricas por
+        # nodo), no config -- van después de cfg.* por la misma razón que en
+        # build_centralized_tables(): primero qué se cambió, después qué dio.
+        row["best_round"] = best.get("best_round") if best else None
+        row["best_metric_name"] = best.get("metric_name") if best else None
+        row["best_metric_value"] = round(best["metric_value"], 4) if best else None
         for split, bucket in (("val", node_val_metrics), ("test", node_test_metrics)):
             for key in METRIC_KEYS:
                 values = [m[key] for m in bucket if key in m]
                 row[f"mean_{split}_{key}"] = round(sum(values) / len(values), 4) if values else None
-        row.update({f"cfg.{k}": v for k, v in _flatten(raw).items() if k != "experiment_id"})
         rows.append(row)
 
-    identity_cols = [
-        "experiment_id", "bloque", "config_file", "run_dir", "status",
-        "best_round", "best_metric_name", "best_metric_value",
-    ]
-    mean_cols = [f"mean_{split}_{k}" for split in ("val", "test") for k in METRIC_KEYS]
+    identity_cols = ["experiment_id", "bloque", "bloque_descripcion", "config_file", "run_dir", "status"]
     cfg_cols = sorted({k for row in rows for k in row if k.startswith("cfg.")})
-    main_df = pd.DataFrame(rows).reindex(columns=identity_cols + mean_cols + cfg_cols)
+    result_cols = ["best_round", "best_metric_name", "best_metric_value"] + [
+        f"mean_{split}_{k}" for split in ("val", "test") for k in METRIC_KEYS
+    ]
+    main_df = _sort_by_block(pd.DataFrame(rows).reindex(columns=identity_cols + cfg_cols + result_cols))
 
     node_cols = ["experiment_id", "bloque", "node", "split"] + METRIC_KEYS
-    node_df = pd.DataFrame(node_rows).reindex(columns=node_cols)
+    node_df = _sort_by_block(pd.DataFrame(node_rows).reindex(columns=node_cols))
 
     return main_df, node_df
 
@@ -353,7 +443,23 @@ def _format_workbook(path: Path) -> None:
     pueden pasar).
     """
     from openpyxl import load_workbook
-    from openpyxl.styles import Font
+    from openpyxl.styles import Font, PatternFill
+
+    # Banda de color que alterna en cada cambio de `bloque` -- las cuatro
+    # hojas ya salen de build_*_tables() ordenadas por bloque contiguo (ver
+    # _sort_by_block()), así que esto vuelve visible la agrupación como
+    # franjas en vez de depender de leer la columna `bloque` fila a fila.
+    # No usa Group/Outline de Excel (outlineLevel por fila): ese mecanismo
+    # forma UN solo grupo colapsable a lo largo de cualquier corrida
+    # contigua de filas con outline_level>0 -- no separa un grupo por
+    # bloque salvo que se inserte una fila resumen en outline_level 0 entre
+    # cada uno, lo que rompe la tabla limpia (una fila == un experimento)
+    # que el resto del pipeline (pandas, filtros) asume. Bandas de color son
+    # la agrupación visual que no paga ese costo.
+    band_fills = [
+        PatternFill(fill_type="solid", start_color="FFFFFFFF", end_color="FFFFFFFF"),
+        PatternFill(fill_type="solid", start_color="FFEAF1FB", end_color="FFEAF1FB"),
+    ]
 
     workbook = load_workbook(path)
     for sheet in workbook.worksheets:
@@ -363,4 +469,18 @@ def _format_workbook(path: Path) -> None:
         for column_cells in sheet.columns:
             length = max((len(str(cell.value)) for cell in column_cells if cell.value is not None), default=0)
             sheet.column_dimensions[column_cells[0].column_letter].width = min(max(length + 2, 10), 60)
+
+        header = [cell.value for cell in sheet[1]]
+        if "bloque" in header:
+            block_col = header.index("bloque") + 1
+            band_idx = 0
+            previous_block = None
+            for row in sheet.iter_rows(min_row=2):
+                current_block = row[block_col - 1].value
+                if current_block != previous_block:
+                    band_idx = 1 - band_idx
+                    previous_block = current_block
+                fill = band_fills[band_idx]
+                for cell in row:
+                    cell.fill = fill
     workbook.save(path)
