@@ -126,7 +126,7 @@ print("Etiqueta:", label)                   # 0 o 1
 
 Builder de transformaciones de torchvision parametrizado por flags.
 
-* `build()`: Retorna un `transforms.Compose` con Resize -> (Flip/Rotation aleatorios) -> ToTensor -> Normalize.
+* `build()`: Retorna un `transforms.Compose` que opera sobre tensores: Resize -> (Flip/Rotation/Blur aleatorios) -> Normalize.
 
 ##### Cómo usar `TransformBuilder`:
 ```python

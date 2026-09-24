@@ -10,7 +10,7 @@ class TransformBuilder:
 
     Constructs a `transforms.Compose` pipeline incorporating spatial resizing, optional
     data augmentations (horizontal flip, random rotation, vertical flip, gaussian blur),
-    tensor conversion, and normalization.
+    and normalization on 3-channel PyTorch tensors.
 
     Args:
         image_size: Spatial target resolution tuple `(height, width)` after resizing. Default is `(224, 224)`.
@@ -29,15 +29,14 @@ class TransformBuilder:
         blur_p: Probability of applying the blur (used if `use_blur=True`). Default is 0.3.
         blur_kernel_size: Kernel size for `GaussianBlur`. Default is 3.
         blur_sigma: `(min, max)` range for `GaussianBlur`'s sigma. Default is `(0.1, 0.6)`.
-        normalize_mean: Per-channel normalization mean tuple. Default is `(0.5, 0.5, 0.5)`
-            (3-channel, for images `MammoBenchDataset` converts to `"RGB"` before this
-            pipeline runs). Length must match the channel count `Normalize` will see: 3 for
-            standard RGB-converted images, but 1 (e.g. `(0.0,)`) for pre-normalized
-            single-channel float TIFFs (PIL mode `"F"`), since those skip `.convert()` and
-            stay 1-channel through this whole pipeline -- `MammoBenchDataset` only expands
-            them to 3 channels *after* `transform` (and therefore after `Normalize`) runs.
-        normalize_std: Per-channel normalization standard deviation tuple, same length
-            constraint as `normalize_mean`. Default is `(0.5, 0.5, 0.5)`.
+        normalize_mean: Per-channel normalization mean tuple/sequence. Default is `(0.5, 0.5, 0.5)`.
+            Because channel replication to 3 channels occurs in `MammoBenchDataset` BEFORE
+            `transform` runs, `Normalize` always receives a 3-channel tensor `(3, H, W)`.
+            Both 1-element tuples/lists (broadcast across all 3 channels) and 3-element
+            tuples/lists are supported. Existing configs (`[0.449]`, `null`, `(0.5, 0.5, 0.5)`)
+            remain valid without changes.
+        normalize_std: Per-channel normalization standard deviation tuple/sequence.
+            Default is `(0.5, 0.5, 0.5)`. Follows the same broadcast behavior as `normalize_mean`.
 
     Example:
         >>> from src.datasets.transform import TransformBuilder
@@ -91,9 +90,8 @@ class TransformBuilder:
             steps.append(transforms.Resize(self.image_size))
 
         # Step 2: Conditional training data augmentations (order matches the
-        # INC project's dataloader_images.py, minus the ToTensor-first
-        # ordering it uses -- these all support PIL input equally, so this
-        # project keeps its existing PIL-first convention).
+        # INC project's dataloader_images.py: HorizontalFlip, RandomRotation,
+        # VerticalFlip, GaussianBlur; all operate directly on tensors).
         if self.use_horizontal_flip:
             steps.append(transforms.RandomHorizontalFlip(p=self.horizontal_flip_p))
 
@@ -111,10 +109,7 @@ class TransformBuilder:
                 )
             )
 
-        # Step 3: PyTorch tensor conversion [0, 255] -> [0.0, 1.0] (mode 'F' preserved as float32)
-        steps.append(transforms.ToTensor())
-
-        # Step 4: Channel normalization (x - mean) / std (skipped if None)
+        # Step 3: Channel normalization (x - mean) / std (skipped if None)
         if self.normalize_mean is not None and self.normalize_std is not None:
             steps.append(transforms.Normalize(mean=self.normalize_mean, std=self.normalize_std))
 

@@ -24,14 +24,15 @@ class ArchitectureConfig(BaseModel):
 
     Attributes:
         name: Identificador registrado en `_ARCHITECTURES` (ej.
-            `"resnet50_radimagenet"`, `"resnet50_imagenet_v1"`,
-            `"resnet50_imagenet_v2"`).
+            `"resnet50_radimagenet"`, `"resnet50_scratch"`, `"resnet18_scratch"`,
+            `"resnet18_imagenet_v1"`, `"resnet50_imagenet_v1"`, `"resnet50_imagenet_v2"`).
         weights_path: Ruta al archivo checkpoint `.pth` o `.pt` con pesos
             preentrenados. `None` (default) para arquitecturas que ya traen
-            sus pesos incluidos en el `model_factory` -- ej.
-            `resnet50_imagenet_v1`/`_v2`, que usan los pesos de ImageNet
-            embebidos en torchvision (`ArchitectureSpec.weights_from_factory
-            = True`, ver `models/build.py`) y no leen ningún archivo local.
+            sus pesos incluidos en el `model_factory` o se inicializan desde
+            cero -- ej. `resnet18_imagenet_v1`/`resnet50_imagenet_v1`/`_v2`
+            (ImageNet vía torchvision) y `resnet50_scratch`/`resnet18_scratch`
+            (`ArchitectureSpec.weights_from_factory = True`, ver `models/build.py`).
+            Para estas variantes se ignora y no se lee ningún archivo local.
             Para el resto (`resnet50_radimagenet`) sigue siendo obligatorio
             EN LA PRÁCTICA: `build_model()` levanta `ValueError` si falta,
             porque esas arquitecturas no tienen otra forma de conseguir sus
@@ -48,6 +49,7 @@ class ArchitectureConfig(BaseModel):
         ...     unfreeze_from="layer3"
         ... )
         >>> arch_cfg = ArchitectureConfig(name="resnet50_imagenet_v2", unfreeze_from="layer4")
+        >>> arch_cfg = ArchitectureConfig(name="resnet18_scratch", unfreeze_from="conv1")
     """
 
     model_config = ConfigDict(extra="forbid")

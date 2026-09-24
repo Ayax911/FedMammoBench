@@ -42,14 +42,19 @@ model = nn.Sequential(backbone, head).to("cuda")
 
 Dataclass que centraliza el `model_factory`, el mapeo de claves del checkpoint (`key_remap`), los prefijos válidos (`valid_prefixes`), la estrategia de congelamiento (`freeze_strategy`) y `weights_from_factory` (`bool`, default `False`).
 
-`weights_from_factory=True` marca las arquitecturas cuyo `model_factory()` YA devuelve el modelo con pesos preentrenados cargados (ej. `resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)` de torchvision) -- no hay checkpoint externo que leer, así que `build_model()` se salta `load_weights()`/`torch.load()` por completo para esas entradas y `weights_path` no es necesario. `key_remap`/`valid_prefixes` se ignoran en ese caso (no hay nada que remapear: el `state_dict` ya usa los nombres estándar de `resnet50`), pero se siguen declarando para que toda entrada de `_ARCHITECTURES` tenga la misma forma. Es el mecanismo de escalabilidad del módulo: agregar una arquitectura cuyos pesos vienen embebidos en una librería (torchvision u otra) es agregar una entrada al registro con este flag en `True` -- `build_model()` no cambia.
+`weights_from_factory=True` marca las arquitecturas cuyo `model_factory()` YA entrega los pesos iniciales definitivos — preentrenados (ej. `resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)` de torchvision) o aleatorios desde cero a propósito (`resnet50_scratch`, `resnet18_scratch`) — no hay checkpoint externo que leer, así que `build_model()` se salta `load_weights()`/`torch.load()` por completo para esas entradas y `weights_path` no es necesario. `key_remap`/`valid_prefixes` se ignoran en ese caso, pero se siguen declarando para que toda entrada de `_ARCHITECTURES` tenga la misma forma. Es el mecanismo de escalabilidad del módulo: agregar una arquitectura cuyos pesos vienen embebidos en una librería (torchvision u otra) o inicializados desde cero es agregar una entrada al registro con este flag en `True` -- `build_model()` no cambia.
 
 Registro actual (`_ARCHITECTURES`):
-| Nombre | `weights_from_factory` | Pesos |
-|---|---|---|
-| `resnet50_radimagenet` | `False` | checkpoint externo (`weights_path` obligatorio) -- RadImageNet, dominio médico |
-| `resnet50_imagenet_v1` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V1` (receta original, ~76.1% top-1 ImageNet) |
-| `resnet50_imagenet_v2` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V2` (receta nueva de torchvision, ~80.9% top-1 ImageNet) |
+| Nombre | `weights_from_factory` | Pesos | `fc.in_features` |
+|---|---|---|---|
+| `resnet50_radimagenet` | `False` | checkpoint externo (`weights_path` obligatorio) -- RadImageNet, dominio médico | 2048 |
+| `resnet50_scratch` | `True` | pesos aleatorios desde cero (`weights=None`) | 2048 |
+| `resnet18_scratch` | `True` | pesos aleatorios desde cero (`weights=None`) | **512** |
+| `resnet18_imagenet_v1` | `True` | `torchvision.models.ResNet18_Weights.IMAGENET1K_V1` | **512** |
+| `resnet50_imagenet_v1` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V1` (receta original, ~76.1% top-1 ImageNet) | 2048 |
+| `resnet50_imagenet_v2` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V2` (receta nueva de torchvision, ~80.9% top-1 ImageNet) | 2048 |
+
+> **Nota**: Para ResNet18 (`fc.in_features = 512`), la cabeza de clasificación MLP debe instanciarse con `in_features=512` en el config YAML (`head.hparams.in_features: 512`).
 
 #### `build_model(name, weights_path=None, *, unfreeze_from="none", device="cpu")`
 

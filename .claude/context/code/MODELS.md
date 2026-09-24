@@ -21,14 +21,19 @@ del checkpoint a los nombres de torchvision**, y aplica una `FreezeStrategy`.
 
 Arquitecturas registradas hoy:
 
-| `name` | pesos | `weights_path` |
-|---|---|---|
-| `resnet50_radimagenet` | checkpoint `.pth` externo | **obligatorio** |
-| `resnet50_imagenet_v1` | torchvision (`weights_from_factory=True`) | prohibido |
-| `resnet50_imagenet_v2` | torchvision (`weights_from_factory=True`) | prohibido |
+| `name` | pesos | `weights_path` | `fc.in_features` |
+|---|---|---|---|
+| `resnet50_radimagenet` | checkpoint `.pth` externo | **obligatorio** | 2048 |
+| `resnet50_scratch` | aleatorios desde cero (`weights_from_factory=True`) | prohibido | 2048 |
+| `resnet18_scratch` | aleatorios desde cero (`weights_from_factory=True`) | prohibido | **512** |
+| `resnet18_imagenet_v1` | torchvision (`weights_from_factory=True`) | prohibido | **512** |
+| `resnet50_imagenet_v1` | torchvision (`weights_from_factory=True`) | prohibido | 2048 |
+| `resnet50_imagenet_v2` | torchvision (`weights_from_factory=True`) | prohibido | 2048 |
+
+> **Nota para ResNet18**: entrega 512 features (vs 2048 de ResNet50). Todo YAML con ResNet18 debe configurar `head.hparams.in_features: 512`.
 
 Las de torchvision descargan y cachean en `~/.cache/torch/hub/checkpoints/` la primera vez que se
-instancia el modelo — requiere internet **solo esa primera vez**.
+instancia el modelo — requiere internet **solo esa primera vez**. Para `*_scratch`, no se descarga nada.
 
 ### Head — `get_head_strategy(name)`
 

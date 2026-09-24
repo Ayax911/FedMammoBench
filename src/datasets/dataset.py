@@ -8,6 +8,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms  # pyright: ignore[reportMissingTypeStubs]
+import torchvision.transforms.functional as TF
 
 
 class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
@@ -17,22 +18,20 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
 
     Supports two image encodings, dispatched on the opened PIL image's mode:
       - Standard 8-bit images (JPG/PNG/uint8 TIFF, PIL modes other than `"F"`): converted
-        to `"RGB"` as usual, then handed to `transform` (which typically includes
-        `ToTensor()` to rescale `[0, 255] -> [0, 1]` and a `Normalize`).
+        to `"RGB"`, converted to tensor via `TF.to_tensor()` (`[0, 255] -> [0.0, 1.0]`),
+        and then handed to `transform`.
       - 32-bit float TIFFs (PIL mode `"F"`, e.g. `Preproccesed/preprocess_images.py`'s
-        `norm_neg1_1` output): single-channel, pixel values already normalized on disk
-        (e.g. to `[-1, 1]` for RadImageNet). These are passed to `transform` *without*
-        `.convert()` -- PIL clips/truncates floats rather than rescaling them when
-        converting mode `"F"` to `"RGB"`, which would collapse an already-normalized
-        image to near-all-zero. `transform`'s `Normalize` (if any) should therefore use
-        1-element `mean`/`std` tuples for this encoding, or be identity if the values are
-        already in the desired range. Channel replication to 3-channel RGB happens after
-        `transform` runs, on the resulting tensor, via `np.concatenate`.
+        `norm_neg1_1` or `norm_0_1` output): single-channel, pixel values already normalized
+        on disk (e.g. to `[-1, 1]` for RadImageNet). Following the INC scheme
+        (`classification_images/dataloaders/dataloader_images.py`), these are converted to a
+        native PyTorch tensor without PIL `.convert()` (which would clip/truncate floats),
+        replicated to 3 channels via `torch.cat`, and then passed to `transform` (which
+        operates on tensors).
 
     Args:
         df: Input pandas DataFrame containing sample metadata and absolute image file paths.
-        transform: torchvision transformation pipeline to apply on loaded PIL Images.
-            If None, applies default resize (224x224) and tensor conversion.
+        transform: torchvision transformation pipeline to apply on input tensors.
+            If None, applies default resize (224x224).
 
     Example:
         >>> from src.datasets.manifest import Manifest
@@ -51,14 +50,13 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
         self.transform = transform or self._default_transform()
 
     def _default_transform(self) -> transforms.Compose:
-        """Constructs fallback default image transform (Resize 224x224 + ToTensor).
+        """Constructs fallback default image transform (Resize 224x224).
 
         Returns:
             transforms.Compose: Minimal transformation pipeline without normalization.
         """
         return transforms.Compose([
             transforms.Resize((224, 224)),
-            transforms.ToTensor(),
         ])
 
     def __len__(self) -> int:
@@ -92,22 +90,17 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
             # rescaled/normalized on disk (e.g. to [-1, 1] for RadImageNet).
             # PIL's .convert("L"/"RGB") on mode "F" does NOT rescale -- it
             # clips-and-casts the floats directly into 0-255, which collapses
-            # a [-1, 1] image to near-all-zero. So this path skips .convert()
-            # entirely and lets `self.transform` operate on the raw "F" image
-            # (torchvision's Resize/ToTensor both handle mode "F" correctly:
-            # Resize interpolates the floats as-is, and ToTensor recognizes
-            # "F" and copies values through without the usual /255 rescale).
-            # Channel replication to 3-channel RGB happens after the
-            # transform, on the tensor, via np.concatenate instead of via
-            # PIL conversion.
-            image_tensor = cast(torch.Tensor, self.transform(image))
-            if image_tensor.shape[0] == 1:
-                channels = np.concatenate([image_tensor.numpy()] * 3, axis=0)
-                image_tensor = torch.from_numpy(channels)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            # a [-1, 1] image to near-all-zero. We follow the INC scheme
+            # (classification_images/dataloaders/dataloader_images.py):
+            # array nativo -> tensor -> réplica a 3 canales ANTES del transform,
+            # que opera sobre tensores.
+            array = np.array(image)[np.newaxis, ...]
+            image_tensor = torch.from_numpy(array)
+            image_tensor = torch.cat([image_tensor, image_tensor, image_tensor], dim=0)
         else:
-            image = image.convert("RGB")
-            image_tensor = cast(torch.Tensor, self.transform(image))
+            image_tensor = TF.to_tensor(image.convert("RGB"))  # [0, 255] -> [0, 1], como el ToTensor de antes
 
+        image_tensor = cast(torch.Tensor, self.transform(image_tensor))
         label = int(row["label_norm"])
 
         return image_tensor, label

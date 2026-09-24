@@ -81,7 +81,7 @@ class FreezeStrategy(ABC):
 
 
 class ResNetFreezeStrategy(FreezeStrategy):
-    """Concrete FreezeStrategy implementation for ResNet50 vision architectures.
+    """Concrete FreezeStrategy implementation for ResNet (18/50) vision architectures.
 
     Example:
         >>> strategy = ResNetFreezeStrategy()
@@ -90,9 +90,9 @@ class ResNetFreezeStrategy(FreezeStrategy):
 
     @property
     def block_order(self) -> list[str]:
-        """Ordered list of ResNet50 positional block names.
+        """Ordered list of ResNet (18/50) positional block names.
 
         Returns:
-            list[str]: Standard ResNet50 block sequence names.
+            list[str]: Standard ResNet (18/50) block sequence names.
         """
         return ["conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"]

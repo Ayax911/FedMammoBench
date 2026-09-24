@@ -41,24 +41,23 @@ Por eso el paquete se llama `src/datasets/`. (Y por eso tampoco se puede usar `P
 `from datasets import ...`: ese nombre choca con el `datasets` de HuggingFace. `src/__init__.py` hace
 que `from src.datasets import ...` funcione desde la raíz del repo sin tocar `PYTHONPATH`.)
 
-### Modo PIL `"F"`: no llamar a `.convert()`
+### Modo PIL `"F"` y réplica a 3 canales (esquema del INC)
 `__getitem__` despacha según el modo de la imagen PIL abierta:
 
-- **Imágenes de 8 bits** (JPG/PNG/TIFF uint8, cualquier modo que no sea `"F"`): `.convert("RGB")` como
-  siempre, y luego `transform` (que normalmente incluye `ToTensor()` reescalando `[0,255] → [0,1]`).
-- **TIFF float de 32 bits** (modo `"F"`, la salida de `Preproccesed/preprocess_images.py`): se pasan a
-  `transform` **sin `.convert()`**. PIL **recorta** floats en vez de reescalarlos al convertir de `"F"`
-  a `"RGB"`, lo que colapsaría una imagen ya normalizada a `[-1,1]` a casi todo ceros. `Resize`
-  interpola los floats tal cual y `ToTensor` reconoce `"F"` y copia los valores sin el `/255` habitual.
+- **Imágenes de 8 bits** (JPG/PNG/TIFF uint8, cualquier modo que no sea `"F"`): `.convert("RGB")`,
+  conversión a tensor con `TF.to_tensor()` (`[0,255] → [0,1]`), y luego `transform`.
+- **TIFF float de 32 bits** (modo `"F"`, la salida de `Preproccesed/preprocess_images.py`): se convierten
+  a tensor directamente desde el array nativo numpy (`torch.from_numpy`) **sin `.convert()`** (PIL
+  **recorta** floats en vez de reescalarlos al convertir de `"F"` a `"RGB"`).
 
-### Siempre 3 canales, y la replicación va después del transform
-No existe el flag `grayscale` (se quitó en `ffdb5b2`). Para modo `"F"`, la replicación a 3 canales
-ocurre sobre el **tensor, después** de `transform`, vía `np.concatenate`.
+### Siempre 3 canales, y la replicación va ANTES del transform
+Para modo `"F"`, la replicación a 3 canales ocurre sobre el **tensor, ANTES** de `transform`, vía
+`torch.cat([tensor, tensor, tensor], dim=0)`. `TransformBuilder` opera directamente sobre tensores de 3
+canales `(3, H, W)`.
 
-Consecuencia que hay que tener presente al escribir configs: cuando corre `transforms.Normalize`, el
-tensor **todavía tiene 1 canal**. Por eso `normalize_mean`/`normalize_std` deben ser tuplas de un
-elemento para este encoding, y una tripleta de ImageNet da shape mismatch. Ver
-[CONFIG.md](CONFIG.md).
+Consecuencia: `transforms.Normalize` siempre recibe un tensor de 3 canales. Se puede pasar una tupla de
+1 elemento (ej. `[0.449]`, que se difunde por broadcast a los 3 canales) o una de 3 elementos. Todos los
+configs existentes siguen siendo válidos sin cambios. Ver [CONFIG.md](CONFIG.md).
 
 ---
 

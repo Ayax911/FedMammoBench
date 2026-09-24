@@ -29,7 +29,12 @@ from dataclasses import dataclass
 from typing import Callable
 
 import torch.nn as nn
-from torchvision.models import resnet50, ResNet50_Weights  # pyright: ignore[reportMissingTypeStubs]
+from torchvision.models import (  # pyright: ignore[reportMissingTypeStubs]
+    resnet18,
+    ResNet18_Weights,
+    resnet50,
+    ResNet50_Weights,
+)
 
 from .freeze import FreezeStrategy, ResNetFreezeStrategy
 from .weights import load_weights, truncate_backbone, LoadReport
@@ -44,10 +49,11 @@ class ArchitectureSpec:
             `weights_from_factory=False` it must return an UNinitialized model
             (`weights=None`) -- `build_model()` loads an external checkpoint
             into it via `load_weights()`. For `weights_from_factory=True` it
-            must return the model ALREADY carrying its pretrained weights
-            (e.g. torchvision's own `weights=ResNet50_Weights.IMAGENET1K_V2`)
-            -- `build_model()` skips `load_weights()`/`torch.load()` entirely
-            for these and just truncates the returned model.
+            must return the model ALREADY carrying its initial/pretrained weights
+            (e.g. torchvision's own `weights=ResNet50_Weights.IMAGENET1K_V2`, or
+            `weights=None` for `*_scratch`) -- `build_model()` skips
+            `load_weights()`/`torch.load()` entirely for these and just truncates
+            the returned model.
         key_remap: Dictionary mapping custom checkpoint tensor key prefixes to standard PyTorch names.
             Ignored when `weights_from_factory=True` (nothing to remap: the
             checkpoint IS the model's own state_dict, keys already match).
@@ -56,17 +62,17 @@ class ArchitectureSpec:
             still declared so every registry entry has a uniform shape,
             greppable in one place (see CLAUDE.md's registry-dict decision).
         freeze_strategy: Strategy implementation handling block freezing and gradient unfreezing.
-        weights_from_factory: `True` when `model_factory()` already returns a
-            model with pretrained weights loaded -- no external checkpoint
-            file to read, so `weights_path` is not required for this
-            architecture and `build_model()` never calls `load_weights()` for
-            it. Default `False` (the RadImageNet case: `model_factory()`
-            returns a bare, randomly-initialized `resnet50`, and the real
+        weights_from_factory: `True` when `model_factory()` already delivers the
+            definitive initial weights -- pretrained (e.g. ImageNet via torchvision),
+            or intentionally random/uninitialized (`*_scratch`). No external checkpoint
+            file to read, so `weights_path` is not required for this architecture and
+            `build_model()` never calls `load_weights()` for it. Default `False` (the
+            RadImageNet case: `model_factory()` returns a bare `resnet50`, and the real
             weights come from a `.pth` file on disk via `weights_path`).
-            Adding a new architecture whose weights ship inside torchvision
-            (or any other library) means setting this to `True` and nothing
-            else in `build_model()` needs to change -- that's the scalability
-            this flag buys: one boolean per registry entry, not a second
+            Adding a new architecture whose weights ship inside torchvision (or any other
+            library, or random weights initialized from factory) means setting this to
+            `True` and nothing else in `build_model()` needs to change -- that's the
+            scalability this flag buys: one boolean per registry entry, not a second
             code path per architecture.
 
     Example:
@@ -100,9 +106,26 @@ _ARCHITECTURES: dict[str, ArchitectureSpec] = {
         valid_prefixes=("conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"),
         freeze_strategy=ResNetFreezeStrategy(),
     ),
-    # Pesos de ImageNet de torchvision -- dos entradas, una por receta de
-    # entrenamiento, en vez de una sola con un default silencioso: quién lea
-    # el config YAML ve exactamente cuál corrió sin tener que ir a mirar acá.
+    # ResNet50 inicializado desde cero (pesos aleatorios, sin preentrenamiento).
+    # weights_from_factory=True: se inicializa directamente con el factory sin checkpoint externo.
+    # Para *_scratch, LoadReport.matched = len(state_dict) cuenta los tensores del backbone.
+    "resnet50_scratch": ArchitectureSpec(
+        model_factory=lambda: resnet50(weights=None),
+        key_remap={},
+        valid_prefixes=("conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"),
+        freeze_strategy=ResNetFreezeStrategy(),
+        weights_from_factory=True,
+    ),
+    # ResNet18 inicializado desde cero (pesos aleatorios, sin preentrenamiento).
+    "resnet18_scratch": ArchitectureSpec(
+        model_factory=lambda: resnet18(weights=None),
+        key_remap={},
+        valid_prefixes=("conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"),
+        freeze_strategy=ResNetFreezeStrategy(),
+        weights_from_factory=True,
+    ),
+    # Pesos de ImageNet de torchvision -- dos entradas para ResNet50 y una para ResNet18
+    # (ResNet18 no tiene IMAGENET1K_V2 en torchvision, por eso solo _v1).
     # IMAGENET1K_V1 son los pesos originales de la arquitectura ResNet50
     # (~76.1% top-1); IMAGENET1K_V2 es la receta de entrenamiento más nueva de
     # torchvision (TrivialAugment + más épocas + LR warmup, ~80.9% top-1) --
@@ -111,6 +134,13 @@ _ARCHITECTURES: dict[str, ArchitectureSpec] = {
     # descarga/cachea el checkpoint (~/.cache/torch/hub/checkpoints/) la
     # primera vez que se instancia -- requiere acceso a internet esa primera
     # vez únicamente.
+    "resnet18_imagenet_v1": ArchitectureSpec(
+        model_factory=lambda: resnet18(weights=ResNet18_Weights.IMAGENET1K_V1),
+        key_remap={},
+        valid_prefixes=("conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"),
+        freeze_strategy=ResNetFreezeStrategy(),
+        weights_from_factory=True,
+    ),
     "resnet50_imagenet_v1": ArchitectureSpec(
         model_factory=lambda: resnet50(weights=ResNet50_Weights.IMAGENET1K_V1),
         key_remap={},
