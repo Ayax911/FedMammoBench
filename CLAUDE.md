@@ -109,7 +109,7 @@ Resumen; el detalle y el porqué están en las hojas.
 
 ## Entorno
 
-`.venv/` (Python **3.12.8**) es el intérprete y ya tiene todo lo de `requirements.txt`: torch 2.13 +
+`.venv/` (Python **3.12.3**) es el intérprete y ya tiene todo lo de `requirements.txt`: torch 2.13 +
 CUDA, torchvision 0.28, torchmetrics, pandas 3.0, pydantic 2.13, PyYAML, tensorboard, matplotlib,
 wandb, scikit-learn, y `flwr==1.31.0` pinneado exacto. **Invócalo siempre explícitamente**
 (`.venv/bin/python`) — no hay paquete instalado ni paso de activación.
@@ -153,9 +153,9 @@ a eso y describe cosas que ya no existen en ninguna rama:
   y todo comando `fedmammobench-*` están muertos por construcción.
 - **La serie de notebooks exp01–exp32 tampoco existe**, borrada en `0e934ec`, junto con
   `scripts/gen_*.py` y los `scripts/run-expNN-*.sh`/`eval-expNN-*.sh`. `configs/` es solo YAML y
-  `scripts/` tiene los cuatro post-hoc (`calibrate_threshold.py`, `ensemble_eval.py`,
-  `split_manifest_by_database.py`, `build_experiment_registry.py`), el shim de sweep
-  (`sweep_train.py`) y `DOCS.md`.
+  `scripts/` tiene los post-hoc (`calibrate_threshold.py`, `ensemble_eval.py`,
+  `split_manifest_by_database.py`, `build_experiment_registry.py`, `compare_by_database.py`,
+  `split_shift_audit.py`), el shim de sweep (`sweep_train.py`) y `DOCS.md`.
 - **`ec55408` es el último commit que tiene ambos** — el paquete legacy completo *y* la serie de
   notebooks con sus generadores:
   ```bash
@@ -226,6 +226,28 @@ a eso y describe cosas que ya no existen en ninguna rama:
   `src/evaluate.py`, selección de imágenes por ID/misclasificadas/muestra). Diseño ya decidido (capa
   objetivo, uso de `LossSpec.probs()`, alineación posicional de `predictions.csv`) — verificable sin
   datos reales con un tensor sintético. Aplicar y luego archivar o borrar, igual que los anteriores.
+- `docs/GRADCAM_RESULTADOS.md` — resultados de esa implementación: confirma los contratos del brief
+  (hook en `layer4`, gradientes habilitados explícitamente con `torch.enable_grad()` para no depender
+  de `model.eval()`, manejo de gradiente muerto sin lanzar) y la verificación sintética. Actual.
+- `docs/RESNET_SCRATCH_RESNET18.md` — brief para Antigravity (2026-09-23, ciclo `/antigravity` Fase 1):
+  agrega tres variantes de backbone en paralelo a FedMammoBench **y** al proyecto hermano INC —
+  ResNet50 desde cero, ResNet18 desde cero, ResNet18 con pesos ImageNet (congelamiento configurable,
+  default 100% congelado) — y cambia la carga de imágenes de FMB al esquema del INC (array → tensor →
+  réplica a 3 canales → transforms sobre tensor). Corridas pareadas exp61–63. Requiere la workstation
+  `imagenesmedicas` (GPU + datos); esta sesión no la tiene.
+- `docs/RESNET_SCRATCH_RESNET18_RESULTADOS.md` — resultados de esa implementación en ambos repos
+  (`_ARCHITECTURES` de FMB, `ResNet18Model` + flag `--from_scratch` del INC). Ya en `main` (commit
+  `3c13e61`); `MODELS.md` documenta las tres entradas nuevas. Los resultados numéricos de exp61–63
+  todavía no están en [experiments/CENTRALIZED.md](.claude/context/experiments/CENTRALIZED.md) — no
+  asumas que ya corrieron solo porque el código y el YAML existen.
+- `docs/DECISION_PASAR_A_FEDERADO.md` — propuesta para discusión (2026-09-24, aún sin decidir): tres
+  auditorías y dos pruebas de paridad con el INC ya agotaron lo que se puede encontrar auditando el
+  código; lo centralizado llegó a una meseta (34 corridas entre 0,79–0,90 de AUC, top-3 estadísticamente
+  indistinguibles); el techo no está en splits ni en hiperparámetros sino en la tarea en sí. Propone
+  congelar lo centralizado y mover el esfuerzo a lo federado. Introduce **AUC pooled** vs. **AUC
+  intra-base** (por base de datos, sin premiar al modelo por reconocer el hospital de origen) — usa
+  esa distinción antes de citar AUC de cualquier experimento. Ver también
+  `scripts/compare_by_database.py` y `scripts/split_shift_audit.py`, que generan sus cifras.
 - `src/**/DOCS.md` — contratos por método. Actual.
 - `configs/*.yaml` (encabezados) — el log experimental real. `exp04_inc_strict_replica.yaml` documenta
   las cuatro divergencias con el INC que corrige y la que deliberadamente no.
