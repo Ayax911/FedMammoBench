@@ -1,0 +1,65 @@
+experiment_id: exp_mnist_smoketest_shared_init
+architecture:
+  name: resnet18_mnist_shared_init
+  weights_path: runs/shared_init_mnist/backbone.pt
+  unfreeze_from: conv1
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 512
+    hidden_layers:
+    - 128
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0
+    num_classes: 2
+    use_batchnorm: false
+optimizer:
+  name: adam
+  hparams:
+    lr: 0.001
+    betas:
+    - 0.9
+    - 0.999
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 3
+    eta_min: 1.0e-06
+loss:
+  name: cross_entropy
+  hparams: {}
+data:
+  manifest_path: manifests/mnist_smoketest/mnist_smoketest.csv
+  image_root: /home/akira/snap/steam/mnist
+  batch_size: 128
+  num_workers: 4
+  seed: 42
+  image_size:
+  - 64
+  - 64
+  augmentation:
+    horizontal_flip: false
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: false
+    vertical_flip_p: 0.5
+    blur: false
+    blur_p: 0.3
+  normalize_mean: null
+  normalize_std: null
+  raw_uint8_loading: true
+  by_database_manifests: null
+train:
+  epochs: 3
+  metric_name: f1_macro
+  metric_mode: max
+  patience: null
+  min_delta: 0.0
+  save_every: null
+  checkpoint_dir: runs/exp_mnist_smoketest_shared_init/weights
+  run_dir: runs/exp_mnist_smoketest_shared_init
+  device: cuda
+  freeze_bn_stats: true
+  wandb_project: null
+  wandb_group: null

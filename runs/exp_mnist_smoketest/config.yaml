@@ -1,0 +1,70 @@
+experiment_id: exp_mnist_smoketest
+architecture:
+  name: resnet18_scratch
+  weights_path: null
+  unfreeze_from: conv1
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 512
+    hidden_layers:
+    - 128
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.3
+    num_classes: 1
+    use_batchnorm: false
+optimizer:
+  name: adam
+  hparams:
+    lr: 0.001
+    betas:
+    - 0.9
+    - 0.999
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 3
+    eta_min: 1.0e-06
+loss:
+  name: bce
+  hparams: {}
+data:
+  manifest_path: manifests/mnist_smoketest/mnist_smoketest.csv
+  image_root: /home/akira/snap/steam/mnist
+  batch_size: 128
+  num_workers: 4
+  seed: 42
+  image_size:
+  - 64
+  - 64
+  augmentation:
+    horizontal_flip: false
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: false
+    vertical_flip_p: 0.5
+    blur: false
+    blur_p: 0.3
+  normalize_mean:
+  - 0.0
+  - 0.0
+  - 0.0
+  normalize_std:
+  - 0.00392156862745098
+  - 0.00392156862745098
+  - 0.00392156862745098
+  by_database_manifests: null
+train:
+  epochs: 3
+  metric_name: f1_macro
+  metric_mode: max
+  patience: null
+  min_delta: 0.0
+  save_every: null
+  checkpoint_dir: runs/exp_mnist_smoketest/weights
+  run_dir: runs/exp_mnist_smoketest
+  device: cuda
+  freeze_bn_stats: true
+  wandb_project: null
+  wandb_group: null
