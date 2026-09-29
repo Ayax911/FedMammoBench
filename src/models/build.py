@@ -36,7 +36,8 @@ from torchvision.models import (  # pyright: ignore[reportMissingTypeStubs]
     ResNet50_Weights,
 )
 
-from .freeze import FreezeStrategy, ResNetFreezeStrategy
+from .custom_cnn import CustomCNNBackbone
+from .freeze import CustomCNNFreezeStrategy, FreezeStrategy, ResNetFreezeStrategy
 from .weights import load_weights, truncate_backbone, LoadReport
 
 
@@ -124,6 +125,29 @@ _ARCHITECTURES: dict[str, ArchitectureSpec] = {
         freeze_strategy=ResNetFreezeStrategy(),
         weights_from_factory=True,
     ),
+    # ResNet18 desde un checkpoint de inicialización aleatoria congelado en disco --
+    # NO desde random real (a diferencia de resnet18_scratch). weights_from_factory=False
+    # a propósito: reutiliza el mecanismo existente de load_weights()+key_remap (igual que
+    # resnet50_radimagenet) para poder pasar `weights_path` desde el config. Existe
+    # exclusivamente para la comparación de paridad FMB<->INC del MNIST smoketest -- ver
+    # scripts/generate_shared_init_mnist.py: genera ESE checkpoint una sola vez con
+    # torchvision resnet18(weights=None), prefijado "backbone.N." (la misma convención
+    # de nombres que usa INC en ResNet18Model.backbone -- ver
+    # inc-project-models-classification-detection-main/.../models/image_models.py), así
+    # que el mismo archivo .pt se carga sin transformación en ambos repos: acá vía este
+    # key_remap (igual que RadImageNet), y en INC vía su propio --path_image_model
+    # (--pretrained False --from_scratch False). No usar para nada que no sea esa
+    # comparación puntual -- para un resnet18 "desde cero" normal, usa resnet18_scratch.
+    "resnet18_mnist_shared_init": ArchitectureSpec(
+        model_factory=lambda: resnet18(weights=None),
+        key_remap={
+            "backbone.0.": "conv1.", "backbone.1.": "bn1.",
+            "backbone.4.": "layer1.", "backbone.5.": "layer2.",
+            "backbone.6.": "layer3.", "backbone.7.": "layer4.",
+        },
+        valid_prefixes=("conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"),
+        freeze_strategy=ResNetFreezeStrategy(),
+    ),
     # Pesos de ImageNet de torchvision -- dos entradas para ResNet50 y una para ResNet18
     # (ResNet18 no tiene IMAGENET1K_V2 en torchvision, por eso solo _v1).
     # IMAGENET1K_V1 son los pesos originales de la arquitectura ResNet50
@@ -153,6 +177,20 @@ _ARCHITECTURES: dict[str, ArchitectureSpec] = {
         key_remap={},
         valid_prefixes=("conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"),
         freeze_strategy=ResNetFreezeStrategy(),
+        weights_from_factory=True,
+    ),
+    # Backbone CNN custom (4 bloques Conv-BN-ReLUx2 + MaxPool, canales 32/64/128/256,
+    # sin MaxPool en el bloque 4, + GlobalAveragePooling2D) -- ver models/custom_cnn.py
+    # para el diseño completo. weights_from_factory=True: no hay checkpoint externo,
+    # CustomCNNBackbone() ya se inicializa lista para entrenar desde cero (misma
+    # semántica que *_scratch). key_remap/valid_prefixes no se usan (ver docstring de
+    # ArchitectureSpec.weights_from_factory), declarados vacíos por uniformidad del
+    # registro. fc.in_features equivalente = 256 (salida del GAP).
+    "custom_cnn_v1": ArchitectureSpec(
+        model_factory=lambda: CustomCNNBackbone(),
+        key_remap={},
+        valid_prefixes=(),
+        freeze_strategy=CustomCNNFreezeStrategy(),
         weights_from_factory=True,
     ),
 }

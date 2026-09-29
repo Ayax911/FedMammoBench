@@ -25,13 +25,16 @@ class ArchitectureConfig(BaseModel):
     Attributes:
         name: Identificador registrado en `_ARCHITECTURES` (ej.
             `"resnet50_radimagenet"`, `"resnet50_scratch"`, `"resnet18_scratch"`,
-            `"resnet18_imagenet_v1"`, `"resnet50_imagenet_v1"`, `"resnet50_imagenet_v2"`).
+            `"resnet18_imagenet_v1"`, `"resnet50_imagenet_v1"`, `"resnet50_imagenet_v2"`,
+            `"custom_cnn_v1"`).
         weights_path: Ruta al archivo checkpoint `.pth` o `.pt` con pesos
             preentrenados. `None` (default) para arquitecturas que ya traen
             sus pesos incluidos en el `model_factory` o se inicializan desde
             cero -- ej. `resnet18_imagenet_v1`/`resnet50_imagenet_v1`/`_v2`
-            (ImageNet vía torchvision) y `resnet50_scratch`/`resnet18_scratch`
-            (`ArchitectureSpec.weights_from_factory = True`, ver `models/build.py`).
+            (ImageNet vía torchvision), `resnet50_scratch`/`resnet18_scratch` y
+            `custom_cnn_v1` (backbone custom sin pesos preentrenados, ver
+            `models/custom_cnn.py`) -- todas con
+            `ArchitectureSpec.weights_from_factory = True` (`models/build.py`).
             Para estas variantes se ignora y no se lee ningún archivo local.
             Para el resto (`resnet50_radimagenet`) sigue siendo obligatorio
             EN LA PRÁCTICA: `build_model()` levanta `ValueError` si falta,
@@ -145,6 +148,14 @@ class DataConfig(BaseModel):
             hace el proyecto INC, cuyo `dataloader_images.py` aplica solo
             `ToTensor()` sin ningún `Normalize`. Úsalo para reproducirlo;
             el default `0.5/0.5` (rango `[-1, 1]`) NO es equivalente.
+        raw_uint8_loading: pasado a `MammoBenchDataset` (ver su docstring). `False`
+            (default) preserva el comportamiento de siempre (`to_tensor()` sobre
+            imágenes de 8 bits). `True` evita el round-trip `to_tensor()`
+            (`/255`) + `Normalize(mean=0, std=1/255)` que `normalize_mean`/`std`
+            necesitaban para volver a la escala cruda 0-255 -- si de todas formas
+            no se va a normalizar, no tiene sentido dividir y multiplicar por 255
+            de por medio. Combínalo con `normalize_mean: null` / `normalize_std:
+            null` para replicar exactamente el esquema "sin normalizar" de INC.
         by_database_manifests: mapa opcional `nombre_base_de_datos ->
             manifest_path` para el desglose de test por base de datos (ver
             `_evaluate_by_database()` en `cli.py`). `None` (default)
@@ -195,6 +206,7 @@ class DataConfig(BaseModel):
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
     normalize_mean: tuple[float, ...] | None = (0.5, 0.5, 0.5)
     normalize_std: tuple[float, ...] | None = (0.5, 0.5, 0.5)
+    raw_uint8_loading: bool = False
     by_database_manifests: dict[str, Path] | None = None
 
 

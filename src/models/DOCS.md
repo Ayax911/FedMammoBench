@@ -53,6 +53,7 @@ Registro actual (`_ARCHITECTURES`):
 | `resnet18_imagenet_v1` | `True` | `torchvision.models.ResNet18_Weights.IMAGENET1K_V1` | **512** |
 | `resnet50_imagenet_v1` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V1` (receta original, ~76.1% top-1 ImageNet) | 2048 |
 | `resnet50_imagenet_v2` | `True` | `torchvision.models.ResNet50_Weights.IMAGENET1K_V2` (receta nueva de torchvision, ~80.9% top-1 ImageNet) | 2048 |
+| `custom_cnn_v1` | `True` | pesos aleatorios desde cero (`CustomCNNBackbone()`, sin preentrenamiento posible) | **256** |
 
 > **Nota**: Para ResNet18 (`fc.in_features = 512`), la cabeza de clasificación MLP debe instanciarse con `in_features=512` en el config YAML (`head.hparams.in_features: 512`).
 
@@ -122,17 +123,17 @@ backbone = truncate_backbone(resnet50(weights=ResNet50_Weights.IMAGENET1K_V2))
 
 ### `freeze.py`
 
-#### `FreezeStrategy` (ABC) & `ResNetFreezeStrategy`
+#### `FreezeStrategy` (ABC) & `ResNetFreezeStrategy` / `CustomCNNFreezeStrategy`
 
 Controla qué bloques posicionales del backbone permanecen congelados (`requires_grad=False`) o se descongelan (`requires_grad=True`).
 
-* `block_order`: Lista ordenada de nombres de bloques (ej. `["conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"]`).
+* `block_order`: Lista ordenada de nombres de bloques -- `["conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"]` para `ResNetFreezeStrategy`, `["block1", "block2", "block3", "block4"]` para `CustomCNNFreezeStrategy` (`gap` no tiene parámetros, se omite del `block_order` a propósito).
 * `apply(backbone, unfreeze_from)`: Congela todo el backbone y descongela a partir del bloque indicado.
 
 ##### Cómo usar `freeze.py`:
 ```python
 import torch.nn as nn
-from src.models.freeze import ResNetFreezeStrategy
+from src.models.freeze import ResNetFreezeStrategy, CustomCNNFreezeStrategy
 
 strategy = ResNetFreezeStrategy()
 dummy_backbone = nn.Sequential() # Ejemplo conceptual
@@ -140,6 +141,34 @@ dummy_backbone = nn.Sequential() # Ejemplo conceptual
 # Descongelar desde layer4 en adelante
 param_counts = strategy.apply(dummy_backbone, unfreeze_from="layer4")
 print(f"Parámetros entrenables: {param_counts['trainable']} / {param_counts['total']}")
+
+# CustomCNNBackbone: "block1" = todo entrenable (índice 0)
+custom_strategy = CustomCNNFreezeStrategy()
+custom_strategy.apply(dummy_backbone, unfreeze_from="block1")
+```
+
+---
+
+### `custom_cnn.py`
+
+#### `CustomCNNBackbone`
+
+Backbone CNN custom, sin pesos preentrenados: 4 bloques `[Conv2d(3x3, padding="same") ->
+BatchNorm2d -> ReLU] x2` (canales 32/64/128/256), `MaxPool2d(2)` al final de los bloques
+1-3 (el bloque 4 no reduce resolución), + `AdaptiveAvgPool2d(1)`. Entrada `[B, 3, H, W]`
+(3 canales, igual que el resto de backbones de este repo -- fully-convolutional hasta el
+GAP, así que `H`/`W` son libres). Salida `[B, 256, 1, 1]`.
+
+Registrado en `_ARCHITECTURES` como `"custom_cnn_v1"` con `weights_from_factory=True`
+(no hay checkpoint que cargar) y `CustomCNNFreezeStrategy` como `freeze_strategy`.
+
+##### Cómo usar `custom_cnn.py`:
+```python
+from src.models.custom_cnn import CustomCNNBackbone
+
+backbone = CustomCNNBackbone()
+out = backbone(torch.randn(2, 3, 256, 256))
+print(out.shape)  # torch.Size([2, 256, 1, 1])
 ```
 
 ---

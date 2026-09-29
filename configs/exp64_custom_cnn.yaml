@@ -1,0 +1,137 @@
+# exp64_custom_cnn -- Backbone CNN custom (4 bloques Conv-BN-ReLUx2 + MaxPool,
+# canales 32/64/128/256, GAP) diseñado por el usuario, entrenado desde cero, todo
+# entrenable. Ver src/models/custom_cnn.py para el diseño completo.
+#
+# Numeración: exp64, no exp61 -- exp61/62/63 (ResNet50/18 scratch/ImageNet) SÍ se
+# corrieron de verdad del lado INC (resultados reales en su repo, commit
+# ac319ebe "migrate experiment results"), aunque nunca se corrieron acá en FMB.
+# Como el número ya tiene resultados publicados asociados del otro lado del par,
+# no se reutiliza -- exp64 es el siguiente libre considerando ambos repos.
+#
+# Par del lado FedMammoBench de la corrida INC `exp64_custom_cnn_inc` (bloque
+# agregado a src/models/classification_images/run.sh del INC, después de los
+# bloques exp61/62/63 ya reales). Mismos hiperparámetros y dataset para
+# comparación directa y pareada.
+#
+# Receta -- por qué cada elección, con evidencia del propio repo:
+#   - Backbone: custom_cnn_v1, todo descongelado (unfreeze_from: block1 -- "block1" es
+#     el índice 0 de CustomCNNFreezeStrategy.block_order, o sea 100% entrenable, igual
+#     semántica que unfreeze_from: conv1 en los *_scratch de ResNet).
+#   - Head: configurable_mlp, sin capas ocultas (hidden_layers: []), Dropout(0.4) justo
+#     tras el GAP (input_dropout, no dropout -- éste último solo aplica dentro de capas
+#     ocultas y acá no hay ninguna), 1 logit de salida -- Dense(1) del diseño original.
+#     Sin capa oculta: es el diseño tal cual (GAP -> Dropout -> Dense), y además el
+#     mejor config centralizado del proyecto (exp28, val AUC 0.899) tampoco usa
+#     capa oculta -- exp37 (ganador del sweep de 300 trials) prueba agregar una de
+#     512 y la diferencia no es estadísticamente significativa (DECISION_PASAR_A_
+#     FEDERADO.md, los IC incluyen cero). 0.4 de input_dropout tampoco es solo
+#     fidelidad al diseño: es justo el rango (0.4-0.5) que usan los dos mejores
+#     configs centralizados del proyecto (exp28: 0.5, exp37: 0.4468).
+#   - Loss: BCE (BCEWithLogitsLoss + sigmoid en LossSpec.probs()) -- el "activation=
+#     sigmoid" del diseño original no vive en la cabeza como capa nn.Sigmoid: por
+#     estabilidad numérica, PyTorch aplica la sigmoide dentro de la loss/inferencia
+#     (ver src/train/build.py:_make_bce), nunca como capa explícita del modelo.
+#     pos_weight = 1.9284 = neg/pos del split train actual (4393 benigno / 2278
+#     maligno, fedmammobench_norm_neg1_1.csv) -- mismo balanceo 66/34 que usa
+#     cualquier otro config del repo (ver exp07/08/15/16, y exp57 con la variante
+#     cross_entropy de estos mismos pesos: 0.7593/1.4642).
+#   - Optimizer: AdamW (no Adam) + weight_decay 1e-4 + betas [0.9, 0.999] (default de
+#     Adam, no el [0.5, 0.999] heredado sin justificación del proyecto INC/GAN) --
+#     receta de la serie "antioverfit" (exp28-32), que domó el overfitting del mejor
+#     backbone preentrenado del proyecto activando justo estos tres ejes. Un backbone
+#     100% desde cero, sin el prior de ImageNet, tiene aún menos defensa natural
+#     contra memorizar 6671 imágenes con estos ~1.17M de parámetros -- no hace falta
+#     backbone_lr discriminativo: acá TODo el modelo es igual de "nuevo", no hay
+#     distinción backbone-preentrenado vs. cabeza-nueva que discriminar.
+#   - Scheduler: Cosine, T_max=100 = epochs (ver train: abajo) -- recortado de la
+#     propuesta inicial (200/200) a pedido del usuario por disponibilidad real de
+#     GPU/CPU en la workstation compartida. patience=50 (mitad de epochs) deja que
+#     el early stopping corte solo si hace falta.
+#   - Métrica de selección: AUC (no f1_macro) -- libre de umbral, evita el riesgo de
+#     quedar pegado en un valor degenerado mientras el modelo (desde cero, sin ningún
+#     prior) todavía no aprende a predecir la clase rara -- mismo argumento que exp28
+#     (y el trap de `f1` vs `f1_macro` de CLAUDE.md, generalizado). min_delta 0.001
+#     porque AUC vive en escala más fina que f1_macro (que usaba 0.005).
+#   - Data: fedmammobench_norm_neg1_1.csv (píxeles en [-1, 1], normalize null),
+#     image_size: null -- las imágenes ya están a 224x224 EN DISCO; el diseño
+#     original pedía 256x256, pero la red es fully-conv hasta el GAP (cualquier
+#     tamaño funciona igual de bien arquitectónicamente) y 256 forzaría un upsampling
+#     de 224->256 en cada carga sin ninguna ganancia real, además de dejar de ser
+#     comparable en cómputo/resolución con el resto de experimentos del proyecto.
+#     batch_size=16 y num_workers=2 (bajados de 64/4) por disponibilidad real de
+#     GPU/CPU -- la workstation está compartida con otro uso concurrente.
+#   - Augmentation: horizontal flip (0.5), rotation 15 deg, vertical flip (0.2), blur (0.3)
+#     -- el estándar del proyecto (exp28/37/57), sin cambios.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp64_custom_cnn.yaml
+
+experiment_id: exp64_custom_cnn
+
+architecture:
+  name: custom_cnn_v1
+  unfreeze_from: block1        # todo el backbone entrenable (backbone desde cero)
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 256           # salida del GAP de CustomCNNBackbone
+    hidden_layers: []          # GAP -> Dropout(0.4) -> Dense(1), sin capa oculta
+    input_dropout: 0.4         # Dropout(0.4) del diseño original, antes del único Linear
+    dropout: 0                 # sin efecto: no hay capas ocultas donde aplicarlo
+    num_classes: 1             # Dense(1) + sigmoid (vía loss bce, ver cabecera)
+
+optimizer:
+  name: adamw
+  hparams:
+    lr: 1.0e-3
+    betas: [0.9, 0.999]
+    weight_decay: 1.0e-4
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 100                 # = train.epochs
+    eta_min: 1.0e-6
+
+loss:
+  name: bce
+  hparams:
+    pos_weight: [1.9284]   # neg/pos del split train actual (4393/2278), balancea el 66/34
+
+data:
+  manifest_path: manifests/fedmammobench_norm_neg1_1.csv
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 16                # bajado de 64 -- disponibilidad real de GPU (workstation compartida)
+  num_workers: 2                # bajado de 4 -- ídem, disponibilidad real de CPU
+  seed: 42
+  image_size: null             # nativo 224x224 en disco -- ver nota de la cabecera
+  normalize_mean: null
+  normalize_std: null
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_neg1_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_neg1_1.csv
+    inbreast: manifests/by_database/inbreast_norm_neg1_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_neg1_1.csv
+
+train:
+  epochs: 100                  # bajado de 200 -- disponibilidad real de GPU/CPU
+  metric_name: auc
+  metric_mode: max
+  patience: 50                 # bajado de 100 -- mitad de epochs, misma proporción
+  min_delta: 0.001
+  save_every: 10
+  freeze_bn_stats: false
+  checkpoint_dir: runs/exp64_custom_cnn/weights
+  run_dir: runs/exp64_custom_cnn
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: custom_cnn

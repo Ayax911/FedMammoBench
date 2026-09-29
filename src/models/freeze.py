@@ -96,3 +96,27 @@ class ResNetFreezeStrategy(FreezeStrategy):
             list[str]: Standard ResNet (18/50) block sequence names.
         """
         return ["conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4", "avgpool"]
+
+
+class CustomCNNFreezeStrategy(FreezeStrategy):
+    """Concrete FreezeStrategy implementation for `CustomCNNBackbone` (`models/custom_cnn.py`).
+
+    Example:
+        >>> strategy = CustomCNNFreezeStrategy()
+        >>> print(strategy.block_order[0])
+    """
+
+    @property
+    def block_order(self) -> list[str]:
+        """Ordered list of `CustomCNNBackbone` positional block names.
+
+        `gap` (the 5th child of the truncated backbone) is intentionally not
+        listed here -- it has no parameters, so it would be a no-op entry.
+        Any `unfreeze_from` slice that runs past `block4` still includes it
+        harmlessly (`for param in block.parameters()` over an empty
+        generator).
+
+        Returns:
+            list[str]: `CustomCNNBackbone` block sequence names.
+        """
+        return ["block1", "block2", "block3", "block4"]
