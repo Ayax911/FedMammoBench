@@ -1,0 +1,91 @@
+# exp68_resnet18_imagenet_unfreeze_layer2 -- ResNet18 ImageNet, descongelamiento progresivo desde layer2 (barrido exp65-69: none, layer4, layer3, layer2, layer1)
+#
+# Derivado de exp63 (backbone 100% congelado): unica variable que cambia es unfreeze_from.
+# Mismo lr unico (sin backbone_lr), freeze_bn_stats: false, semilla y aumentos que exp63.
+#
+# Receta:
+#   - Backbone: ResNet18 ImageNet (resnet18_imagenet_v1), 100% congelado por default (unfreeze_from: none;
+#     cambiar a layer4/layer3/.../conv1 para descongelar bloques).
+#   - Head: configurable_mlp con in_features=512, 1 capa oculta de 1024, leakyrelu (slope 0.2), dropout 0.2, 1 logit (BCE).
+#   - Optimizer: Adam (lr 1e-3, betas [0.5, 0.999]).
+#   - Scheduler: Cosine (T_max 200, eta_min 1e-6).
+#   - Loss: BCEWithLogits con pos_weight 1.9284 (DIVERGE de exp63, que usa CrossEntropy 2 logits ponderada).
+#   - Data: fedmammobench_norm_0_1.csv (píxeles en [0, 1]) + normalize_mean: [0.449], normalize_std: [0.226].
+#     Justificación: ImageNet espera [0, 1] y las estadísticas promedio de ImageNet en 1 canal.
+#   - Augmentation: horizontal flip (0.5), rotation 15 deg, vertical flip (0.2), blur (0.3).
+#   - EarlyStopping: patience 100, min_delta 0.005 sobre f1_macro.
+#
+# Correr:
+#   .venv/bin/python -m src.cli --config configs/exp68_resnet18_imagenet_unfreeze_layer2.yaml
+
+experiment_id: exp68_resnet18_imagenet_unfreeze_layer2
+
+architecture:
+  name: resnet18_imagenet_v1
+  # Sin weights_path: torchvision descarga/cachea (~/.cache/torch/hub/checkpoints/)
+  # la primera vez. Ver ArchitectureSpec.weights_from_factory en src/models/build.py.
+  unfreeze_from: layer2          # descongela layer2 y todo lo posterior; el resto del backbone sigue congelado.
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 512           # ResNet18 entrega 512 features (vs 2048 de ResNet50)
+    hidden_layers: [1024]
+    activation: leakyrelu
+    negative_slope: 0.2
+    dropout: 0.2
+    num_classes: 1             # BCE: 1 logit
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 1.0e-3
+    betas: [0.5, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 200
+    eta_min: 1.0e-6
+
+loss:
+  name: bce
+  hparams:
+    pos_weight: [1.9284]   # neg/pos del train (4393/2278) = 1.4642/0.7593; mismo balanceo que exp63
+
+data:
+  manifest_path: manifests/fedmammobench_norm_0_1.csv   # [0, 1] para ImageNet
+  image_root: /media/imagenesmedicas/DATA1/01-ImagenesMedicas-US1/02-Databases/Mammo-Bench/c86fb00c-0fb8-4e0e-85a2-4d415f9c1ada_1a9410d8-9769-4064-a064-0160f2fd193d_DATASET-FILE_Mammo_Bench_zip_20241225112148174/Mammo_Data/Mammo-Bench/preproccesed_julian
+  batch_size: 64
+  num_workers: 4
+  seed: 42
+  image_size: null
+  normalize_mean: [0.449]
+  normalize_std: [0.226]
+  augmentation:
+    horizontal_flip: true
+    horizontal_flip_p: 0.5
+    rotation_degrees: 15
+    vertical_flip: true
+    vertical_flip_p: 0.2
+    blur: true
+    blur_p: 0.3
+  by_database_manifests:
+    cmmd: manifests/by_database/cmmd_norm_0_1.csv
+    cdd-cesm: manifests/by_database/cdd-cesm_norm_0_1.csv
+    inbreast: manifests/by_database/inbreast_norm_0_1.csv
+    kau-bcmd: manifests/by_database/kau-bcmd_norm_0_1.csv
+
+train:
+  epochs: 200
+  metric_name: f1_macro
+  metric_mode: max
+  patience: 100
+  min_delta: 0.005
+  save_every: 10
+  freeze_bn_stats: false
+  checkpoint_dir: runs/exp68_resnet18_imagenet_unfreeze_layer2/weights
+  run_dir: runs/exp68_resnet18_imagenet_unfreeze_layer2
+  device: cuda
+  wandb_project: fedmammobench2.0
+  wandb_group: resnet18_imagenet_unfreezing

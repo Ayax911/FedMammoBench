@@ -40,7 +40,7 @@ Arquitecturas registradas hoy:
 > (`CustomCNNFreezeStrategy`) usa `block_order: ["block1","block2","block3","block4"]`;
 > `unfreeze_from: block1` = todo entrenable, igual semántica que `conv1` en los
 > `*_scratch` de ResNet. Diseñado para 1 logit de salida (`head.hparams.num_classes: 1`
-> + `loss.name: bce`) -- ver `configs/exp67_custom_cnn.yaml`.
+> + `loss.name: bce`) -- ver `configs/exp64_custom_cnn.yaml`.
 
 Las de torchvision descargan y cachean en `~/.cache/torch/hub/checkpoints/` la primera vez que se
 instancia el modelo — requiere internet **solo esa primera vez**. Para `*_scratch`, no se descarga nada.
