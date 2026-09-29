@@ -124,7 +124,7 @@ data:
 
 train:
   epochs: 100                  # bajado de 200 -- disponibilidad real de GPU/CPU
-  metric_name: auc
+  metric_name: f1_macro
   metric_mode: max
   patience: 50                 # bajado de 100 -- mitad de epochs, misma proporción
   min_delta: 0.001
