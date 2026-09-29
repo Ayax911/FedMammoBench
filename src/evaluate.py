@@ -108,6 +108,7 @@ def run_evaluation(config: ExperimentConfig, checkpoint_path: str | Path) -> Non
         batch_size=config.data.batch_size,
         num_workers=config.data.num_workers,
         seed=config.data.seed,
+        raw_uint8_loading=config.data.raw_uint8_loading,
     )
 
     # Arquitectura sin pesos reales todavía -- evaluate_split() los carga

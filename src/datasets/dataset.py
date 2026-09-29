@@ -26,12 +26,22 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
         (`classification_images/dataloaders/dataloader_images.py`), these are converted to a
         native PyTorch tensor without PIL `.convert()` (which would clip/truncate floats),
         replicated to 3 channels via `torch.cat`, and then passed to `transform` (which
-        operates on tensors).
+        operates on tensors). The same branch also runs for 8-bit images when
+        `raw_uint8_loading=True` is passed to `__init__` (see that arg's docstring).
 
     Args:
         df: Input pandas DataFrame containing sample metadata and absolute image file paths.
         transform: torchvision transformation pipeline to apply on input tensors.
             If None, applies default resize (224x224).
+        raw_uint8_loading: si `True`, aplica el esquema INC (array nativo -> tensor ->
+            réplica a 3 canales) también a imágenes de 8 bits (`image.mode != "F"`), en vez
+            de `.convert("RGB")` + `TF.to_tensor()`. Evita el round-trip
+            `/255` (`to_tensor`) seguido de `Normalize(mean=0, std=1/255)` que algunos
+            configs usan para volver a la escala cruda 0-255 -- ese round-trip introduce
+            redondeo de float32 que `to_tensor()` no tiene motivo de introducir si el
+            destino de todas formas es "sin normalizar". `False` (default) preserva el
+            comportamiento de siempre. Solo pensado para la comparación de paridad con INC
+            (`configs/exp_mnist_smoketest*.yaml`) -- no lo actives fuera de eso.
 
     Example:
         >>> from src.datasets.manifest import Manifest
@@ -45,9 +55,11 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
         self,
         df: pd.DataFrame,
         transform: transforms.Compose | None = None,
+        raw_uint8_loading: bool = False,
     ) -> None:
         self.df = df
         self.transform = transform or self._default_transform()
+        self.raw_uint8_loading = raw_uint8_loading
 
     def _default_transform(self) -> transforms.Compose:
         """Constructs fallback default image transform (Resize 224x224).
@@ -84,7 +96,7 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
         row = self.df.iloc[idx]
         image = Image.open(row["abs_image_path"])
 
-        if image.mode == "F":
+        if image.mode == "F" or self.raw_uint8_loading:
             # 32-bit float TIFF (e.g. Preproccesed/preprocess_images.py's
             # norm_neg1_1 output): single-channel, pixel values already
             # rescaled/normalized on disk (e.g. to [-1, 1] for RadImageNet).
@@ -93,9 +105,12 @@ class MammoBenchDataset(Dataset[tuple[torch.Tensor, int]]):
             # a [-1, 1] image to near-all-zero. We follow the INC scheme
             # (classification_images/dataloaders/dataloader_images.py):
             # array nativo -> tensor -> réplica a 3 canales ANTES del transform,
-            # que opera sobre tensores.
+            # que opera sobre tensores. `raw_uint8_loading=True` fuerza esta
+            # misma rama para imágenes de 8 bits (mode != "F") -- `.float()`
+            # es no-op sobre los TIFF de 32 bits (ya vienen float32) y
+            # necesario sobre los de 8 bits (np.array da uint8).
             array = np.array(image)[np.newaxis, ...]
-            image_tensor = torch.from_numpy(array)
+            image_tensor = torch.from_numpy(array).float()
             image_tensor = torch.cat([image_tensor, image_tensor, image_tensor], dim=0)
         else:
             image_tensor = TF.to_tensor(image.convert("RGB"))  # [0, 255] -> [0, 1], como el ToTensor de antes

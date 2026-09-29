@@ -1,0 +1,98 @@
+# Variante de exp_mnist_smoketest.yaml para la comparación de paridad FMB<->INC con pesos
+# iniciales COMPARTIDOS entre ambos frameworks (backbone + cabeza), en vez de que cada uno
+# dibuje su propia inicialización aleatoria. Ver scripts/generate_shared_init_mnist.py para
+# el porqué completo y cómo se generan/remapean esos pesos.
+#
+# NO correr con `python -m src.cli` directo: la cabeza necesita un state_dict inyectado que
+# no tiene campo de config (ver src/cli.py:run(), parámetro head_state_dict_path). Usar:
+#   .venv/bin/python -m scripts.run_mnist_shared_init
+#
+# Diferencias deliberadas respecto a exp_mnist_smoketest.yaml, todas para acercar esta
+# comparación de paridad a INC (ver generate_shared_init_mnist.py):
+#   - architecture.name: resnet18_mnist_shared_init (no resnet18_scratch) -- carga
+#     backbone.pt vía architecture.weights_path en vez de inicializar random desde
+#     torchvision. Ver _ARCHITECTURES["resnet18_mnist_shared_init"] en src/models/build.py.
+#   - head.hparams.num_classes: 2 + loss: cross_entropy (no 1 + bce) -- el esquema de 1
+#     logit (BCEWithLogitsLoss) de exp_mnist_smoketest.yaml no es transplantable con los 2
+#     logits (softmax) que usa INC; con pos_weight=neg_weight=1.0 en ambos lados, cambiar a
+#     2 logits no cambia la función que se puede representar, solo la parametrización.
+#   - head.hparams.dropout: 0 (no 0.3) -- dropout consume RNG global no sincronizado entre
+#     los dos frameworks; en 0 ninguno de los dos instancia la capa Dropout (ver
+#     ConfigurableMLPHead.build()/INC's MLP.__init__, ambos con `if dropout > 0:`), así que
+#     deja de ser una fuente de divergencia.
+#   - data.raw_uint8_loading: true + normalize_mean/std: null (no el round-trip
+#     to_tensor()=/255 + Normalize(mean=0,std=1/255)) -- ese round-trip solo existía para
+#     volver a la escala 0-255 que INC usa de forma nativa; con raw_uint8_loading activo ya
+#     no hace falta dividir y volver a multiplicar por 255, y por lo tanto tampoco el
+#     Normalize que deshacía esa división.
+#
+# Todo lo demás (dataset, augmentation, optimizer, scheduler, batch_size, epochs) queda
+# idéntico a exp_mnist_smoketest.yaml -- ver ese archivo para la justificación de cada uno
+# frente al run_mnist_smoketest.sh de INC.
+
+experiment_id: exp_mnist_smoketest_shared_init
+
+architecture:
+  name: resnet18_mnist_shared_init
+  weights_path: runs/shared_init_mnist/backbone.pt
+  unfreeze_from: conv1   # train the whole backbone from scratch -- matches INC's --num_freeze 0
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 512      # resnet18 avgpool output
+    hidden_layers: [128]
+    activation: leakyrelu
+    negative_slope: 0.2   # INC's mlp_models.get_activation("leakyrelu") -> nn.LeakyReLU(0.2)
+    dropout: 0             # 0 en ambos lados -- elimina el dropout como fuente de RNG
+                            # incontrolado entre FMB e INC (ver scripts/generate_shared_init_mnist.py,
+                            # regenerado con HEAD_KWARGS["dropout"]=0 para que este valor
+                            # coincida con la cabeza congelada que se carga acá).
+    num_classes: 2         # 2 logits, transplantable con la cabeza de INC -- ver cabecera
+    use_batchnorm: false
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 0.001
+    betas: [0.9, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 3
+    eta_min: 1.0e-6
+
+loss:
+  name: cross_entropy
+  hparams: {}
+
+data:
+  manifest_path: manifests/mnist_smoketest/mnist_smoketest.csv
+  image_root: /home/akira/snap/steam/mnist
+  batch_size: 128
+  num_workers: 4
+  seed: 42
+  image_size: [64, 64]     # no-op resize: images_tif64/ are already 64x64 on disk
+  augmentation:
+    horizontal_flip: false
+    vertical_flip: false
+    blur: false
+  raw_uint8_loading: true  # array nativo -> tensor -> réplica 3 canales, sin to_tensor()/255.
+                           # Con esto normalize_mean/std ya no hacen falta para volver a la
+                           # escala 0-255 -- null los desactiva del todo, igual que INC (que
+                           # no pasa --normalize_mean/--normalize_std en run_mnist_smoketest.sh).
+  normalize_mean: null
+  normalize_std: null
+
+train:
+  epochs: 3
+  metric_name: f1_macro
+  metric_mode: max
+  patience: null
+  min_delta: 0.0
+  save_every: null
+  checkpoint_dir: runs/exp_mnist_smoketest_shared_init/weights
+  run_dir: runs/exp_mnist_smoketest_shared_init
+  device: cuda
+  wandb_project: null

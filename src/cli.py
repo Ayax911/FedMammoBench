@@ -18,6 +18,7 @@ Ejemplo de uso programático en Python:
 
 import argparse
 
+import torch
 import torch.nn as nn
 
 from .config import ExperimentConfig, load_config, save_config
@@ -35,11 +36,23 @@ from .train.build import build_loss, build_optimizer, build_param_groups, build_
 from .train.trainer import Trainer
 
 
-def run(config: ExperimentConfig) -> None:
+def run(config: ExperimentConfig, head_state_dict_path: str | None = None) -> None:
     """Corre un experimento completo de punta a punta a partir de un ExperimentConfig.
 
     Args:
         config: Objeto `ExperimentConfig` ya validado desde YAML.
+        head_state_dict_path: si se da, reemplaza la inicialización aleatoria de la
+            cabeza (`head.build()`) por un `state_dict` cargado desde este archivo,
+            ANTES de ensamblar `model = nn.Sequential(backbone, head)`. `None` (default)
+            no cambia nada del comportamiento normal. Existe exclusivamente para la
+            comparación de paridad FMB<->INC del MNIST smoketest (ver
+            scripts/run_mnist_shared_init.py y scripts/generate_shared_init_mnist.py) --
+            el backbone para ese mismo experimento ya se resuelve por config
+            (`architecture.weights_path`, ver `resnet18_mnist_shared_init` en
+            `models/build.py`); la cabeza no tiene un campo de config equivalente porque
+            ningún otro experimento necesita pesos iniciales congelados, así que se
+            inyecta acá en vez de agregar un campo a `HeadConfig` que solo un experimento
+            usaría.
 
     Example:
         >>> config = load_config("configs/exp01.yaml")
@@ -83,6 +96,7 @@ def run(config: ExperimentConfig) -> None:
         batch_size=config.data.batch_size,
         num_workers=config.data.num_workers,
         seed=config.data.seed,
+        raw_uint8_loading=config.data.raw_uint8_loading,
     )
 
     backbone, load_report = build_model(
@@ -110,10 +124,13 @@ def run(config: ExperimentConfig) -> None:
     # no un workaround — mismo patrón que optimizer/scheduler/loss abajo.
     head_cls = get_head_strategy(config.head.name)
     head = head_cls(**config.head.hparams)
+    built_head = head.build()
+    if head_state_dict_path is not None:
+        built_head.load_state_dict(torch.load(head_state_dict_path, map_location="cpu"))
     # Ensamblado backbone+cabeza: a propósito acá, no en models/ — ver decisión
     # de diseño en CLAUDE.md (freeze y cabeza son ejes de experimentación
     # independientes).
-    model = nn.Sequential(backbone, head.build())
+    model = nn.Sequential(backbone, built_head)
     # build_model() ya cargó el backbone en config.train.device, pero la
     # cabeza se acaba de crear en CPU — moverlo ANTES de construir el
     # optimizer, para que apunte a los parámetros ya ubicados en destino.

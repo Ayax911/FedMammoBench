@@ -16,6 +16,7 @@ def builder_dataloader(
     batch_size: int = 16,
     num_workers: int = 1,
     seed: int = 42,
+    raw_uint8_loading: bool = False,
 ) -> dict[str, DataLoader[tuple[torch.Tensor, int]]]:
     """Constructs PyTorch DataLoaders for train, validation, and test dataset splits.
 
@@ -30,6 +31,8 @@ def builder_dataloader(
             `num_workers > 0`. Default 42, matching the notebook series
             convention. Only affects "train" — "val"/"test" never shuffle,
             so there's no order to make reproducible.
+        raw_uint8_loading: passed through to every split's `MammoBenchDataset` —
+            see its docstring. `False` (default) preserves current behavior.
 
     Returns:
         dict[str, DataLoader[tuple[torch.Tensor, int]]]: Dictionary mapping split names
@@ -55,9 +58,9 @@ def builder_dataloader(
     eval_transform = eval_transform_builder.build()
 
     # Instantiate PyTorch Datasets over split DataFrames
-    train_ds = MammoBenchDataset(df=split.train_df(), transform=train_transform)
-    val_ds = MammoBenchDataset(df=split.val_df(), transform=eval_transform)
-    test_ds = MammoBenchDataset(df=split.test_df(), transform=eval_transform)
+    train_ds = MammoBenchDataset(df=split.train_df(), transform=train_transform, raw_uint8_loading=raw_uint8_loading)
+    val_ds = MammoBenchDataset(df=split.val_df(), transform=eval_transform, raw_uint8_loading=raw_uint8_loading)
+    test_ds = MammoBenchDataset(df=split.test_df(), transform=eval_transform, raw_uint8_loading=raw_uint8_loading)
 
     # Wrap in PyTorch DataLoaders (shuffling + seeding enabled strictly for training split)
     return {

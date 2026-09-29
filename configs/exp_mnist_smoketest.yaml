@@ -1,0 +1,80 @@
+# MNIST smoke test -- directly comparable to INC's src/models/classification_images
+# run (see inc-project-models-classification-detection-main/src/models/classification_images/run_mnist_smoketest.sh).
+# Both consume the SAME 64x64 TIFF files (mnist/scripts/make_smoketest_tif64.py),
+# same even/odd binary label, same optimizer/scheduler/backbone/head hyperparameters.
+#
+# Deliberately matched to INC, not FedMammoBench's own defaults:
+#   - head: configurable_mlp (reproduces INC's classification_images/models/mlp_models.py
+#     exactly, incl. LeakyReLU negative_slope=0.2 -- see src/models/mlp_configs/configurable_mlp.py)
+#   - optimizer: adam (not adamw -- INC's TrainModel uses plain torch.optim.Adam, no weight decay)
+#   - scheduler: cosine with T_max=n_epochs, eta_min=1e-6 (INC hardcodes
+#     CosineAnnealingLR(optimizer, T_max=options.n_epochs, eta_min=options.min_lr)
+#     in training.py -- not optional there, so matched here instead of disabled)
+#   - normalize_mean=0, normalize_std=1/255: INC's dataloader_images.py never calls
+#     ToTensor()/Normalize() -- images stay raw uint8 0..255 cast to float. FedMammoBench's
+#     8-bit image path always applies TF.to_tensor() first (-> [0,1]), so Normalize(mean=0,
+#     std=1/255) undoes that and reproduces INC's raw 0..255 scale exactly.
+#
+# Run:
+#   .venv/bin/python -m src.cli --config configs/exp_mnist_smoketest.yaml
+
+experiment_id: exp_mnist_smoketest
+
+architecture:
+  name: resnet18_scratch
+  unfreeze_from: conv1   # train the whole backbone from scratch -- matches INC's --num_freeze 0
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 512      # resnet18 avgpool output
+    hidden_layers: [128]
+    activation: leakyrelu
+    negative_slope: 0.2   # INC's mlp_models.get_activation("leakyrelu") -> nn.LeakyReLU(0.2)
+    dropout: 0.3
+    num_classes: 1         # bce -> 1 logit (INC uses 2-logit CrossEntropy -- structural
+                            # difference inherent to each project's loss registry, unweighted
+                            # in both so numerically equivalent for this balanced split)
+    use_batchnorm: false
+
+optimizer:
+  name: adam
+  hparams:
+    lr: 0.001
+    betas: [0.9, 0.999]
+
+scheduler:
+  name: cosine
+  hparams:
+    T_max: 3
+    eta_min: 1.0e-6
+
+loss:
+  name: bce
+  hparams: {}
+
+data:
+  manifest_path: manifests/mnist_smoketest/mnist_smoketest.csv
+  image_root: /home/akira/snap/steam/mnist
+  batch_size: 128
+  num_workers: 4
+  seed: 42
+  image_size: [64, 64]     # no-op resize: images_tif64/ are already 64x64 on disk
+  augmentation:
+    horizontal_flip: false
+    vertical_flip: false
+    blur: false
+  normalize_mean: [0.0, 0.0, 0.0]
+  normalize_std: [0.00392156862745098, 0.00392156862745098, 0.00392156862745098]  # 1/255
+
+train:
+  epochs: 3
+  metric_name: f1_macro
+  metric_mode: max
+  patience: null
+  min_delta: 0.0
+  save_every: null
+  checkpoint_dir: runs/exp_mnist_smoketest/weights
+  run_dir: runs/exp_mnist_smoketest
+  device: cuda
+  wandb_project: null
