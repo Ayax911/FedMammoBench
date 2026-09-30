@@ -84,8 +84,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp65_resnet18_imagenet_frozen/weights
-  run_dir: runs/exp65_resnet18_imagenet_frozen
+  checkpoint_dir: runs/centralizado/exp65_resnet18_imagenet_frozen/weights
+  run_dir: runs/centralizado/exp65_resnet18_imagenet_frozen
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: resnet18_imagenet_unfreezing

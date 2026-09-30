@@ -127,7 +127,7 @@ exp17, y exp33 además desplaza el modelo a sens 0,91 / spec 0,57.
 **Anti-sobreajuste (exp28–32).** Las cuatro variantes quedan en 0,88–0,89 de AUC, empatadas dentro
 del ruido; ninguna regularización extra bate a exp28 de forma clara. exp32 confirma otra vez que
 cambiar a RadImageNet cuesta (~0,03 de AUC). El ensemble de las cuatro
-(`runs/ensemble_exp28_29_30_31/`, generado por `scripts/ensemble_eval.py`) da **test AUC 0,9015** —
+(`runs/centralizado/ensemble_exp28_29_30_31/`, generado por `scripts/ensemble_eval.py`) da **test AUC 0,9015** —
 esencialmente igual a exp37 en solitario, y ese directorio solo escribe `auc`, no el resto de
 métricas.
 

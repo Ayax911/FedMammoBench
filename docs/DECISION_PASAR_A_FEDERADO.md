@@ -48,7 +48,7 @@ Dos términos que se usan en todo el documento:
 | Capa federada | Envío y recuperación de parámetros idénticos bit a bit; los clientes reusan el mismo loop que el centralizado | `AUDITORIA_SOBREAJUSTE_RESULTADOS.md` §H7 |
 | Paridad de carga FedMammoBench ↔ INC | Tensores idénticos (`torch.equal`, máx \|Δ\| = 0) | `RESNET_SCRATCH_RESNET18_RESULTADOS.md` §2 |
 | Paridad de entrenamiento FedMammoBench ↔ INC | Mismo MNIST (64×64 TIFF), misma configuración: **99,56 %** vs **99,55 %** de accuracy en test | `configs/exp_mnist_smoketest.yaml` · INC `run_mnist_smoketest.sh` |
-| Splits de la misma distribución | Un clasificador no logra distinguir train de val+test (AUC 0,507, p = 0,33) | `runs/split_shift_audit/` (§2.3) |
+| Splits de la misma distribución | Un clasificador no logra distinguir train de val+test (AUC 0,507, p = 0,33) | `runs/centralizado/split_shift_audit/` (§2.3) |
 
 La fila de MNIST es el control positivo que faltaba: ante una tarea fácil, ambos pipelines aprenden (99,5 %) y,
 con la misma configuración, dan el mismo resultado. Los pipelines saben aprender; el techo está en lo que hay
@@ -302,7 +302,7 @@ explicar.
 |---|---|
 | Auditorías de código, datos e imágenes (§1) | `docs/AUDITORIA_SOBREAJUSTE_RESULTADOS.md` (2026-09-20), `docs/AUDITORIA_IMAGENES_RESULTADOS.md`, `docs/AUDITORIA_IMAGENES_FASE2_RESULTADOS.md` (2026-09-22), `docs/RESNET_SCRATCH_RESNET18_RESULTADOS.md` |
 | Tabla maestra centralizada y grid federado (§2.1, §3.1) | `.claude/context/experiments/CENTRALIZED.md`, `.claude/context/experiments/FEDERATED.md` |
-| Paridad MNIST (§1.1) | `configs/exp_mnist_smoketest.yaml` → `runs/exp_mnist_smoketest/`; INC `src/models/classification_images/run_mnist_smoketest.sh` → `results/inc_mnist_smoketest/` |
-| Auditoría de splits, atajo de base y duplicados (§1.2, §2.3, §2.4) | `.venv/bin/python scripts/split_shift_audit.py` → `runs/split_shift_audit/` (`report.json`, `audit.log`, figuras) |
-| IC por paciente y diferencias pareadas (§2.2, §3.2, §3.3, §5.1) | `.venv/bin/python scripts/compare_by_database.py` (2.000 remuestreos por paciente, semilla 0), a partir de `runs/<exp>/test/predictions.csv` y `runs/exp46_fedgrid_fedprox_r30/pooled_eval/test/predictions.csv` |
+| Paridad MNIST (§1.1) | `configs/exp_mnist_smoketest.yaml` → `runs/centralizado/exp_mnist_smoketest/`; INC `src/models/classification_images/run_mnist_smoketest.sh` → `results/inc_mnist_smoketest/` |
+| Auditoría de splits, atajo de base y duplicados (§1.2, §2.3, §2.4) | `.venv/bin/python scripts/split_shift_audit.py` → `runs/centralizado/split_shift_audit/` (`report.json`, `audit.log`, figuras) |
+| IC por paciente y diferencias pareadas (§2.2, §3.2, §3.3, §5.1) | `.venv/bin/python scripts/compare_by_database.py` (2.000 remuestreos por paciente, semilla 0), a partir de `runs/<exp>/test/predictions.csv` y `runs/federado/exp46_fedgrid_fedprox_r30/pooled_eval/test/predictions.csv` |
 | Recetas comparadas (§3.1, §5.1) | `configs/exp37_hpsearch_v1_e7u7fprr.yaml`, `configs/federated/exp46_fedgrid_fedprox_r30/`, `configs/exp24–27_bydatabase_*.yaml` |

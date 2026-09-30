@@ -64,7 +64,7 @@ data:
     blur: true
     blur_p: 0.3
   # Desglose de test por base de datos (metrics_by_database.json/.png,
-  # confusion_matrix_by_database.png en runs/exp06_fedmammobench_full_unweighted/test/) -- generados por
+  # confusion_matrix_by_database.png en runs/centralizado/exp06_fedmammobench_full_unweighted/test/) -- generados por
   # scripts/split_manifest_by_database.py a partir del mismo manifest TIFF de
   # arriba (norm_neg1_1), sin tocar ninguna imagen. Esta corrida ya había
   # terminado cuando se agregó este campo, así que el desglose se generó
@@ -85,8 +85,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp06_fedmammobench_full_unweighted/weights
-  run_dir: runs/exp06_fedmammobench_full_unweighted
+  checkpoint_dir: runs/centralizado/exp06_fedmammobench_full_unweighted/weights
+  run_dir: runs/centralizado/exp06_fedmammobench_full_unweighted
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: ce_full_manifest

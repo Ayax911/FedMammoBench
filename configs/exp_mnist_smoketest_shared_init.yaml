@@ -34,7 +34,7 @@ experiment_id: exp_mnist_smoketest_shared_init
 
 architecture:
   name: resnet18_mnist_shared_init
-  weights_path: runs/shared_init_mnist/backbone.pt
+  weights_path: runs/centralizado/shared_init_mnist/backbone.pt
   unfreeze_from: conv1   # train the whole backbone from scratch -- matches INC's --num_freeze 0
 
 head:
@@ -92,7 +92,7 @@ train:
   patience: null
   min_delta: 0.0
   save_every: null
-  checkpoint_dir: runs/exp_mnist_smoketest_shared_init/weights
-  run_dir: runs/exp_mnist_smoketest_shared_init
+  checkpoint_dir: runs/centralizado/exp_mnist_smoketest_shared_init/weights
+  run_dir: runs/centralizado/exp_mnist_smoketest_shared_init
   device: cuda
   wandb_project: null

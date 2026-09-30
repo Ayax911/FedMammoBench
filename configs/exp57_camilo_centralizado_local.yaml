@@ -74,8 +74,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp57_camilo_centralizado_local/weights
-  run_dir: runs/exp57_camilo_centralizado_local
+  checkpoint_dir: runs/centralizado/exp57_camilo_centralizado_local/weights
+  run_dir: runs/centralizado/exp57_camilo_centralizado_local
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: camilo_hparams_centralizado_vs_inc

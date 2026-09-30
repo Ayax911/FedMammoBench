@@ -20,7 +20,7 @@
 # (nodo que murió a mitad de corrida, o re-generar val/test después).
 .venv/bin/python -m src.federated.evaluate_node \
     --config configs/federated/exp40_fedavg_full/node_cmmd.yaml \
-    --server-run-dir runs/exp40_fedavg_full/server
+    --server-run-dir runs/federado/exp40_fedavg_full/server
 ```
 
 Con Docker (ver `docker-compose.federated.yaml`):
@@ -193,5 +193,5 @@ Espera hasta 60s (poll cada 2s) a que `best.json` exista antes de levantar `File
 ```bash
 .venv/bin/python -m src.federated.evaluate_node \
     --config configs/federated/exp40_fedavg_full/node_cmmd.yaml \
-    --server-run-dir runs/exp40_fedavg_full/server
+    --server-run-dir runs/federado/exp40_fedavg_full/server
 ```

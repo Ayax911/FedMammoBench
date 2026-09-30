@@ -40,10 +40,10 @@ igual que en una corrida real.
 Uso (con `-m`, no como ruta de archivo -- mismo motivo que
 scripts/calibrate_threshold.py, ver su docstring):
     .venv/bin/python -m scripts.ensemble_eval \
-        --run-dirs runs/exp28_antioverfit_base runs/exp29_antioverfit_wd1e2 \
-                   runs/exp30_antioverfit_labelsmooth runs/exp31_antioverfit_no_inputdrop \
-        --output-dir runs/ensemble_exp28_29_30_31
-    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/ensemble_exp28_29_30_31 --by-database
+        --run-dirs runs/centralizado/exp28_antioverfit_base runs/centralizado/exp29_antioverfit_wd1e2 \
+                   runs/centralizado/exp30_antioverfit_labelsmooth runs/centralizado/exp31_antioverfit_no_inputdrop \
+        --output-dir runs/centralizado/ensemble_exp28_29_30_31
+    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/centralizado/ensemble_exp28_29_30_31 --by-database
 """
 
 import argparse

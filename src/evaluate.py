@@ -24,13 +24,13 @@ by_database_manifests` está fijado, el desglose por base de datos dentro de
 
 Uso:
     $ python -m src.evaluate --config configs/exp05_fedmammobench_full_weighted.yaml \\
-        --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt
+        --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt
 
 Ejemplo de uso programático en Python:
     >>> from src.config import load_config
     >>> from src.evaluate import run_evaluation
     >>> config = load_config("configs/exp05_fedmammobench_full_weighted.yaml")
-    >>> run_evaluation(config, "runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt")
+    >>> run_evaluation(config, "runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt")
 """
 
 import argparse
@@ -67,7 +67,7 @@ def run_evaluation(config: ExperimentConfig, checkpoint_path: str | Path) -> Non
 
     Example:
         >>> config = load_config("configs/exp05_fedmammobench_full_weighted.yaml")
-        >>> run_evaluation(config, "runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt")
+        >>> run_evaluation(config, "runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt")
     """
     checkpoint_path = Path(checkpoint_path)
 

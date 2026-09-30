@@ -81,8 +81,8 @@ tracking:
   best_metric_name: auc         # promedio ponderado federado -- NO es el AUC pooled, ver docs/FEDERATED_DESIGN.md
   best_metric_mode: max
   save_every_rounds: null
-  run_dir: runs/exp51_fedgrid_fedyogi_r20/server
-  checkpoint_dir: runs/exp51_fedgrid_fedyogi_r20/server/weights
+  run_dir: runs/federado/exp51_fedgrid_fedyogi_r20/server
+  checkpoint_dir: runs/federado/exp51_fedgrid_fedyogi_r20/server/weights
   device: cpu
   wandb_project: fedmammobench2.0
   wandb_group: exp51_fedgrid_fedyogi_r20

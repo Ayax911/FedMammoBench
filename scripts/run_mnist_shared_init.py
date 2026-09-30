@@ -20,7 +20,7 @@ from src.cli import run
 from src.config import load_config
 
 CONFIG_PATH = "configs/exp_mnist_smoketest_shared_init.yaml"
-HEAD_WEIGHTS_PATH = "runs/shared_init_mnist/head_fmb.pt"
+HEAD_WEIGHTS_PATH = "runs/centralizado/shared_init_mnist/head_fmb.pt"
 
 
 def main() -> None:

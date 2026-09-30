@@ -59,7 +59,7 @@ data:
 run:
   device: cuda
   freeze_bn_stats: true
-  run_dir: runs/exp53_fedgrid_fedprox_mu001_r30/nodes/cmmd
-  checkpoint_dir: runs/exp53_fedgrid_fedprox_mu001_r30/nodes/cmmd/weights
+  run_dir: runs/federado/exp53_fedgrid_fedprox_mu001_r30/nodes/cmmd
+  checkpoint_dir: runs/federado/exp53_fedgrid_fedprox_mu001_r30/nodes/cmmd/weights
   wandb_project: fedmammobench2.0
   wandb_group: exp53_fedgrid_fedprox_mu001_r30

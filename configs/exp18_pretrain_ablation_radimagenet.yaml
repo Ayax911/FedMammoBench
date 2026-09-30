@@ -80,8 +80,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp18_pretrain_ablation_radimagenet/weights
-  run_dir: runs/exp18_pretrain_ablation_radimagenet
+  checkpoint_dir: runs/centralizado/exp18_pretrain_ablation_radimagenet/weights
+  run_dir: runs/centralizado/exp18_pretrain_ablation_radimagenet
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # mismo grupo que exp17 -- junta el par

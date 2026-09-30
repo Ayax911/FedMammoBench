@@ -288,7 +288,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", default="manifests/fedmammobench_norm_0_1.csv")
     ap.add_argument("--image-root", default="/home/akira/snap/steam/preproccesed_julian")
-    ap.add_argument("--out-dir", default="runs/split_shift_audit")
+    ap.add_argument("--out-dir", default="runs/centralizado/split_shift_audit")
     ap.add_argument("--n-perm", type=int, default=1000)
     ap.add_argument("--n-perm-adv", type=int, default=200)
     ap.add_argument("--n-resplits", type=int, default=100)
@@ -487,7 +487,7 @@ def main():
                 "auc_usando_solo_la_base": {s: safe_auc(y[idx], source_score[idx]) for s, idx in (("val", va_idx), ("test", te_idx))},
                 "modelos_test": {"sonda_lineal_imagenet": {"pooled": probe["test"]["auc"], "intra_base": within_source_auc(y[te_idx], p_te, src[te_idx])}}}
     for exp in args.runs:
-        f = Path("runs") / exp / "test" / "predictions.csv"
+        f = Path("runs") / "centralizado" / exp / "test" / "predictions.csv"
         if not f.exists():
             continue
         pr = pd.read_csv(f)

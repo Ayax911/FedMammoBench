@@ -134,8 +134,8 @@ train:
   freeze_bn_stats: true          # irrelevante con unfreeze_from=conv1 (nada queda congelado que
   # _set_frozen_bn_eval() necesite re-eval()ar), pero es el default correcto si algún día se corre
   # esta misma receta con freeze parcial.
-  checkpoint_dir: runs/exp28_antioverfit_base/weights
-  run_dir: runs/exp28_antioverfit_base
+  checkpoint_dir: runs/centralizado/exp28_antioverfit_base/weights
+  run_dir: runs/centralizado/exp28_antioverfit_base
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: antioverfit_regularized

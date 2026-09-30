@@ -108,8 +108,8 @@ train:
   min_delta: 0.005               # delta por defecto de su EarlyStopping
   save_every: 10
   freeze_bn_stats: false         # (2) deja derivar las running stats, como el INC
-  checkpoint_dir: runs/exp04_inc_strict_replica/weights
-  run_dir: runs/exp04_inc_strict_replica
+  checkpoint_dir: runs/centralizado/exp04_inc_strict_replica/weights
+  run_dir: runs/centralizado/exp04_inc_strict_replica
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: inc_replica

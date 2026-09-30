@@ -84,8 +84,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp05_fedmammobench_full_weighted/weights
-  run_dir: runs/exp05_fedmammobench_full_weighted
+  checkpoint_dir: runs/centralizado/exp05_fedmammobench_full_weighted/weights
+  run_dir: runs/centralizado/exp05_fedmammobench_full_weighted
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: ce_full_manifest

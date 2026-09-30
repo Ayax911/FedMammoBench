@@ -68,7 +68,7 @@ data:
 run:                            # variante recortada de TrainConfig: sin epochs ni
   device: cuda                  # patience/metric_name -- rondas, parada y mejor
   freeze_bn_stats: true         # modelo son decisiones del SERVIDOR
-  run_dir: runs/exp40_fedavg_full/nodes/cmmd
-  checkpoint_dir: runs/exp40_fedavg_full/nodes/cmmd/weights
+  run_dir: runs/federado/exp40_fedavg_full/nodes/cmmd
+  checkpoint_dir: runs/federado/exp40_fedavg_full/nodes/cmmd/weights
   wandb_project: fedmammobench2.0
   wandb_group: exp40_fedavg_full

@@ -272,7 +272,7 @@ def build_centralized_tables(configs_dir: Path = CONFIGS_DIR) -> tuple[pd.DataFr
             continue  # no es un YAML de experimento (ej. un template sin experiment_id)
 
         experiment_id = raw["experiment_id"]
-        run_dir = REPO_ROOT / raw.get("train", {}).get("run_dir", f"runs/{experiment_id}")
+        run_dir = REPO_ROOT / raw.get("train", {}).get("run_dir", f"runs/centralizado/{experiment_id}")
 
         val_metrics = _read_json(run_dir / "val" / "metrics.json")
         test_metrics = _read_json(run_dir / "test" / "metrics.json")
@@ -351,7 +351,7 @@ def build_federated_tables(
         with open(server_yaml, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         experiment_id = raw["experiment_id"]
-        run_dir = REPO_ROOT / raw.get("tracking", {}).get("run_dir", f"runs/{experiment_id}/server")
+        run_dir = REPO_ROOT / raw.get("tracking", {}).get("run_dir", f"runs/federado/{experiment_id}/server")
         nodes_dir = run_dir.parent / "nodes"
 
         best = _read_json(run_dir / "best.json")

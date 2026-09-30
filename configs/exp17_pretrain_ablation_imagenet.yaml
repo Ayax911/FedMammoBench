@@ -103,8 +103,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false        # idéntico a exp05/exp18 -- ver su nota en src/config.py
-  checkpoint_dir: runs/exp17_pretrain_ablation_imagenet/weights
-  run_dir: runs/exp17_pretrain_ablation_imagenet
+  checkpoint_dir: runs/centralizado/exp17_pretrain_ablation_imagenet/weights
+  run_dir: runs/centralizado/exp17_pretrain_ablation_imagenet
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # junta este par en la UI de W&B

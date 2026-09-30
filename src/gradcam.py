@@ -6,11 +6,11 @@ mapas Grad-CAM superpuestos sobre las mamografías seleccionadas.
 
 Uso:
     $ python -m src.gradcam --config configs/exp05_fedmammobench_full_weighted.yaml \\
-        --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \\
+        --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \\
         --split test --select misclassified --n-per-class 5
 
     $ python -m src.gradcam --config configs/exp05_fedmammobench_full_weighted.yaml \\
-        --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \\
+        --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \\
         --split test --select ids --image-ids CM000042,CM000107
 """
 

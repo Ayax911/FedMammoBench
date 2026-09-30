@@ -41,6 +41,15 @@ de su `configs/expNN_*.yaml`, que es el log experimental real.
 
 ---
 
+## Layout de `runs/`
+
+`runs/` se agrupa en **dos carpetas**: `runs/centralizado/<expNN_...>` (todo lo centralizado, más
+MNIST smoketest, auditorías, ensembles) y `runs/federado/<expNN_...>` (exp41–56; server + `nodes/`).
+Todo `run_dir`/`checkpoint_dir` de un config nuevo debe llevar ese prefijo (`runs/centralizado/...` o
+`runs/federado/...`), nunca `runs/<exp>` suelto.
+
+---
+
 ## El comando
 
 ```bash

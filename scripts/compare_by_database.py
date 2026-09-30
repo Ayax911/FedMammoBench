@@ -9,17 +9,17 @@ MANIFEST = "manifests/fedmammobench_norm_0_1.csv"
 SOURCES = ["cmmd", "kau-bcmd", "cdd-cesm", "inbreast"]
 DUPLICATES = {"CM000814", "CM001309", "CM003084", "CM003913", "CM004739"}
 RUNS = {
-    "exp37 centralizado": "runs/exp37_hpsearch_v1_e7u7fprr/test/predictions.csv",
-    "exp31 centralizado": "runs/exp31_antioverfit_no_inputdrop/test/predictions.csv",
-    "exp28 centralizado": "runs/exp28_antioverfit_base/test/predictions.csv",
-    "exp46 FedProx": "runs/exp46_fedgrid_fedprox_r30/pooled_eval/test/predictions.csv",
+    "exp37 centralizado": "runs/centralizado/exp37_hpsearch_v1_e7u7fprr/test/predictions.csv",
+    "exp31 centralizado": "runs/centralizado/exp31_antioverfit_no_inputdrop/test/predictions.csv",
+    "exp28 centralizado": "runs/centralizado/exp28_antioverfit_base/test/predictions.csv",
+    "exp46 FedProx": "runs/federado/exp46_fedgrid_fedprox_r30/pooled_eval/test/predictions.csv",
 }
 LOCAL = "cada base sola (exp24-27)"
 LOCAL_RUNS = {
-    "cdd-cesm": "runs/exp24_bydatabase_cdd-cesm_standard_mlp_bce/test/predictions.csv",
-    "cmmd": "runs/exp25_bydatabase_cmmd_standard_mlp_bce/test/predictions.csv",
-    "inbreast": "runs/exp26_bydatabase_inbreast_standard_mlp_bce/test/predictions.csv",
-    "kau-bcmd": "runs/exp27_bydatabase_kau-bcmd_standard_mlp_bce/test/predictions.csv",
+    "cdd-cesm": "runs/centralizado/exp24_bydatabase_cdd-cesm_standard_mlp_bce/test/predictions.csv",
+    "cmmd": "runs/centralizado/exp25_bydatabase_cmmd_standard_mlp_bce/test/predictions.csv",
+    "inbreast": "runs/centralizado/exp26_bydatabase_inbreast_standard_mlp_bce/test/predictions.csv",
+    "kau-bcmd": "runs/centralizado/exp27_bydatabase_kau-bcmd_standard_mlp_bce/test/predictions.csv",
 }
 METRICS = ["pooled", "intra_base"] + SOURCES
 COMPARISONS = (

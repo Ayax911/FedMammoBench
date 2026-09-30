@@ -50,8 +50,8 @@ tracking:
   best_metric_name: auc
   best_metric_mode: max
   save_every_rounds: null
-  run_dir: runs/exp54_fedgrid_fedprox_mu005_r30/server
-  checkpoint_dir: runs/exp54_fedgrid_fedprox_mu005_r30/server/weights
+  run_dir: runs/federado/exp54_fedgrid_fedprox_mu005_r30/server
+  checkpoint_dir: runs/federado/exp54_fedgrid_fedprox_mu005_r30/server/weights
   device: cpu
   wandb_project: fedmammobench2.0
   wandb_group: exp54_fedgrid_fedprox_mu005_r30

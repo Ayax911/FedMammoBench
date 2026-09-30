@@ -64,7 +64,7 @@ data:
 run:
   device: cuda
   freeze_bn_stats: true
-  run_dir: runs/exp40_fedavg_full/nodes/kau-bcmd
-  checkpoint_dir: runs/exp40_fedavg_full/nodes/kau-bcmd/weights
+  run_dir: runs/federado/exp40_fedavg_full/nodes/kau-bcmd
+  checkpoint_dir: runs/federado/exp40_fedavg_full/nodes/kau-bcmd/weights
   wandb_project: fedmammobench2.0
   wandb_group: exp40_fedavg_full

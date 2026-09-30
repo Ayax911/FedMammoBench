@@ -75,8 +75,8 @@ train:
   min_delta: 0.001
   save_every: 10
   freeze_bn_stats: true
-  checkpoint_dir: runs/exp29_antioverfit_wd1e2/weights
-  run_dir: runs/exp29_antioverfit_wd1e2
+  checkpoint_dir: runs/centralizado/exp29_antioverfit_wd1e2/weights
+  run_dir: runs/centralizado/exp29_antioverfit_wd1e2
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: antioverfit_regularized

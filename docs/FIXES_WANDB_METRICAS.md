@@ -38,14 +38,14 @@ contra las filas reales de `metrics.csv` de la misma corrida:
 
 | corrida | `_step` en W&B | filas reales en `metrics.csv` | inflación |
 |---|---:|---:|---:|
-| `runs/exp10_layer4_bce_2048_2` (centralizado, `-m src.cli`) | 192 | 180 épocas | +12 |
-| `runs/exp05_fedmammobench_full_weighted` (centralizado) | 192 | 180 épocas | +12 |
-| `runs/exp11_layer4_bce_h1024` (centralizado) | 182 | 170 épocas | +12 |
-| `runs/exp46_fedgrid_fedprox_r30/server` (federado) | 37 | 30 rondas | +7 |
-| `runs/exp46_fedgrid_fedprox_r30/nodes/cmmd` (federado) | 73 | 60 épocas locales | +13 |
+| `runs/centralizado/exp10_layer4_bce_2048_2` (centralizado, `-m src.cli`) | 192 | 180 épocas | +12 |
+| `runs/centralizado/exp05_fedmammobench_full_weighted` (centralizado) | 192 | 180 épocas | +12 |
+| `runs/centralizado/exp11_layer4_bce_h1024` (centralizado) | 182 | 170 épocas | +12 |
+| `runs/federado/exp46_fedgrid_fedprox_r30/server` (federado) | 37 | 30 rondas | +7 |
+| `runs/federado/exp46_fedgrid_fedprox_r30/nodes/cmmd` (federado) | 73 | 60 épocas locales | +13 |
 
-Reproducible: `.venv/bin/python -c "import json; print(json.load(open('runs/exp10_layer4_bce_2048_2/wandb/run-20260906_221817-6enyt06d/files/wandb-summary.json'))['_step'])"`
-→ `192`; `wc -l runs/exp10_layer4_bce_2048_2/metrics.csv` → 181 líneas (180 filas + header).
+Reproducible: `.venv/bin/python -c "import json; print(json.load(open('runs/centralizado/exp10_layer4_bce_2048_2/wandb/run-20260906_221817-6enyt06d/files/wandb-summary.json'))['_step'])"`
+→ `192`; `wc -l runs/centralizado/exp10_layer4_bce_2048_2/metrics.csv` → 181 líneas (180 filas + header).
 
 El docstring actual de `log_image()` en `tracking.py:183-186` afirma que sin `step=` W&B "lo trata
 como un evento suelto ligado al summary" — **es incorrecto**. `summary.update()` (lo que usa
@@ -64,9 +64,9 @@ Son dos números **legítimamente distintos y ambos correctos en su contexto** �
 cómputo, es un bug de que comparten nombre. Confirmado con datos reales de `exp10`:
 
 - Summary de W&B: `val_auc = 0.8387932777404785`
-  (`runs/exp10_layer4_bce_2048_2/wandb/run-20260906_221817-6enyt06d/files/wandb-summary.json`)
+  (`runs/centralizado/exp10_layer4_bce_2048_2/wandb/run-20260906_221817-6enyt06d/files/wandb-summary.json`)
 - Última fila de `metrics.csv` (época 179, la última entrenada): `val_auc = 0.8269051909446716`
-  (`tail -1 runs/exp10_layer4_bce_2048_2/metrics.csv`, columna 11)
+  (`tail -1 runs/centralizado/exp10_layer4_bce_2048_2/metrics.csv`, columna 11)
 
 La curva por-época mide el modelo *tal como estaba en esa época exacta*; el summary reevalúa el
 **mejor checkpoint** recargado (`eval_pipeline.py:123` → `evaluate_checkpoint()` → `load_checkpoint()`

@@ -74,7 +74,7 @@ train:
   patience: null
   min_delta: 0.0
   save_every: null
-  checkpoint_dir: runs/exp_mnist_smoketest/weights
-  run_dir: runs/exp_mnist_smoketest
+  checkpoint_dir: runs/centralizado/exp_mnist_smoketest/weights
+  run_dir: runs/centralizado/exp_mnist_smoketest
   device: cuda
   wandb_project: null

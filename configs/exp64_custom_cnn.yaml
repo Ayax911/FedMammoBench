@@ -130,8 +130,8 @@ train:
   min_delta: 0.001
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp64_custom_cnn/weights
-  run_dir: runs/exp64_custom_cnn
+  checkpoint_dir: runs/centralizado/exp64_custom_cnn/weights
+  run_dir: runs/centralizado/exp64_custom_cnn
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: custom_cnn

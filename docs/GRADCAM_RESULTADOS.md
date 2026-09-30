@@ -59,7 +59,7 @@ Una vez disponibles las imágenes reales y checkpoints entrenados en la máquina
 # Inspeccionar los 5 falsos positivos y falsos negativos más confiados del test set
 .venv/bin/python -m src.gradcam \
     --config configs/exp05_fedmammobench_full_weighted.yaml \
-    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
+    --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
     --split test \
     --select misclassified \
     --n-per-class 5
@@ -67,7 +67,7 @@ Una vez disponibles las imágenes reales y checkpoints entrenados en la máquina
 # Inspeccionar imágenes específicas
 .venv/bin/python -m src.gradcam \
     --config configs/exp05_fedmammobench_full_weighted.yaml \
-    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
+    --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
     --split test \
     --select ids \
     --image-ids CM000042,CM000107

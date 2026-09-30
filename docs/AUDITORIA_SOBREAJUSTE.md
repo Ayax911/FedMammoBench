@@ -135,7 +135,7 @@ comparten etiqueta). El piso está roto: exp37 alcanza **val_loss 0,3786**.
 
 ### 3.1 El sobreajuste es real y está medido
 
-`runs/exp37_hpsearch_v1_e7u7fprr/metrics.csv` — 24 épocas:
+`runs/centralizado/exp37_hpsearch_v1_e7u7fprr/metrics.csv` — 24 épocas:
 
 | época | train_loss | val_loss | train_auc | val_auc |
 |---|---:|---:|---:|---:|
@@ -196,7 +196,7 @@ imágenes que provienen de 253 pacientes tiene el poder estadístico de ~253 obs
 y está inflado respecto a una métrica por lesión, que es la unidad clínicamente relevante.
 
 **Verificar:**
-- Recalcular AUC y f1_macro de `runs/exp37_hpsearch_v1_e7u7fprr/test/predictions.csv` agregando por
+- Recalcular AUC y f1_macro de `runs/centralizado/exp37_hpsearch_v1_e7u7fprr/test/predictions.csv` agregando por
   `(patient_id, laterality)` — probar promedio y máximo de `y_prob` por mama — cruzando contra
   `manifests/fedmammobench_norm_0_1.csv`.
 - Calcular un **IC 95 % por bootstrap a nivel de paciente** (remuestrear pacientes, no imágenes).

@@ -1,7 +1,7 @@
 # exp33_pretrain_ablation_imagenet_mismatched_norm -- COPIA LITERAL de exp19
 # (idéntica en cada sección: architecture/head/optimizer/scheduler/loss/data/train),
 # solo cambian `experiment_id`, `checkpoint_dir` y `run_dir` para que la corrida
-# no pise `runs/exp19_pretrain_ablation_imagenet_mismatched_norm/`.
+# no pise `runs/centralizado/exp19_pretrain_ablation_imagenet_mismatched_norm/`.
 #
 # COPIA LITERAL de exp18_pretrain_ablation_radimagenet cambiando SOLO
 # `architecture.name` a resnet50_imagenet_v2. A propósito, `data.manifest_path`/
@@ -96,8 +96,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp33_pretrain_ablation_imagenet_mismatched_norm/weights
-  run_dir: runs/exp33_pretrain_ablation_imagenet_mismatched_norm
+  checkpoint_dir: runs/centralizado/exp33_pretrain_ablation_imagenet_mismatched_norm/weights
+  run_dir: runs/centralizado/exp33_pretrain_ablation_imagenet_mismatched_norm
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: pretrain_ablation_imagenet_vs_radimagenet   # mismo grupo que exp17/exp18/exp19 --

@@ -70,7 +70,7 @@ data:
 run:
   device: cuda
   freeze_bn_stats: true
-  run_dir: runs/exp50_fedgrid_fedyogi_r10/nodes/inbreast
-  checkpoint_dir: runs/exp50_fedgrid_fedyogi_r10/nodes/inbreast/weights
+  run_dir: runs/federado/exp50_fedgrid_fedyogi_r10/nodes/inbreast
+  checkpoint_dir: runs/federado/exp50_fedgrid_fedyogi_r10/nodes/inbreast/weights
   wandb_project: fedmammobench2.0
   wandb_group: exp50_fedgrid_fedyogi_r10

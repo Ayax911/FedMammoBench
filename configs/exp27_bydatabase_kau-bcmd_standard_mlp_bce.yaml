@@ -78,8 +78,8 @@ train:
   min_delta: 0.005
   save_every: 25
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp27_bydatabase_kau-bcmd_standard_mlp_bce/weights
-  run_dir: runs/exp27_bydatabase_kau-bcmd_standard_mlp_bce
+  checkpoint_dir: runs/centralizado/exp27_bydatabase_kau-bcmd_standard_mlp_bce/weights
+  run_dir: runs/centralizado/exp27_bydatabase_kau-bcmd_standard_mlp_bce
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: per_database_standard_mlp_bce

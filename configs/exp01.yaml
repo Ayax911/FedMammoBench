@@ -52,7 +52,7 @@ train:
   patience: 20            # épocas sin mejora antes de early stopping; null desactiva
   min_delta: 0.0
   save_every: 10           # checkpoint periódico cada N épocas; null desactiva
-  checkpoint_dir: runs/exp01_resnet_layer4_test/weights
-  run_dir: runs/exp01_resnet_layer4_test
+  checkpoint_dir: runs/centralizado/exp01_resnet_layer4_test/weights
+  run_dir: runs/centralizado/exp01_resnet_layer4_test
   device: cuda              # "cpu" si no hay GPU
   wandb_project: fedmammobench2.0        # nombre del proyecto W&B, o null para desactivarlo

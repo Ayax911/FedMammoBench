@@ -44,9 +44,9 @@ Uso (re-ejecutable en cualquier momento; sobreescribe sin preguntar) -- con
 repo (donde vive el paquete `src`), a diferencia de `python -m
 scripts.calibrate_threshold`, que sí la agrega -- mismo motivo por el que
 `src/cli.py`/`src/evaluate.py` se invocan como `-m src.cli`/`-m src.evaluate`:
-    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/exp22_pretrain_ablation_imagenet_all
-    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/exp05_fedmammobench_full_weighted --objective youden
-    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/exp28_antioverfit_base --by-database
+    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/centralizado/exp22_pretrain_ablation_imagenet_all
+    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/centralizado/exp05_fedmammobench_full_weighted --objective youden
+    .venv/bin/python -m scripts.calibrate_threshold --run-dir runs/centralizado/exp28_antioverfit_base --by-database
 """
 
 import argparse

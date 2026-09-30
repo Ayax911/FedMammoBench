@@ -84,8 +84,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp66_resnet18_imagenet_unfreeze_layer4/weights
-  run_dir: runs/exp66_resnet18_imagenet_unfreeze_layer4
+  checkpoint_dir: runs/centralizado/exp66_resnet18_imagenet_unfreeze_layer4/weights
+  run_dir: runs/centralizado/exp66_resnet18_imagenet_unfreeze_layer4
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: resnet18_imagenet_unfreezing

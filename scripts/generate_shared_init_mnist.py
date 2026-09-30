@@ -21,7 +21,7 @@ reducir el total -- ver run_mnist_shared_init.sh. Dropout, que también lee del 
 sin generator propio, es la otra fuente conocida; por eso `HEAD_KWARGS["dropout"]` bajó a 0
 más abajo.)
 
-Genera tres archivos bajo runs/shared_init_mnist/:
+Genera tres archivos bajo runs/centralizado/shared_init_mnist/:
   - backbone.pt : resnet18(weights=None) truncado a sus primeros 9 hijos (conv1, bn1, relu,
     maxpool, layer1-4, avgpool -- sin fc), con cada clave prefijada "backbone." -- la misma
     convención de nombres que usa `ResNet18Model.backbone` en INC (ver
@@ -60,7 +60,7 @@ from torchvision.models import resnet18
 from src.models.mlp_configs.configurable_mlp import ConfigurableMLPHead
 
 SEED = 42
-OUT_DIR = Path("runs/shared_init_mnist")
+OUT_DIR = Path("runs/centralizado/shared_init_mnist")
 
 # Debe coincidir con architecture/head de configs/exp_mnist_smoketest_shared_init.yaml.
 HEAD_KWARGS: dict[str, object] = {

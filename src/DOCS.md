@@ -250,7 +250,7 @@ Entrypoint para re-evaluar un checkpoint YA entrenado (val/test + desglose por b
 ```bash
 python -m src.evaluate \
     --config configs/exp05_fedmammobench_full_weighted.yaml \
-    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt
+    --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt
 ```
 
 ```python
@@ -258,7 +258,7 @@ from src.config import load_config
 from src.evaluate import run_evaluation
 
 config = load_config("configs/exp05_fedmammobench_full_weighted.yaml")
-run_evaluation(config, "runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt")
+run_evaluation(config, "runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt")
 ```
 
 ---
@@ -306,7 +306,7 @@ Maneja independientemente la imagen que ve el modelo (normalizada vía `eval_tra
 # Inspeccionar errores más confiados del split de test
 python -m src.gradcam \
     --config configs/exp05_fedmammobench_full_weighted.yaml \
-    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
+    --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
     --split test \
     --select misclassified \
     --n-per-class 5
@@ -314,7 +314,7 @@ python -m src.gradcam \
 # Inspeccionar IDs puntuales
 python -m src.gradcam \
     --config configs/exp05_fedmammobench_full_weighted.yaml \
-    --checkpoint runs/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
+    --checkpoint runs/centralizado/exp05_fedmammobench_full_weighted/weights/best_epoch123.pt \
     --split test \
     --select ids \
     --image-ids CM000042,CM000107

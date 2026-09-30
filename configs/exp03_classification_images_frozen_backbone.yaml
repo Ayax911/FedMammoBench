@@ -4,7 +4,7 @@
 # pipeline centralizado de FedMammoBench.
 #
 # Corrige un bug de configs/exp02.yaml (mismo experimento, ya corrido en
-# runs/Classification_Images_HL1024-512_lr1e-4_dr0.2/, sin este fix):
+# runs/centralizado/Classification_Images_HL1024-512_lr1e-4_dr0.2/, sin este fix):
 # exp02 usa `unfreeze_from: layer4`, pero el config.txt original de INC
 # entrena con `num_freeze=159`, y ResNet50 sin `fc` tiene EXACTAMENTE 159
 # tensores de parámetros (verificado: `len(list(nn.Sequential(*list(
@@ -95,8 +95,8 @@ train:
   patience: 100                  # --patience_early 100
   min_delta: 0.005               # umbral que usa el proyecto INC sobre F1 de validación
   save_every: 10
-  checkpoint_dir: runs/exp03_classification_images_frozen_backbone/weights
-  run_dir: runs/exp03_classification_images_frozen_backbone
+  checkpoint_dir: runs/centralizado/exp03_classification_images_frozen_backbone/weights
+  run_dir: runs/centralizado/exp03_classification_images_frozen_backbone
   device: cuda                   # requiere GPU -- ver notas de ejecución
   wandb_project: fedmammobench2.0
   wandb_group: inc_replica

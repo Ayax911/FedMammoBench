@@ -55,7 +55,7 @@ data:
     blur: true
     blur_p: 0.3
   # Desglose de test por base de datos (metrics_by_database.json/.png,
-  # confusion_matrix_by_database.png en runs/exp10_layer4_bce_2048_2/test/) -- generados por
+  # confusion_matrix_by_database.png en runs/centralizado/exp10_layer4_bce_2048_2/test/) -- generados por
   # scripts/split_manifest_by_database.py a partir del mismo manifest TIFF de
   # arriba (norm_neg1_1), sin tocar ninguna imagen. Esta corrida ya había
   # terminado cuando se agregó este campo, así que el desglose se generó
@@ -76,8 +76,8 @@ train:
   min_delta: 0.005
   save_every: 10
   freeze_bn_stats: false
-  checkpoint_dir: runs/exp10_layer4_bce_2048_2/weights
-  run_dir: runs/exp10_layer4_bce_2048_2
+  checkpoint_dir: runs/centralizado/exp10_layer4_bce_2048_2/weights
+  run_dir: runs/centralizado/exp10_layer4_bce_2048_2
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: bce_freeze_posweight_sweep

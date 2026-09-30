@@ -143,8 +143,8 @@ train:
   min_delta: 0.005             # EarlyStopping(delta=0.005) del INC
   save_every: 10
   freeze_bn_stats: false       # el INC nunca re-evalúa las BN congeladas
-  checkpoint_dir: runs/exp57_camilo_centralizado/weights
-  run_dir: runs/exp57_camilo_centralizado
+  checkpoint_dir: runs/centralizado/exp57_camilo_centralizado/weights
+  run_dir: runs/centralizado/exp57_camilo_centralizado
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: camilo_hparams_centralizado_vs_inc

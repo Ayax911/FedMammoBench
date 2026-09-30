@@ -29,7 +29,7 @@ Dos formas de invocarlo:
 
       python -m src.federated.evaluate_node \\
           --config configs/federated/exp40_fedavg_full/node_cmmd.yaml \\
-          --server-run-dir runs/exp40_fedavg_full/server
+          --server-run-dir runs/federado/exp40_fedavg_full/server
 
 Nada acá reentrena, y nada toca `metrics.csv`/`rounds.csv`/`config.yaml`
 del nodo: `MetricsLogger` abre sus writers perezosamente en el primer
@@ -137,7 +137,7 @@ def run_final_evaluation(
             nodo — el checkpoint global no corresponde a este YAML.
 
     Example:
-        >>> run_final_evaluation(cfg, Path("runs/exp40_fedavg_full/server"))
+        >>> run_final_evaluation(cfg, Path("runs/federado/exp40_fedavg_full/server"))
     """
     best = _wait_for_best_json(Path(server_run_dir))
 

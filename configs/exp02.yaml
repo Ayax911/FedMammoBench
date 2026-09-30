@@ -55,7 +55,7 @@ train:
   patience: 100            # épocas sin mejora antes de early stopping; null desactiva
   min_delta: 0.005
   save_every: 10           # checkpoint periódico cada N épocas; null desactiva
-  checkpoint_dir: runs/Classification_Images_HL1024-512_lr1e-4_dr0.2/weights
-  run_dir: runs/Classification_Images_HL1024-512_lr1e-4_dr0.2
+  checkpoint_dir: runs/centralizado/Classification_Images_HL1024-512_lr1e-4_dr0.2/weights
+  run_dir: runs/centralizado/Classification_Images_HL1024-512_lr1e-4_dr0.2
   device: cuda              # "cpu" si no hay GPU
   wandb_project: fedmammobench2.0        # nombre del proyecto W&B, o null para desactivarlo

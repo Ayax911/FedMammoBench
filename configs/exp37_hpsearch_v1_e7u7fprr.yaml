@@ -131,8 +131,8 @@ train:
   min_delta: 0.001
   save_every: 10
   freeze_bn_stats: true
-  checkpoint_dir: runs/exp37_hpsearch_v1_e7u7fprr/weights
-  run_dir: runs/exp37_hpsearch_v1_e7u7fprr
+  checkpoint_dir: runs/centralizado/exp37_hpsearch_v1_e7u7fprr/weights
+  run_dir: runs/centralizado/exp37_hpsearch_v1_e7u7fprr
   device: cuda
   wandb_project: fedmammobench2.0
   wandb_group: hpsearch_v1_promoted
