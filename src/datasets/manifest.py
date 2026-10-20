@@ -22,12 +22,20 @@ class Manifest:
         >>> print(len(manifest.df))
     """
 
-    def __init__(self, manifest_path: str | Path, image_root: str | Path) -> None:
+    def __init__(
+        self,
+        manifest_path: str | Path,
+        image_root: str | Path,
+        label_map: dict[str, int] | None = None,
+    ) -> None:
         """Loads and validates a dataset manifest CSV.
 
         Args:
             manifest_path: File path to the manifest CSV.
             image_root: Directory against which relative image paths are resolved.
+            label_map: optional `classification -> int` map for non-binary tasks
+                (e.g. the 8 ISIC2019 classes). `None` (default) keeps the legacy
+                `benign -> 0 / malignant -> 1` mapping. See `normalize_labels()`.
 
         Raises:
             FileNotFoundError: If `manifest_path` does not exist.
@@ -45,7 +53,7 @@ class Manifest:
         # Execute validation pipeline in fixed order
         self.verify_columns()
         self.check_patients_id()
-        self.normalize_labels()
+        self.normalize_labels(label_map)
         self.resolve_image_paths()
 
     def verify_columns(self) -> None:
@@ -77,16 +85,26 @@ class Manifest:
                 "the same patient from landing in both train and test."
             )
 
-    def normalize_labels(self) -> None:
-        """Normalizes raw 'classification' strings into integer binary labels in self.df['label_norm'].
+    def normalize_labels(self, label_map: dict[str, int] | None = None) -> None:
+        """Normalizes raw 'classification' strings into integer labels in self.df['label_norm'].
 
-        Maps case-insensitive 'benign' -> 0 and 'malignant' -> 1.
+        Default (`label_map=None`): maps case-insensitive 'benign' -> 0 and 'malignant' -> 1.
+        With `label_map` (keys compared case-insensitively, after strip), that map is used
+        instead of the binary one (multiclass, e.g. ISIC2019).
+
+        Args:
+            label_map: optional `classification -> int` map. `None` = binary legacy map.
 
         Raises:
-            ValueError: If any classification value is not recognized as benign or malignant.
+            ValueError: If any classification value is not recognized by the active map.
         """
+        mapping = (
+            {"benign": 0, "malignant": 1}
+            if label_map is None
+            else {str(k).strip().lower(): int(v) for k, v in label_map.items()}
+        )
         cleaned = self.df["classification"].str.strip().str.lower()
-        self.df["label_norm"] = cleaned.map({"benign": 0, "malignant": 1})
+        self.df["label_norm"] = cleaned.map(mapping)
 
         unmapped = self.df["label_norm"].isna()
         if unmapped.any():

@@ -75,6 +75,12 @@ class FederationConfig(BaseModel):
             fija el SERVIDOR y viaja a los nodos en el config de cada
             ronda (`on_fit_config_fn`) — el YAML del nodo no tiene campo
             `epochs` que pueda contradecirlo.
+        local_updates: alternativa a `local_epochs` (modo FLamby): número de
+            BATCHES (updates de SGD) por ronda, con wraparound sobre el
+            loader si excede una época. `None` (default) = modo épocas.
+            Fijar `local_updates` Y `local_epochs` a la vez es un error de
+            validación (ver `_check_local_mode`); para usar `local_updates`
+            hay que NO mencionar `local_epochs` en el YAML.
         num_nodes: cuántos nodos participan. Se usa como
             `min_fit_clients = min_evaluate_clients = min_available_clients`
             en la estrategia: con 4 bases de datos como 4 nodos, una ronda
@@ -105,11 +111,29 @@ class FederationConfig(BaseModel):
     server_address: str = "127.0.0.1:8080"
     rounds: int
     local_epochs: int = 1
+    local_updates: int | None = None
     num_nodes: int
     aggregation_scope: AggregationScope = "full"
     accept_failures: bool = False
     round_timeout_seconds: float | None = None
     grpc_max_message_length: int = 536_870_912  # 512 MiB
+
+    @model_validator(mode="after")
+    def _check_local_mode(self) -> "FederationConfig":
+        """`local_epochs` y `local_updates` son excluyentes.
+
+        `local_epochs` tiene default 1, así que "ambos presentes" se detecta
+        con `model_fields_set`: el YAML mencionó explícitamente los dos.
+        """
+        if self.local_updates is not None:
+            if "local_epochs" in self.model_fields_set:
+                raise ValueError(
+                    "federation.local_epochs y federation.local_updates son excluyentes: "
+                    "fija solo uno."
+                )
+            if self.local_updates < 1:
+                raise ValueError("federation.local_updates debe ser >= 1.")
+        return self
 
 
 class ServerTrackingConfig(BaseModel):
@@ -350,6 +374,11 @@ class FederatedNodeConfig(BaseModel):
                 stacklevel=2,
             )
         return self
+
+
+def node_num_classes(config: "FederatedNodeConfig") -> int:
+    """Número de clases de la cabeza del nodo (`head.hparams["num_classes"]`, default 2)."""
+    return int(config.head.hparams.get("num_classes", 2))
 
 
 def load_server_config(path: str | Path) -> FederatedServerConfig:

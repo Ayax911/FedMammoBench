@@ -17,21 +17,30 @@ nunca conectó.
 from typing import Any, Callable
 
 from flwr.common import Metrics, Parameters, Scalar
-from flwr.server.strategy import FedAdam, FedAvg, FedProx, FedYogi, Strategy
+from flwr.server.strategy import FedAdagrad, FedAdam, FedAvg, FedProx, FedYogi, Strategy
 
 from .config import AggregationScope
+from .cyclic import CyclicStrategy
+from .scaffold import ScaffoldStrategy
 
 # Dict plano a propósito, como _ARCHITECTURES/_OPTIMIZERS/_LOSSES. Las
 # cuatro clases son stock de flwr; sus hparams de YAML se splatean tal cual
 # al constructor (fedprox: proximal_mu; fedadam/fedyogi: eta, eta_l,
-# beta_1, beta_2, tau). fedbn/scaffold NO están: el legacy los registraba
-# como stubs que levantaban NotImplementedError al construir — registrar lo
+# beta_1, beta_2, tau). fedbn NO está: el legacy lo registraba
+# como stub que levantaba NotImplementedError al construir — registrar lo
 # que no existe solo pospone el error.
+# fedadagrad (stock de flwr 1.31) acepta eta, eta_l, tau -- NO beta_1/beta_2
+# (su firma no los tiene; pasarlos es TypeError). cyclic (cyclic.py, hparams
+# order/seed) y scaffold (scaffold.py, hparam server_lr) son bespoke de este
+# repo -- no hay clase stock para ninguna de las dos en flwr 1.31.
 _STRATEGIES: dict[str, type[Strategy]] = {
     "fedavg": FedAvg,
     "fedprox": FedProx,
     "fedadam": FedAdam,
     "fedyogi": FedYogi,
+    "fedadagrad": FedAdagrad,
+    "cyclic": CyclicStrategy,
+    "scaffold": ScaffoldStrategy,
 }
 
 
@@ -87,7 +96,10 @@ def weighted_average(metrics: list[tuple[int, Metrics]]) -> dict[str, Scalar]:
 
 
 def make_on_config(
-    model_hash: str, local_epochs: int, aggregation_scope: AggregationScope
+    model_hash: str,
+    local_epochs: int,
+    aggregation_scope: AggregationScope,
+    local_updates: int | None = None,
 ) -> Callable[[int], dict[str, Scalar]]:
     """Fábrica del `on_fit_config_fn`/`on_evaluate_config_fn` de la estrategia.
 
@@ -107,6 +119,10 @@ def make_on_config(
             SERVIDOR.
         local_epochs: `federation.local_epochs` del server.yaml.
         aggregation_scope: `federation.aggregation_scope` del server.yaml.
+        local_updates: `federation.local_updates` del server.yaml. Si no es
+            `None`, el dict lleva `"local_updates"` EN VEZ de `"local_epochs"`
+            (modo FLamby: N batches por ronda; el nodo mira cuál de las dos
+            claves llegó). `None` (default) = modo épocas, sin cambios.
 
     Returns:
         Callable: `server_round -> config dict` que flwr invoca por ronda.
@@ -118,12 +134,16 @@ def make_on_config(
     """
 
     def on_config(server_round: int) -> dict[str, Scalar]:
-        return {
+        config: dict[str, Scalar] = {
             "current_round": server_round,
-            "local_epochs": local_epochs,
             "model_hash": model_hash,
             "aggregation_scope": aggregation_scope,
         }
+        if local_updates is not None:
+            config["local_updates"] = local_updates
+        else:
+            config["local_epochs"] = local_epochs
+        return config
 
     return on_config
 
@@ -180,6 +200,19 @@ def build_strategy(
     """
     if name not in _STRATEGIES:
         raise ValueError(f"Estrategia desconocida: {name!r}. Opciones: {sorted(_STRATEGIES)}")
+    # PyYAML parsea `1e-8` como string (requiere `1.0e-8` para float). Castear
+    # hparams numéricos conocidos para evitar que numpy lance UFuncNoLoopError
+    # dentro de FedAdagrad/FedAdam/FedYogi/FedProx/Scaffold.
+    numeric_keys = {"eta", "eta_l", "beta_1", "beta_2", "tau", "proximal_mu", "server_lr"}
+    cleaned_hparams = {}
+    for k, v in hparams.items():
+        if k in numeric_keys and isinstance(v, str):
+            try:
+                v = float(v)
+            except ValueError:
+                pass
+        cleaned_hparams[k] = v
+
     return _STRATEGIES[name](
         fraction_fit=1.0,
         fraction_evaluate=1.0,
@@ -192,5 +225,5 @@ def build_strategy(
         evaluate_metrics_aggregation_fn=weighted_average,
         on_fit_config_fn=on_config,
         on_evaluate_config_fn=on_config,
-        **hparams,
+        **cleaned_hparams,
     )

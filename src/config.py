@@ -106,6 +106,15 @@ class AugmentationConfig(BaseModel):
         vertical_flip_p: probabilidad del flip vertical.
         blur: si aplicar blur gaussiano aleatorio.
         blur_p: probabilidad de aplicar el blur cuando `blur=True`.
+        random_scale, random_brightness_contrast, affine, coarse_dropout:
+            augmentations opt-in (default `False`) añadidas para Fed-ISIC2019
+            (docs/FEDISIC2019_FLAMBY_REPRO.md §5.G); cada una con su
+            probabilidad `*_p`. Los hparams finos quedan en los defaults de
+            `TransformBuilder`.
+        random_crop: habilita el recorte (`DataConfig.crop_size`) con
+            ubicación aleatoria en vez de centrado. A diferencia de las
+            demás, no tiene `*_p`: es un paso de tamaño, no una distorsión
+            probabilística (ver `TransformBuilder.crop_size`).
 
     Example:
         >>> aug_cfg = AugmentationConfig(rotation_degrees=7, vertical_flip=True)
@@ -120,6 +129,29 @@ class AugmentationConfig(BaseModel):
     vertical_flip_p: float = 0.5
     blur: bool = False
     blur_p: float = 0.3
+    random_scale: bool = False
+    random_scale_p: float = 0.5
+    random_brightness_contrast: bool = False
+    random_brightness_contrast_p: float = 0.5
+    affine: bool = False
+    affine_p: float = 0.5
+    random_crop: bool = False
+    coarse_dropout: bool = False
+    coarse_dropout_p: float = 0.5
+
+    def extra_transform_kwargs(self) -> dict[str, bool | float]:
+        """kwargs de `TransformBuilder` para las augmentations opt-in de Fed-ISIC2019."""
+        return {
+            "use_random_scale": self.random_scale,
+            "random_scale_p": self.random_scale_p,
+            "use_random_brightness_contrast": self.random_brightness_contrast,
+            "random_brightness_contrast_p": self.random_brightness_contrast_p,
+            "use_affine": self.affine,
+            "affine_p": self.affine_p,
+            "use_random_crop": self.random_crop,
+            "use_coarse_dropout": self.coarse_dropout,
+            "coarse_dropout_p": self.coarse_dropout_p,
+        }
 
 
 class DataConfig(BaseModel):
@@ -131,7 +163,19 @@ class DataConfig(BaseModel):
         batch_size: Tamaño de lote para los DataLoaders (default: 16).
         num_workers: Número de subprocesos paralelos para carga de datos (default: 1).
         seed: Semilla aleatoria para reproducibilidad de shuffles y augmentations (default: 42).
-        image_size: Dimensiones (alto, ancho) para resize de imágenes (default: (224, 224)).
+        image_size: Dimensiones (alto, ancho) o tamaño del lado corto para resize
+            de imágenes (default: (224, 224)). `int` = preserva aspect ratio (lado
+            corto a ese valor, como FLamby); tupla = fuerza esa forma exacta
+            (comportamiento de siempre para mamografía).
+        crop_size: recorte cuadrado determinista posterior a `image_size`, aplicado
+            tanto en train como en val/test (como `normalize_mean`/`std`, no como
+            `augmentation` — no se "apaga" en eval). `None` (default) lo desactiva.
+            Train usa `RandomCrop(crop_size)` si `augmentation.random_crop=True`
+            (si no, cae al mismo `CenterCrop` que eval); val/test siempre usa
+            `CenterCrop(crop_size)`. Pensado para Fed-ISIC2019
+            (`image_size=(224,224)`, `crop_size=(200,200)`, replicando el
+            `RandomCrop(200,200)`/`CenterCrop(200,200)` de FLamby) — un YAML que
+            no lo mencione se comporta igual que antes de que este campo existiera.
         augmentation: Configuración de augmentación del train split — ver
             `AugmentationConfig`. val/test nunca se augmentan
             (`src/cli.py` construye su `TransformBuilder` sin pasarle esto).
@@ -202,7 +246,8 @@ class DataConfig(BaseModel):
     batch_size: int = 16
     num_workers: int = 1
     seed: int = 42
-    image_size: tuple[int, int] | None = (224, 224)
+    image_size: tuple[int, int] | int | None = (224, 224)
+    crop_size: tuple[int, int] | None = None
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
     normalize_mean: tuple[float, ...] | None = (0.5, 0.5, 0.5)
     normalize_std: tuple[float, ...] | None = (0.5, 0.5, 0.5)

@@ -9,6 +9,7 @@ Ejemplo de uso:
     >>> loss_spec = build_loss(name="bce")
 """
 
+import inspect
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -25,6 +26,7 @@ from .focal_loss import FocalLoss
 _OPTIMIZERS: dict[str, Callable[..., Optimizer]] = {
     "adam": torch.optim.Adam,
     "adamw": torch.optim.AdamW,
+    "sgd": torch.optim.SGD,
 }
 
 
@@ -208,7 +210,7 @@ def _make_cross_entropy(*, device: str = "cpu", **hparams: Any) -> LossSpec:
     )
 
 
-def _make_focal(*, device: str = "cpu", **hparams: Any) -> LossSpec:
+def _make_focal(*, device: str = "cpu", num_classes: int = 2, **hparams: Any) -> LossSpec:
     """Esquema de 2 logits con Focal Loss (ver `train/focal_loss.py`).
 
     Portado del proyecto INC — reduce el peso de ejemplos ya bien
@@ -216,14 +218,22 @@ def _make_focal(*, device: str = "cpu", **hparams: Any) -> LossSpec:
     desbalance ~66/34 (benigno/maligno) de `fedmammobench.csv`. `alpha`,
     igual que `weight`/`pos_weight` en las otras dos losses, llega desde
     YAML como lista y se convierte a tensor en el device correcto.
+
+    `num_classes` (default 2, comportamiento previo byte-idéntico) NO es un
+    hparam de `FocalLoss`: solo decide la forma de `probs` -- `[B]` con la
+    probabilidad de la clase 1 si es 2, `[B, C]` (softmax completo) si es > 2.
     """
     if "alpha" in hparams:
         hparams = {**hparams, "alpha": torch.as_tensor(hparams["alpha"], dtype=torch.float32, device=device)}
 
     loss_fn = FocalLoss(**hparams).to(device)
+    if num_classes == 2:
+        probs_fn: Callable[[Tensor], Tensor] = lambda outputs: torch.softmax(outputs, dim=1)[:, 1]
+    else:
+        probs_fn = lambda outputs: torch.softmax(outputs, dim=1)
     return LossSpec(
         compute=lambda outputs, labels: loss_fn(outputs, labels),
-        probs=lambda outputs: torch.softmax(outputs, dim=1)[:, 1],
+        probs=probs_fn,
     )
 
 
@@ -234,7 +244,9 @@ _LOSSES: dict[str, Callable[..., LossSpec]] = {
 }
 
 
-def build_loss(name: str, *, device: str = "cpu", **hparams: Any) -> LossSpec:
+def build_loss(
+    name: str, *, device: str = "cpu", num_classes: int | None = None, **hparams: Any
+) -> LossSpec:
     """Construye un LossSpec por nombre, con los hiperparámetros que le pases.
 
     El nombre elegido debe ser consistente con `num_classes` de la cabeza
@@ -249,6 +261,9 @@ def build_loss(name: str, *, device: str = "cpu", **hparams: Any) -> LossSpec:
             llegue como tensor de pesos (`weight`, `pos_weight`, `alpha`).
             Debe coincidir con el device del modelo — mismo patrón que
             `build_metric_collection(device=...)` en `src/metrics.py`.
+        num_classes: número de clases de la cabeza. Solo se reenvía a los
+            fabricantes que lo aceptan (hoy `"focal"`); `None` o 2 = esquema
+            binario de siempre. Nunca llega al constructor de la loss.
         **hparams: hiperparámetros propios de la función de pérdida (weight,
             pos_weight, alpha, gamma, reduction, etc. según el esquema).
 
@@ -264,4 +279,7 @@ def build_loss(name: str, *, device: str = "cpu", **hparams: Any) -> LossSpec:
     """
     if name not in _LOSSES:
         raise ValueError(f"Loss desconocida: {name!r}. Opciones: {sorted(_LOSSES)}")
-    return _LOSSES[name](device=device, **hparams)
+    factory = _LOSSES[name]
+    if num_classes is not None and "num_classes" in inspect.signature(factory).parameters:
+        hparams = {**hparams, "num_classes": num_classes}
+    return factory(device=device, **hparams)

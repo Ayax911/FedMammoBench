@@ -125,7 +125,12 @@ def run_server(config: FederatedServerConfig) -> TrackedStrategy:
     scope = config.federation.aggregation_scope
     model_hash = model_config_hash(config.experiment_id, config.architecture, config.head, scope)
     initial_parameters = ndarrays_to_parameters(get_model_ndarrays(template_model, scope))
-    on_config = make_on_config(model_hash, config.federation.local_epochs, scope)
+    on_config = make_on_config(
+        model_hash,
+        config.federation.local_epochs,
+        scope,
+        local_updates=config.federation.local_updates,
+    )
 
     inner_strategy = build_strategy(
         config.strategy.name,

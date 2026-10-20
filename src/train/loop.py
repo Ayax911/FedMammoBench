@@ -14,7 +14,7 @@ Ejemplo de uso:
     >>> val_metrics = evaluate(model, val_loader, loss_spec, device="cpu")
 """
 
-from typing import Callable
+from typing import Any, Callable, Iterable, Iterator
 
 import torch
 import torch.nn as nn
@@ -34,6 +34,8 @@ def train_one_epoch(
     device: str,
     freeze_bn_stats: bool = True,
     regularizer: Callable[[], Tensor] | None = None,
+    grad_correction: Callable[[nn.Module], None] | None = None,
+    num_classes: int = 2,
 ) -> dict[str, float]:
     """Entrena el modelo durante una época completa.
 
@@ -67,6 +69,17 @@ def train_one_epoch(
             aparte en `"prox_loss"`. `None` (default) = comportamiento
             byte-idéntico a antes de que este parámetro existiera: ni un
             `if` extra en la ruta del backward ni clave nueva en el dict.
+        grad_correction: hook opcional `(model) -> None` que modifica los
+            `.grad` de los parámetros justo después de `backward()` y antes de
+            `optimizer.step()`. Para Scaffold (`grad - c_i + c`), cuyo término
+            se suma al GRADIENTE y no a la loss (a diferencia del proximal de
+            FedProx, que sí vive en `regularizer`). `None` = sin efecto.
+        num_classes: número de clases de la cabeza. Con el default 2 todo
+            igual que siempre. Con `> 2` se OMITE por completo la colección
+            de métricas binarias (`build_metric_collection`) y solo se
+            devuelve `"loss"` (+ `"prox_loss"`). Bypass deliberado, scopeado
+            fuera en docs/FEDISIC2019_FLAMBY_REPRO.md §5.D -- no es un
+            diseño definitivo.
 
     Returns:
         dict[str, float]: mismas claves que `evaluate()` -- `"loss"` +
@@ -86,16 +99,62 @@ def train_one_epoch(
         >>> train_metrics = train_one_epoch(model, train_loader, optimizer, loss_spec, "cuda")
         >>> print(f"Train loss: {train_metrics['loss']:.4f}, AUC: {train_metrics['auc']:.4f}")
     """
+    return _train_over_batches(
+        model,
+        loader,
+        optimizer,
+        loss_spec,
+        device,
+        freeze_bn_stats,
+        regularizer,
+        grad_correction,
+        num_classes,
+    )
+
+
+def _cycle_batches(loader: Iterable[Any], n_updates: int) -> Iterator[Any]:
+    """Emite exactamente `n_updates` batches, reiniciando `loader` al agotarse.
+
+    Loop manual (re-`iter(loader)`) en vez de `itertools.cycle(loader)`:
+    `cycle` CACHEA el primer pase completo (memoria de todas las imágenes)
+    y repetiría los mismos tensores ya augmentados, mientras que re-iterar
+    el DataLoader regenera shuffle y augmentations en cada vuelta.
+    """
+    produced = 0
+    iterator = iter(loader)
+    while produced < n_updates:
+        try:
+            batch = next(iterator)
+        except StopIteration:
+            iterator = iter(loader)
+            batch = next(iterator)  # loader vacío -> StopIteration sube, bien
+        yield batch
+        produced += 1
+
+
+def _train_over_batches(
+    model: nn.Module,
+    batches: Iterable[Any],
+    optimizer: Optimizer,
+    loss_spec: LossSpec,
+    device: str,
+    freeze_bn_stats: bool,
+    regularizer: Callable[[], Tensor] | None,
+    grad_correction: Callable[[nn.Module], None] | None,
+    num_classes: int,
+) -> dict[str, float]:
+    """Cuerpo compartido de `train_one_epoch` y `train_n_updates`."""
     model.train()
     if freeze_bn_stats:
         _set_frozen_bn_eval(model)
 
-    metrics = build_metric_collection(device)
+    # num_classes > 2: sin colección de métricas (bypass, ver docstring público).
+    metrics = build_metric_collection(device) if num_classes == 2 else None
     total_loss = 0.0
     total_reg = 0.0
     n_batches = 0
 
-    for images, labels in loader:
+    for images, labels in batches:
         images, labels = images.to(device), labels.to(device)
 
         optimizer.zero_grad()
@@ -109,6 +168,8 @@ def train_one_epoch(
             total_reg += reg.item()
         else:
             loss.backward()  # pyright: ignore[reportUnknownMemberType]
+        if grad_correction is not None:
+            grad_correction(model)
         optimizer.step()
 
         # Sin gradiente -- el paso de optimización ya terminó, esto solo
@@ -116,18 +177,64 @@ def train_one_epoch(
         # outputs sigue con su grafo de autograd intacto en este punto;
         # .detach() antes de loss_spec.probs() evita retenerlo un batch de
         # más innecesariamente.
-        with torch.no_grad():
-            probs = loss_spec.probs(outputs.detach())
-            metrics.update(probs, labels)
+        if metrics is not None:
+            with torch.no_grad():
+                probs = loss_spec.probs(outputs.detach())
+                metrics.update(probs, labels)
 
         total_loss += loss.item()
         n_batches += 1
 
-    result = {k: v.item() for k, v in metrics.compute().items()}
+    result = {k: v.item() for k, v in metrics.compute().items()} if metrics is not None else {}
     result["loss"] = total_loss / n_batches
     if regularizer is not None:
         result["prox_loss"] = total_reg / n_batches
     return result
+
+
+def train_n_updates(
+    model: nn.Module,
+    loader: DataLoader[tuple[torch.Tensor, int]],
+    optimizer: Optimizer,
+    loss_spec: LossSpec,
+    device: str,
+    n_updates: int,
+    freeze_bn_stats: bool = True,
+    regularizer: Callable[[], Tensor] | None = None,
+    grad_correction: Callable[[nn.Module], None] | None = None,
+    num_classes: int = 2,
+) -> dict[str, float]:
+    """Entrena exactamente `n_updates` batches (modo "E local updates" de FLamby).
+
+    Mismo cuerpo que `train_one_epoch` (comparten `_train_over_batches`), pero
+    itera sobre `loader` con wraparound (`_cycle_batches`) hasta completar
+    `n_updates` pasos de optimizador, den o no una época entera. Las métricas
+    se acumulan sobre esos batches (pueden repetir muestras si
+    `n_updates > len(loader)`, el comportamiento que documenta el paper).
+
+    Args:
+        n_updates: número de batches/pasos de `optimizer.step()`. Resto de
+            argumentos: idénticos a `train_one_epoch`.
+
+    Returns:
+        dict[str, float]: mismas claves que `train_one_epoch`.
+
+    Example:
+        >>> train_n_updates(model, loader, optimizer, loss_spec, "cpu", n_updates=100)
+    """
+    if n_updates < 1:
+        raise ValueError(f"n_updates debe ser >= 1, recibió {n_updates}")
+    return _train_over_batches(
+        model,
+        _cycle_batches(loader, n_updates),
+        optimizer,
+        loss_spec,
+        device,
+        freeze_bn_stats,
+        regularizer,
+        grad_correction,
+        num_classes,
+    )
 
 
 def _set_frozen_bn_eval(model: nn.Module) -> None:
@@ -149,6 +256,7 @@ def evaluate(
     loader: DataLoader[tuple[torch.Tensor, int]],
     loss_spec: LossSpec,
     device: str,
+    num_classes: int = 2,
 ) -> dict[str, float]:
     """Evalúa el modelo sobre cualquier loader (val o test, indistintamente).
 
@@ -160,6 +268,9 @@ def evaluate(
         loader: DataLoader de validación o test.
         loss_spec: especificación de pérdida construida con `build_loss()`.
         device: dispositivo de cómputo (`"cpu"`, `"cuda"`).
+        num_classes: número de clases de la cabeza. Default 2 = comportamiento
+            de siempre. Con `> 2` se omiten las métricas binarias y solo se
+            devuelve `"loss"` (bypass deliberado, docs/FEDISIC2019_FLAMBY_REPRO.md §5.D).
 
     Returns:
         dict[str, float]: Diccionario con `"loss"` y métricas clínicas (`"accuracy"`,
@@ -170,7 +281,8 @@ def evaluate(
         >>> print(f"AUC: {val_metrics['auc']:.4f}, Acc: {val_metrics['accuracy']:.4f}")
     """
     model.eval()
-    metrics = build_metric_collection(device)
+    # num_classes > 2: bypass deliberado de las métricas binarias (ver docstring).
+    metrics = build_metric_collection(device) if num_classes == 2 else None
 
     total_loss = 0.0
     n_batches = 0
@@ -180,12 +292,12 @@ def evaluate(
 
         outputs = model(images)
         loss = loss_spec.compute(outputs, labels)
-        probs = loss_spec.probs(outputs)
-
-        metrics.update(probs, labels)
+        if metrics is not None:
+            probs = loss_spec.probs(outputs)
+            metrics.update(probs, labels)
         total_loss += loss.item()
         n_batches += 1
 
-    result = {k: v.item() for k, v in metrics.compute().items()}
+    result = {k: v.item() for k, v in metrics.compute().items()} if metrics is not None else {}
     result["loss"] = total_loss / n_batches
     return result

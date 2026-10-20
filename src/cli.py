@@ -70,6 +70,7 @@ def run(config: ExperimentConfig, head_state_dict_path: str | None = None) -> No
     aug = config.data.augmentation
     train_transform_builder = TransformBuilder(
         image_size=config.data.image_size,
+        crop_size=config.data.crop_size,
         use_horizontal_flip=aug.horizontal_flip,
         horizontal_flip_p=aug.horizontal_flip_p,
         use_rotation=aug.rotation_degrees > 0,
@@ -78,14 +79,17 @@ def run(config: ExperimentConfig, head_state_dict_path: str | None = None) -> No
         vertical_flip_p=aug.vertical_flip_p,
         use_blur=aug.blur,
         blur_p=aug.blur_p,
+        **aug.extra_transform_kwargs(),
         normalize_mean=config.data.normalize_mean,
         normalize_std=config.data.normalize_std,
     )
     # La normalización va también acá: es preprocesamiento, no augmentación —
     # si train y eval normalizaran distinto, el modelo vería dos
-    # distribuciones de entrada diferentes.
+    # distribuciones de entrada diferentes. crop_size igual: es tamaño, no
+    # augmentación (ver DataConfig.crop_size).
     eval_transform_builder = TransformBuilder(
         image_size=config.data.image_size,
+        crop_size=config.data.crop_size,
         normalize_mean=config.data.normalize_mean,
         normalize_std=config.data.normalize_std,
     )

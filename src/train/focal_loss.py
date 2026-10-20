@@ -1,4 +1,4 @@
-"""Focal Loss para clasificación binaria con cabeza de 2 logits.
+"""Focal Loss para clasificación con cabeza de C logits (binaria con C=2, multiclase con C>2).
 
 Portado desde el proyecto INC
 (`classification_images/focal_loss.py`) para reducir el peso de ejemplos ya
@@ -30,7 +30,7 @@ import torch.nn.functional as F
 
 
 class FocalLoss(nn.Module):
-    """Focal Loss para clasificación binaria con logits `[B, 2]`.
+    """Focal Loss para logits `[B, C]` (C=2 binario; C>2 multiclase, ej. Fed-ISIC2019 con C=8).
 
     FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
 
@@ -39,7 +39,7 @@ class FocalLoss(nn.Module):
     (`alpha`) además del reweighting dinámico por `gamma`.
 
     Attributes:
-        alpha: tensor `[2]` con el peso por clase (`[negativo, positivo]`),
+        alpha: tensor `[C]` con el peso por clase (`[negativo, positivo]` si C=2),
             o `None` para no ponderar por clase. Registrado como buffer, no
             como atributo plano, para que se mueva de dispositivo junto con
             el módulo.

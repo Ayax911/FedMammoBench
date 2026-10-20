@@ -30,6 +30,8 @@ from typing import Callable
 
 import torch.nn as nn
 from torchvision.models import (  # pyright: ignore[reportMissingTypeStubs]
+    efficientnet_b0,
+    EfficientNet_B0_Weights,
     resnet18,
     ResNet18_Weights,
     resnet50,
@@ -37,7 +39,12 @@ from torchvision.models import (  # pyright: ignore[reportMissingTypeStubs]
 )
 
 from .custom_cnn import CustomCNNBackbone
-from .freeze import CustomCNNFreezeStrategy, FreezeStrategy, ResNetFreezeStrategy
+from .freeze import (
+    CustomCNNFreezeStrategy,
+    EfficientNetFreezeStrategy,
+    FreezeStrategy,
+    ResNetFreezeStrategy,
+)
 from .weights import load_weights, truncate_backbone, LoadReport
 
 
@@ -75,6 +82,9 @@ class ArchitectureSpec:
             `True` and nothing else in `build_model()` needs to change -- that's the
             scalability this flag buys: one boolean per registry entry, not a second
             code path per architecture.
+        truncate_n: number of direct children kept by `truncate_backbone()` when
+            `weights_from_factory=True`. Default 9 (ResNet: `conv1..avgpool`, drops `fc`);
+            EfficientNet-B0 uses 2 (`features` + `avgpool`, drops `classifier`).
 
     Example:
         >>> spec = ArchitectureSpec(
@@ -89,6 +99,7 @@ class ArchitectureSpec:
     valid_prefixes: tuple[str, ...]
     freeze_strategy: FreezeStrategy
     weights_from_factory: bool = False
+    truncate_n: int = 9
 
 
 # Registro interno de especificaciones de modelo soportadas. Cada entrada es
@@ -193,6 +204,17 @@ _ARCHITECTURES: dict[str, ArchitectureSpec] = {
         freeze_strategy=CustomCNNFreezeStrategy(),
         weights_from_factory=True,
     ),
+    # EfficientNet-B0 ImageNet (Fed-ISIC2019 / FLamby, docs/FEDISIC2019_FLAMBY_REPRO.md §5.A).
+    # torchvision efficientnet_b0 tiene 3 hijos directos: features, avgpool, classifier;
+    # el backbone son los 2 primeros (truncate_n=2). Salida tras Flatten: 1280.
+    "efficientnet_b0_imagenet": ArchitectureSpec(
+        model_factory=lambda: efficientnet_b0(weights=EfficientNet_B0_Weights.IMAGENET1K_V1),
+        key_remap={},
+        valid_prefixes=(),  # no se usa con weights_from_factory=True
+        freeze_strategy=EfficientNetFreezeStrategy(),
+        weights_from_factory=True,
+        truncate_n=2,
+    ),
 }
 
 
@@ -253,7 +275,7 @@ def build_model(
         # no duplicar el "9" que separa encoder de `fc` (ver su docstring en
         # weights.py).
         model = spec.model_factory()
-        backbone = truncate_backbone(model)
+        backbone = truncate_backbone(model, n=spec.truncate_n)
         # No hay missing/unexpected posible acá: el state_dict truncado
         # proviene de la propia arquitectura de torchvision, que por
         # construcción calza 1:1 consigo misma. LoadReport se construye de

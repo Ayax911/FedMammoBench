@@ -120,3 +120,20 @@ class CustomCNNFreezeStrategy(FreezeStrategy):
             list[str]: `CustomCNNBackbone` block sequence names.
         """
         return ["block1", "block2", "block3", "block4"]
+
+
+class EfficientNetFreezeStrategy(FreezeStrategy):
+    """FreezeStrategy para el backbone truncado de EfficientNet-B0 (`features`, `avgpool`).
+
+    `unfreeze_from="features"` = todo entrenable (fine-tune completo, el default del
+    paper de FLamby); `"none"` = todo congelado (feature extractor puro).
+    """
+
+    @property
+    def block_order(self) -> list[str]:
+        """Ordered positional block names of the truncated EfficientNet-B0 backbone.
+
+        Returns:
+            list[str]: `["features", "avgpool"]`.
+        """
+        return ["features", "avgpool"]

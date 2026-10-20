@@ -21,13 +21,14 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from ..datasets.build import builder_dataloader
+from ..datasets.isic2019 import ISIC2019_LABEL_MAP
 from ..datasets.manifest import Manifest
 from ..datasets.split import Split
 from ..datasets.transform import TransformBuilder
 from ..models.build import build_model
 from ..models.heads import get_head_strategy
 from ..train.build import LossSpec, build_loss
-from .config import FederatedNodeConfig
+from .config import FederatedNodeConfig, node_num_classes
 
 
 @dataclass(frozen=True)
@@ -88,12 +89,20 @@ def build_node_assembly(config: FederatedNodeConfig) -> NodeAssembly:
         >>> assembly.n_train
         3776
     """
-    manifest = Manifest(manifest_path=config.data.manifest_path, image_root=config.data.image_root)
+    num_classes = node_num_classes(config)
+    # Multiclase (num_classes > 2) == Fed-ISIC2019 por ahora: el label_map de las
+    # 8 clases se arma acá, sin tocar src/config.py (docs/FEDISIC2019_FLAMBY_REPRO.md §5.D1).
+    manifest = Manifest(
+        manifest_path=config.data.manifest_path,
+        image_root=config.data.image_root,
+        label_map=ISIC2019_LABEL_MAP if num_classes > 2 else None,
+    )
     split = Split(manifest=manifest)
 
     aug = config.data.augmentation
     train_transform_builder = TransformBuilder(
         image_size=config.data.image_size,
+        crop_size=config.data.crop_size,
         use_horizontal_flip=aug.horizontal_flip,
         horizontal_flip_p=aug.horizontal_flip_p,
         use_rotation=aug.rotation_degrees > 0,
@@ -102,11 +111,13 @@ def build_node_assembly(config: FederatedNodeConfig) -> NodeAssembly:
         vertical_flip_p=aug.vertical_flip_p,
         use_blur=aug.blur,
         blur_p=aug.blur_p,
+        **aug.extra_transform_kwargs(),
         normalize_mean=config.data.normalize_mean,
         normalize_std=config.data.normalize_std,
     )
     eval_transform_builder = TransformBuilder(
         image_size=config.data.image_size,
+        crop_size=config.data.crop_size,
         normalize_mean=config.data.normalize_mean,
         normalize_std=config.data.normalize_std,
     )
@@ -138,7 +149,9 @@ def build_node_assembly(config: FederatedNodeConfig) -> NodeAssembly:
     head = head_cls(**config.head.hparams)
     model = nn.Sequential(backbone, head.build()).to(config.run.device)
 
-    loss_spec = build_loss(config.loss.name, device=config.run.device, **config.loss.hparams)
+    loss_spec = build_loss(
+        config.loss.name, device=config.run.device, num_classes=num_classes, **config.loss.hparams
+    )
 
     return NodeAssembly(
         model=model,

@@ -85,6 +85,7 @@ def run_evaluation(config: ExperimentConfig, checkpoint_path: str | Path) -> Non
     aug = config.data.augmentation
     train_transform_builder = TransformBuilder(
         image_size=config.data.image_size,
+        crop_size=config.data.crop_size,
         use_horizontal_flip=aug.horizontal_flip,
         horizontal_flip_p=aug.horizontal_flip_p,
         use_rotation=aug.rotation_degrees > 0,
@@ -93,11 +94,13 @@ def run_evaluation(config: ExperimentConfig, checkpoint_path: str | Path) -> Non
         vertical_flip_p=aug.vertical_flip_p,
         use_blur=aug.blur,
         blur_p=aug.blur_p,
+        **aug.extra_transform_kwargs(),
         normalize_mean=config.data.normalize_mean,
         normalize_std=config.data.normalize_std,
     )
     eval_transform_builder = TransformBuilder(
         image_size=config.data.image_size,
+        crop_size=config.data.crop_size,
         normalize_mean=config.data.normalize_mean,
         normalize_std=config.data.normalize_std,
     )

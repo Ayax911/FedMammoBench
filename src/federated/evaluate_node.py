@@ -52,7 +52,7 @@ from ..reporting import plot_loss_curve, plot_metric_curve
 from ..seed import set_global_seed
 from ..tracking import MetricsLogger
 from .assembly import NodeAssembly, build_node_assembly
-from .config import FederatedNodeConfig, load_node_config
+from .config import FederatedNodeConfig, load_node_config, node_num_classes
 from .handshake import model_config_hash
 
 # Espera acotada por best.json: cubre el caso patológico de un servidor que
@@ -139,6 +139,17 @@ def run_final_evaluation(
     Example:
         >>> run_final_evaluation(cfg, Path("runs/federado/exp40_fedavg_full/server"))
     """
+    if node_num_classes(config) > 2:
+        # Bypass deliberado (docs/FEDISIC2019_FLAMBY_REPRO.md §5.D5): el reporting
+        # final (ROC, matriz de confusión, AUC) asume clasificación binaria y
+        # src/metrics.py / src/reporting.py quedan fuera de alcance. No se
+        # reimplementa acá.
+        print(
+            f"[{config.node_name}] evaluación final omitida: num_classes > 2 "
+            "(reporting binario fuera de alcance, ver FEDISIC2019_FLAMBY_REPRO.md §5.D5)."
+        )
+        return
+
     best = _wait_for_best_json(Path(server_run_dir))
 
     node_hash = model_config_hash(

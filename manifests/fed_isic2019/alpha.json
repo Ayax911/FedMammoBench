@@ -1,0 +1,32 @@
+{
+  "classes": [
+    "melanoma",
+    "melanocytic_nevus",
+    "basal_cell_carcinoma",
+    "actinic_keratosis",
+    "benign_keratosis",
+    "dermatofibroma",
+    "vascular_lesion",
+    "squamous_cell_carcinoma"
+  ],
+  "class_counts": [
+    3332,
+    9084,
+    2649,
+    712,
+    1950,
+    184,
+    201,
+    485
+  ],
+  "alpha": [
+    5.581333,
+    2.047226,
+    7.020385,
+    26.119382,
+    9.536923,
+    101.070652,
+    92.522388,
+    38.34433
+  ]
+}

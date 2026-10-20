@@ -1,0 +1,43 @@
+# fedisic2019_fedprox_r10 -- Fed-ISIC2019, replica de FLamby (du Terrail et al., arXiv:2210.04620, Ap. H/J).
+# Celda: strategy=fedprox {'proximal_mu': 0.001}, lr local SGD=0.01, rounds=10.
+# Generado por scripts/fed_isic2019/gen_configs.py (NO editar a mano). Ver
+# docs/FEDISIC2019_FLAMBY_REPRO_RESULTADOS.md para desviaciones y limitaciones:
+#   - federation.local_updates: 100 (E = 100 BATCHES por ronda, no epocas).
+#   - tracking.best_metric_name: loss (min) -- metricas multiclase fuera de alcance (§5.D4).
+#   - rounds es una aproximacion de T_max (no el valor exacto de FLamby).
+
+experiment_id: fedisic2019_fedprox_r10
+
+federation:
+  server_address: "127.0.0.1:8091"
+  rounds: 10
+  local_updates: 100
+  num_nodes: 6
+  aggregation_scope: full
+  accept_failures: false
+
+strategy:
+  name: fedprox
+  hparams: {proximal_mu: 0.001}
+
+architecture:
+  name: efficientnet_b0_imagenet
+  unfreeze_from: features        # fine-tune completo (paper FLamby)
+
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 1280
+    hidden_layers: []
+    input_dropout: 0.2           # el dropout(0.2) previo al _fc de efficientnet_pytorch
+    num_classes: 8
+
+tracking:
+  best_metric_name: loss
+  best_metric_mode: min
+  save_every_rounds: null
+  run_dir: runs/federado/fedisic2019_fedprox_r10/server
+  checkpoint_dir: runs/federado/fedisic2019_fedprox_r10/server/weights
+  device: cpu
+  wandb_project: fedmammobench2.0
+  wandb_group: fedisic2019_fedprox_r10

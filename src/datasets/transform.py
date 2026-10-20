@@ -13,7 +13,8 @@ class TransformBuilder:
     and normalization on 3-channel PyTorch tensors.
 
     Args:
-        image_size: Spatial target resolution tuple `(height, width)` after resizing. Default is `(224, 224)`.
+        image_size: Spatial target resolution tuple `(height, width)` or integer `size`
+            for the shorter edge (preserving aspect ratio) after resizing. Default is `(224, 224)`.
         use_horizontal_flip: If True, adds random horizontal flip augmentation. Default is False.
         use_rotation: If True, adds random rotation augmentation. Default is False.
         rotation_degrees: Maximum degree range for random rotation (used if `use_rotation=True`). Default is 15.
@@ -35,6 +36,33 @@ class TransformBuilder:
             Both 1-element tuples/lists (broadcast across all 3 channels) and 3-element
             tuples/lists are supported. Existing configs (`[0.449]`, `null`, `(0.5, 0.5, 0.5)`)
             remain valid without changes.
+        use_random_scale / random_scale_p / random_scale_range: random zoom via
+            `RandomAffine(scale=...)` (opt-in, default off; Fed-ISIC2019). Default
+            range `(0.93, 1.07)` matches FLamby's own
+            `albumentations.RandomScale(0.07)` (±7%) — verified against
+            `flamby/datasets/fed_isic2019/dataset.py` in the official repo.
+        use_random_brightness_contrast / random_brightness_contrast_p / brightness / contrast:
+            `ColorJitter` (opt-in; OJO: destroys float TIFFs, only for uint8-origin RGB).
+            Defaults `brightness=0.15, contrast=0.1` match FLamby's
+            `RandomBrightnessContrast(0.15, 0.1)`.
+        use_affine / affine_p / affine_degrees / affine_translate / affine_shear:
+            `RandomAffine` translate + shear (opt-in). Default `affine_shear=0.1`
+            matches FLamby's `albumentations.Affine(shear=0.1)` — a barely
+            perceptible shear range, not a typo: that's what the paper's reference
+            implementation actually uses.
+        crop_size / use_random_crop / random_crop_p: deterministic square crop down
+            from `image_size` to `crop_size` — `RandomCrop` when `use_random_crop`
+            is set (train), `CenterCrop` otherwise (eval), matching FLamby's
+            `RandomCrop(200, 200)` (train) / `CenterCrop(200, 200)` (test). Unlike
+            the other entries here, this one applies whenever `crop_size` is set,
+            train AND eval alike — it's a sizing step, not a probabilistic
+            augmentation (FLamby's own crop has no `p=`, it always runs).
+        use_coarse_dropout / coarse_dropout_p / coarse_dropout_scale: `RandomErasing`
+            as a substitute for Coarse Dropout (opt-in). `coarse_dropout_scale`
+            approximates FLamby's `CoarseDropout(1-8 holes, 16, 16)` (1 to 8 holes
+            of 16x16px on a 200x200 image, i.e. ~0.6%-5.1% of the image area) as a
+            single erased rectangle of comparable aggregate area — not identical
+            (one hole vs several), documented approximation.
         normalize_std: Per-channel normalization standard deviation tuple/sequence.
             Default is `(0.5, 0.5, 0.5)`. Follows the same broadcast behavior as `normalize_mean`.
 
@@ -46,7 +74,8 @@ class TransformBuilder:
 
     def __init__(
         self,
-        image_size: tuple[int, int] | None = (224, 224),
+        image_size: tuple[int, int] | int | None = (224, 224),
+        crop_size: tuple[int, int] | None = None,
         use_horizontal_flip: bool = False,
         use_rotation: bool = False,
         rotation_degrees: int = 15,
@@ -59,8 +88,25 @@ class TransformBuilder:
         blur_sigma: tuple[float, float] = (0.1, 0.6),
         normalize_mean: tuple[float, ...] | None = (0.5, 0.5, 0.5),
         normalize_std: tuple[float, ...] | None = (0.5, 0.5, 0.5),
+        use_random_scale: bool = False,
+        random_scale_p: float = 0.5,
+        random_scale_range: tuple[float, float] = (0.93, 1.07),
+        use_random_brightness_contrast: bool = False,
+        random_brightness_contrast_p: float = 0.5,
+        brightness: float = 0.15,
+        contrast: float = 0.1,
+        use_affine: bool = False,
+        affine_p: float = 0.5,
+        affine_degrees: float = 0.0,
+        affine_translate: tuple[float, float] = (0.1, 0.1),
+        affine_shear: float = 0.1,
+        use_random_crop: bool = False,
+        use_coarse_dropout: bool = False,
+        coarse_dropout_p: float = 0.5,
+        coarse_dropout_scale: tuple[float, float] = (0.006, 0.05),
     ) -> None:
         self.image_size = image_size
+        self.crop_size = crop_size
         self.use_horizontal_flip = use_horizontal_flip
         self.use_rotation = use_rotation
         self.rotation_degrees = rotation_degrees
@@ -73,6 +119,22 @@ class TransformBuilder:
         self.blur_sigma = blur_sigma
         self.normalize_mean = normalize_mean
         self.normalize_std = normalize_std
+        self.use_random_scale = use_random_scale
+        self.random_scale_p = random_scale_p
+        self.random_scale_range = random_scale_range
+        self.use_random_brightness_contrast = use_random_brightness_contrast
+        self.random_brightness_contrast_p = random_brightness_contrast_p
+        self.brightness = brightness
+        self.contrast = contrast
+        self.use_affine = use_affine
+        self.affine_p = affine_p
+        self.affine_degrees = affine_degrees
+        self.affine_translate = affine_translate
+        self.affine_shear = affine_shear
+        self.use_random_crop = use_random_crop
+        self.use_coarse_dropout = use_coarse_dropout
+        self.coarse_dropout_p = coarse_dropout_p
+        self.coarse_dropout_scale = coarse_dropout_scale
 
     def build(self) -> transforms.Compose:
         """Assembles and returns the configured torchvision transformation pipeline.
@@ -106,6 +168,62 @@ class TransformBuilder:
                 transforms.RandomApply(
                     [transforms.GaussianBlur(kernel_size=self.blur_kernel_size, sigma=self.blur_sigma)],
                     p=self.blur_p,
+                )
+            )
+
+        # Step 2b: augmentations añadidas para Fed-ISIC2019 (FLamby; ver
+        # docs/FEDISIC2019_FLAMBY_REPRO.md §5.G). Todas opt-in, default False:
+        # con todos los flags apagados el pipeline es el de siempre. Operan
+        # sobre tensores float; ColorJitter es seguro para las imágenes RGB
+        # uint8->float [0,1] de ISIC pero destruye TIFFs float de mamografía
+        # (ver CLAUDE.md) -- por eso no se activa por default.
+        if self.use_random_scale:
+            steps.append(
+                transforms.RandomApply(
+                    [transforms.RandomAffine(degrees=0, scale=self.random_scale_range)],
+                    p=self.random_scale_p,
+                )
+            )
+
+        if self.use_random_brightness_contrast:
+            steps.append(
+                transforms.RandomApply(
+                    [transforms.ColorJitter(brightness=self.brightness, contrast=self.contrast)],
+                    p=self.random_brightness_contrast_p,
+                )
+            )
+
+        if self.use_affine:
+            steps.append(
+                transforms.RandomApply(
+                    [
+                        transforms.RandomAffine(
+                            degrees=self.affine_degrees,
+                            translate=self.affine_translate,
+                            shear=self.affine_shear,
+                        )
+                    ],
+                    p=self.affine_p,
+                )
+            )
+
+        if self.crop_size is not None:
+            # Recorte determinista (no envuelto en RandomApply: FLamby's propio
+            # RandomCrop/CenterCrop no tiene `p=`, siempre corre) -- train usa
+            # una ubicación aleatoria, eval siempre el centro. Requiere que
+            # `image_size` ya sea >= `crop_size` en ambas dimensiones (Step 1
+            # ya corrió arriba).
+            if self.use_random_crop:
+                steps.append(transforms.RandomCrop(self.crop_size))
+            else:
+                steps.append(transforms.CenterCrop(self.crop_size))
+
+        if self.use_coarse_dropout:
+            # RandomErasing (torchvision) como sustituto de Coarse Dropout: borra
+            # UN rectángulo con ceros (el de albumentations borra varios).
+            steps.append(
+                transforms.RandomErasing(
+                    p=self.coarse_dropout_p, scale=self.coarse_dropout_scale, value=0.0
                 )
             )
 

@@ -1,0 +1,60 @@
+{
+  "bcn": {
+    "center": 0,
+    "train": 8937,
+    "val": 993,
+    "test": 2483,
+    "train_plus_val": 9930,
+    "paper_train": 9930,
+    "paper_test": 2483
+  },
+  "vidir_molemax": {
+    "center": 1,
+    "train": 2847,
+    "val": 316,
+    "test": 791,
+    "train_plus_val": 3163,
+    "paper_train": 3163,
+    "paper_test": 791
+  },
+  "vidir_modern": {
+    "center": 2,
+    "train": 2423,
+    "val": 268,
+    "test": 672,
+    "train_plus_val": 2691,
+    "paper_train": 2691,
+    "paper_test": 672
+  },
+  "rosendahl": {
+    "center": 3,
+    "train": 1626,
+    "val": 181,
+    "test": 452,
+    "train_plus_val": 1807,
+    "paper_train": 1807,
+    "paper_test": 452
+  },
+  "msk": {
+    "center": 4,
+    "train": 589,
+    "val": 66,
+    "test": 164,
+    "train_plus_val": 655,
+    "paper_train": 655,
+    "paper_test": 164
+  },
+  "vienna_dias": {
+    "center": 5,
+    "train": 316,
+    "val": 35,
+    "test": 88,
+    "train_plus_val": 351,
+    "paper_train": 351,
+    "paper_test": 88
+  },
+  "_leakage_report": {
+    "lesions_with_rows_in_more_than_one_split": 2911,
+    "lesions_total": 11847
+  }
+}
