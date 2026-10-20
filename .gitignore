@@ -81,3 +81,12 @@ graphify-out/
 # generated configs) -- never committed, see docs/FEDERATED_DESIGN.md §11.
 .docker_smoke/
 configs/federated/_docker_smoke/
+
+# Excepción puntual a las reglas *.pt/*.pth de arriba: exp28_antioverfit_base
+# se entrenó en el workstation y hace falta como backbone congelado (extractor
+# de embeddings) para el experimento de GNN sobre grafo de población de
+# pacientes -- sin este .pt en el repo, la otra máquina no tiene forma de
+# reproducirlo. Va por Git LFS (ver .gitattributes), no como blob normal. Las
+# reglas de arriba siguen aplicando a cualquier otro checkpoint -- exp28 es la
+# única excepción, a propósito.
+!runs/centralizado/exp28_antioverfit_base/weights/*.pt

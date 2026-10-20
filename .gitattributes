@@ -1,0 +1,6 @@
+# Checkpoints commiteados a propósito (ver excepción homónima en .gitignore)
+# viajan por Git LFS -- un ResNet50 fine-tuned pesa ~100MB, GitHub rechaza
+# blobs de ese tamaño sin LFS. Cualquier futuro *.pt/*.pth que se decida
+# commitear cae bajo este filtro automáticamente.
+runs/**/*.pt filter=lfs diff=lfs merge=lfs -text
+runs/**/*.pth filter=lfs diff=lfs merge=lfs -text
