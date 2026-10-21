@@ -34,6 +34,7 @@ este archivo (ver el docstring del paquete).
 """
 
 import argparse
+import contextlib
 import csv
 import time
 from pathlib import Path
@@ -41,6 +42,7 @@ from pathlib import Path
 import flwr as fl
 import numpy as np
 import torch
+from filelock import FileLock
 from flwr.common import NDArrays, Scalar
 from torch.nn.utils import parameters_to_vector
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -151,6 +153,27 @@ class FedMammoBenchClient(fl.client.NumPyClient):
         with open(self.train_log_path, "a") as f:
             f.write(text + "\n")
         print(f"[{self.config.node_name}] {text}", flush=True)
+
+    @contextlib.contextmanager
+    def _gpu_section(self):
+        """Serializa el cómputo GPU pesado entre nodos cuando
+        `run.gpu_lock_path` está fijado (ver `NodeRunConfig.gpu_lock_path`):
+        adquiere el lock, corre el bloque, y libera caché de CUDA al salir
+        para no dejar memoria fragmentada retenida mientras este nodo espera
+        su próximo turno (el allocator de PyTorch no la devuelve sola --
+        confirmado necesario, ver docs/FIXES_FEDISIC2019_FLAMBY_REPRO.md).
+        `nullcontext()` + sin `empty_cache()` si `gpu_lock_path` es `None` --
+        cero cambio de comportamiento por default.
+        """
+        if self.config.run.gpu_lock_path is None:
+            yield
+            return
+        with FileLock(str(self.config.run.gpu_lock_path)):
+            try:
+                yield
+            finally:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     # ------------------------------------------------------------------ #
 
@@ -264,25 +287,26 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             # sola fila de metrics.csv por ronda (no hay "épocas locales"
             # que loguear una por una; el eje X de metrics.csv es la ronda).
             epoch_start = time.perf_counter()
-            train_metrics = train_n_updates(
-                model,
-                self.assembly.loaders["train"],
-                optimizer,
-                self.assembly.loss_spec,
-                self.config.run.device,
-                n_updates=local_updates,
-                freeze_bn_stats=self.config.run.freeze_bn_stats,
-                regularizer=regularizer,
-                grad_correction=grad_correction,
-                num_classes=num_classes,
-            )
-            val_metrics = evaluate_loader(
-                model,
-                self.assembly.loaders["val"],
-                self.assembly.loss_spec,
-                self.config.run.device,
-                num_classes=num_classes,
-            )
+            with self._gpu_section():
+                train_metrics = train_n_updates(
+                    model,
+                    self.assembly.loaders["train"],
+                    optimizer,
+                    self.assembly.loss_spec,
+                    self.config.run.device,
+                    n_updates=local_updates,
+                    freeze_bn_stats=self.config.run.freeze_bn_stats,
+                    regularizer=regularizer,
+                    grad_correction=grad_correction,
+                    num_classes=num_classes,
+                )
+                val_metrics = evaluate_loader(
+                    model,
+                    self.assembly.loaders["val"],
+                    self.assembly.loss_spec,
+                    self.config.run.device,
+                    num_classes=num_classes,
+                )
             if scheduler is not None:
                 if isinstance(scheduler, ReduceLROnPlateau):
                     scheduler.step(val_metrics["loss"])
@@ -306,24 +330,25 @@ class FedMammoBenchClient(fl.client.NumPyClient):
             )
         for local_epoch in range(1, (local_epochs + 1) if local_updates is None else 1):
             epoch_start = time.perf_counter()
-            train_metrics = train_one_epoch(
-                model,
-                self.assembly.loaders["train"],
-                optimizer,
-                self.assembly.loss_spec,
-                self.config.run.device,
-                freeze_bn_stats=self.config.run.freeze_bn_stats,
-                regularizer=regularizer,
-                grad_correction=grad_correction,
-                num_classes=num_classes,
-            )
-            val_metrics = evaluate_loader(
-                model,
-                self.assembly.loaders["val"],
-                self.assembly.loss_spec,
-                self.config.run.device,
-                num_classes=num_classes,
-            )
+            with self._gpu_section():
+                train_metrics = train_one_epoch(
+                    model,
+                    self.assembly.loaders["train"],
+                    optimizer,
+                    self.assembly.loss_spec,
+                    self.config.run.device,
+                    freeze_bn_stats=self.config.run.freeze_bn_stats,
+                    regularizer=regularizer,
+                    grad_correction=grad_correction,
+                    num_classes=num_classes,
+                )
+                val_metrics = evaluate_loader(
+                    model,
+                    self.assembly.loaders["val"],
+                    self.assembly.loss_spec,
+                    self.config.run.device,
+                    num_classes=num_classes,
+                )
             if scheduler is not None:
                 # Mismo contrato que Trainer.fit(): ReduceLROnPlateau
                 # necesita un valor -- acá la val loss local (el nodo no
@@ -431,13 +456,14 @@ class FedMammoBenchClient(fl.client.NumPyClient):
 
         set_model_ndarrays(model, parameters, self.config.aggregation_scope)
         num_classes = node_num_classes(self.config)
-        metrics = evaluate_loader(
-            model,
-            self.assembly.loaders["val"],
-            self.assembly.loss_spec,
-            self.config.run.device,
-            num_classes=num_classes,
-        )
+        with self._gpu_section():
+            metrics = evaluate_loader(
+                model,
+                self.assembly.loaders["val"],
+                self.assembly.loss_spec,
+                self.config.run.device,
+                num_classes=num_classes,
+            )
 
         # Binario: esquema fijo de siempre. Multiclase: lista reducida
         # (round, num_examples, loss) -- ver docs/FEDISIC2019_FLAMBY_REPRO.md §5.D3.

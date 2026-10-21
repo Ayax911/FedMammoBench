@@ -1,0 +1,8 @@
+{
+  "best_round": 9,
+  "metric_name": "loss",
+  "metric_value": 5.456467520502363,
+  "checkpoint": "runs/federado/fedisic2019_scaffold_r10/server/weights/best_round9.pt",
+  "aggregation_scope": "full",
+  "model_hash": "e4f2a34016e2c38d"
+}

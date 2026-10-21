@@ -39,8 +39,11 @@ def flow(d: dict) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--image-root", default="/home/akira/data/fed_isic2019")
-    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    ap.add_argument(
+        "--image-root",
+        default="/media/lenovo-mirp/TB2/DATA_TB2/04_PregradoJulian/data/fed_isic2019_fedmammobench",
+    )
+    ap.add_argument("--device", default="cuda", choices=["cpu", "cuda"])
     args = ap.parse_args()
 
     for i, (strategy, (hp, lr, rounds)) in enumerate(CELLS.items()):
@@ -93,7 +96,7 @@ tracking:
   run_dir: runs/federado/{exp}/server
   checkpoint_dir: runs/federado/{exp}/server/weights
   device: cpu
-  wandb_project: fedmammobench2.0
+  wandb_project: research
   wandb_group: {exp}
 """
         )
@@ -132,14 +135,15 @@ data:
   normalize_mean: [0.485, 0.456, 0.406]
   normalize_std: [0.229, 0.224, 0.225]
   augmentation:
-    horizontal_flip: true
-    horizontal_flip_p: 0.5
-    vertical_flip: true
-    vertical_flip_p: 0.5
+    horizontal_flip: false       # ver joint_flip: reemplaza H+V independientes
+    vertical_flip: false         # por el Flip(p=0.5) combinado real de FLamby
+    joint_flip: true
+    joint_flip_p: 0.5
     rotation_degrees: 50
+    rotation_p: 0.5              # albumentations.Rotate(50) por default (verificado)
     random_scale: true
     random_brightness_contrast: true
-    affine: true
+    affine: true                 # affine_translate default None = solo shear, como FLamby
     random_crop: true
     coarse_dropout: true
 
@@ -148,8 +152,13 @@ run:
   freeze_bn_stats: false
   run_dir: runs/federado/{exp}/nodes/{node}
   checkpoint_dir: runs/federado/{exp}/nodes/{node}/weights
-  wandb_project: fedmammobench2.0
+  wandb_project: research
   wandb_group: {exp}
+  # 6 nodos x EfficientNet-B0 x batch_size=64 (del paper) no entran juntos en
+  # los 8GB de VRAM de esta GPU (OOM confirmado, ver
+  # docs/FIXES_FEDISIC2019_FLAMBY_REPRO.md). Serializa el forward/backward
+  # entre nodos sin tocar batch_size ni la semantica de la ronda federada.
+  gpu_lock_path: /tmp/{exp}_gpu.lock
 """
             )
         print("escrito", d)

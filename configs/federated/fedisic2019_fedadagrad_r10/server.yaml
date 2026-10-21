@@ -39,5 +39,5 @@ tracking:
   run_dir: runs/federado/fedisic2019_fedadagrad_r10/server
   checkpoint_dir: runs/federado/fedisic2019_fedadagrad_r10/server/weights
   device: cpu
-  wandb_project: fedmammobench2.0
+  wandb_project: research
   wandb_group: fedisic2019_fedadagrad_r10

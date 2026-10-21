@@ -33,7 +33,7 @@ loss:
 
 data:
   manifest_path: manifests/fed_isic2019/vidir_modern.csv
-  image_root: /home/akira/data/fed_isic2019
+  image_root: /media/lenovo-mirp/TB2/DATA_TB2/04_PregradoJulian/data/fed_isic2019_fedmammobench
   batch_size: 64
   num_workers: 0
   seed: 42
@@ -42,21 +42,27 @@ data:
   normalize_mean: [0.485, 0.456, 0.406]
   normalize_std: [0.229, 0.224, 0.225]
   augmentation:
-    horizontal_flip: true
-    horizontal_flip_p: 0.5
-    vertical_flip: true
-    vertical_flip_p: 0.5
+    horizontal_flip: false       # ver joint_flip: reemplaza H+V independientes
+    vertical_flip: false         # por el Flip(p=0.5) combinado real de FLamby
+    joint_flip: true
+    joint_flip_p: 0.5
     rotation_degrees: 50
+    rotation_p: 0.5              # albumentations.Rotate(50) por default (verificado)
     random_scale: true
     random_brightness_contrast: true
-    affine: true
+    affine: true                 # affine_translate default None = solo shear, como FLamby
     random_crop: true
     coarse_dropout: true
 
 run:
-  device: cpu
+  device: cuda
   freeze_bn_stats: false
   run_dir: runs/federado/fedisic2019_fedadam_r10/nodes/vidir_modern
   checkpoint_dir: runs/federado/fedisic2019_fedadam_r10/nodes/vidir_modern/weights
-  wandb_project: fedmammobench2.0
+  wandb_project: research
   wandb_group: fedisic2019_fedadam_r10
+  # 6 nodos x EfficientNet-B0 x batch_size=64 (del paper) no entran juntos en
+  # los 8GB de VRAM de esta GPU (OOM confirmado, ver
+  # docs/FIXES_FEDISIC2019_FLAMBY_REPRO.md). Serializa el forward/backward
+  # entre nodos sin tocar batch_size ni la semantica de la ronda federada.
+  gpu_lock_path: /tmp/fedisic2019_fedadam_r10_gpu.lock

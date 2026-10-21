@@ -87,5 +87,5 @@ train:
   checkpoint_dir: runs/centralizado/exp69_resnet18_imagenet_unfreeze_layer1/weights
   run_dir: runs/centralizado/exp69_resnet18_imagenet_unfreeze_layer1
   device: cuda
-  wandb_project: fedmammobench2.0
+  wandb_project: research
   wandb_group: resnet18_imagenet_unfreezing

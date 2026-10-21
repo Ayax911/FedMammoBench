@@ -324,3 +324,37 @@ $ git diff --stat src/metrics.py src/reporting.py
 ```
 
 La Fase 1 queda completamente implementada, verificada y lista para el despliegue experimental.
+
+---
+
+## 7. Resultados Finales del Grid de 7 Celdas (Corrida Overnight 2026-10-20/21)
+
+Corrida real sobre gRPC (servidor + 6 nodos), GPU RTX 2070 8GB, serializada con
+`gpu_lock_path` + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (ver
+`docs/FIXES_FEDISIC2019_FLAMBY_REPRO.md`). Las 7 celdas completaron con
+`batch_size=64` (el default del paper, sin degradar por OOM) y 0 reintentos
+(`scripts/fed_isic2019/supervise_cells.py`).
+
+Cómo ubicar cada celda en Weights & Biases (proyecto `research`, entidad
+`j-mast8924-instituci-n-universitaria-itm`): agrupar por **Group** — cada
+grupo es una fila de la tabla de abajo (`experiment_id`), y adentro hay un
+run `-server` (métrica agregada) y 6 runs `-<cliente>` (bcn, vidir_molemax,
+vidir_modern, rosendahl, msk, vienna_dias).
+
+| `experiment_id` (= W&B group) | Estrategia | Hparams de estrategia | lr local (SGD) | rounds | Directorio local | Duración | `val_loss` servidor |
+|---|---|---|---|---|---|---|---|
+| `fedisic2019_fedavg_r10` | FedAvg | `{}` | 0.01 | 10 | `runs/federado/fedisic2019_fedavg_r10/` | 36.0 min | 4.5792 |
+| `fedisic2019_fedprox_r10` | FedProx | `proximal_mu=0.001` | 0.01 | 10 | `runs/federado/fedisic2019_fedprox_r10/` | 36.0 min | 5.2004 |
+| `fedisic2019_fedadagrad_r10` | FedAdagrad | `eta=0.0316, eta_l=0.01, tau=1e-8` | 0.01 | 10 | `runs/federado/fedisic2019_fedadagrad_r10/` | 35.7 min | **NaN** ⚠️ |
+| `fedisic2019_fedadam_r10` | FedAdam | `eta=0.0032, eta_l=0.01, beta_1=0.9, beta_2=0.999, tau=1e-8` | 0.01 | 10 | `runs/federado/fedisic2019_fedadam_r10/` | 35.7 min | **NaN** ⚠️ |
+| `fedisic2019_fedyogi_r10` | FedYogi | `eta=0.0032, eta_l=0.01, beta_1=0.9, beta_2=0.999, tau=1e-8` | 0.01 | 10 | `runs/federado/fedisic2019_fedyogi_r10/` | 35.7 min | **NaN** ⚠️ |
+| `fedisic2019_cyclic_r60` | Cyclic | `order=fixed` | 0.0032 | 60 (=10 ciclos × 6 clientes) | `runs/federado/fedisic2019_cyclic_r60/` | 38.0 min | 7.6294 (best 4.5944) |
+| `fedisic2019_scaffold_r10` | Scaffold | `server_lr=1.0` | 0.01 | 10 | `runs/federado/fedisic2019_scaffold_r10/` | 35.7 min | 5.7744 (best 5.4565) |
+
+**Hallazgo abierto**: FedAdagrad/FedAdam/FedYogi cerraron con `val_loss=NaN` en
+el agregado del servidor, aunque los 6 clientes individuales terminan con
+pérdidas locales razonables (0.16–8.0, ver runs de W&B). Coincide con el
+riesgo ya documentado en `.claude/context/code/FEDERATED.md` ("defaults de
+`fedadam`/`fedyogi` = corrida muerta"). Causa probable: desbordamiento o
+división por `tau` en el update adaptativo del servidor al agregar sobre 8
+clases en vez de 2 — pendiente de diagnosticar, no corregido todavía.

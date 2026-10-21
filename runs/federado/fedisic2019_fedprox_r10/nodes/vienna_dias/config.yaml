@@ -1,0 +1,82 @@
+experiment_id: fedisic2019_fedprox_r10
+node_name: vienna_dias
+server_address: 127.0.0.1:8091
+aggregation_scope: full
+architecture:
+  name: efficientnet_b0_imagenet
+  weights_path: null
+  unfreeze_from: features
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 1280
+    hidden_layers: []
+    input_dropout: 0.2
+    num_classes: 8
+optimizer:
+  name: sgd
+  hparams:
+    lr: 0.01
+scheduler: null
+loss:
+  name: focal
+  hparams:
+    gamma: 2.0
+    alpha:
+    - 5.581333
+    - 2.047226
+    - 7.020385
+    - 26.119382
+    - 9.536923
+    - 101.070652
+    - 92.522388
+    - 38.34433
+data:
+  manifest_path: manifests/fed_isic2019/vienna_dias.csv
+  image_root: /media/lenovo-mirp/TB2/DATA_TB2/04_PregradoJulian/data/fed_isic2019_fedmammobench
+  batch_size: 64
+  num_workers: 0
+  seed: 42
+  image_size: 224
+  crop_size:
+  - 200
+  - 200
+  augmentation:
+    horizontal_flip: false
+    horizontal_flip_p: 0.5
+    rotation_degrees: 50
+    rotation_p: 0.5
+    vertical_flip: false
+    vertical_flip_p: 0.5
+    blur: false
+    blur_p: 0.3
+    joint_flip: true
+    joint_flip_p: 0.5
+    random_scale: true
+    random_scale_p: 0.5
+    random_brightness_contrast: true
+    random_brightness_contrast_p: 0.5
+    affine: true
+    affine_p: 0.5
+    affine_translate: null
+    random_crop: true
+    coarse_dropout: true
+    coarse_dropout_p: 0.5
+  normalize_mean:
+  - 0.485
+  - 0.456
+  - 0.406
+  normalize_std:
+  - 0.229
+  - 0.224
+  - 0.225
+  raw_uint8_loading: false
+  by_database_manifests: null
+run:
+  device: cuda
+  freeze_bn_stats: false
+  run_dir: runs/federado/fedisic2019_fedprox_r10/nodes/vienna_dias
+  checkpoint_dir: runs/federado/fedisic2019_fedprox_r10/nodes/vienna_dias/weights
+  wandb_project: research
+  wandb_group: fedisic2019_fedprox_r10
+  gpu_lock_path: /tmp/fedisic2019_fedprox_r10_gpu.lock

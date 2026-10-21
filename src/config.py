@@ -102,10 +102,30 @@ class AugmentationConfig(BaseModel):
         horizontal_flip_p: probabilidad del flip horizontal.
         rotation_degrees: grados máximos de rotación aleatoria. `0`
             desactiva la rotación.
+        rotation_p: probabilidad de aplicar la rotación cuando
+            `rotation_degrees>0`. Default `1.0` reproduce el comportamiento
+            byte-idéntico de siempre (`transforms.RandomRotation` no tiene
+            `p=`, antes se aplicaba siempre). FLamby's `albumentations.
+            Rotate(50)` para Fed-ISIC2019 sí tiene `p=0.5` por default
+            (verificado contra la firma real instalada) — por eso
+            Fed-ISIC2019 fija `rotation_p: 0.5` en su YAML en vez de dejar
+            el default.
         vertical_flip: si aplicar flip vertical aleatorio.
         vertical_flip_p: probabilidad del flip vertical.
         blur: si aplicar blur gaussiano aleatorio.
         blur_p: probabilidad de aplicar el blur cuando `blur=True`.
+        joint_flip: flip combinado tipo `albumentations.Flip(p=...)` de
+            FLamby: UNA sola tirada con `joint_flip_p` de probabilidad: si
+            sale, elige horizontal/vertical/ambos con igual probabilidad
+            (1/3 cada uno); si no sale, no voltea nada. Default `False`
+            (no cambia nada existente). Mutuamente excluyente con
+            `horizontal_flip`/`vertical_flip` -- actívalo y DESACTIVA esos
+            dos, no los combines (si no, el resultado no es el de FLamby:
+            `horizontal_flip`+`vertical_flip` independientes dan 75% de
+            probabilidad de algún flip, `Flip(p=0.5)` de FLamby da 50%,
+            verificado contra la firma real instalada).
+        joint_flip_p: probabilidad de que `joint_flip` aplique algún flip.
+            Default `0.5`, igual al default real de `albumentations.Flip`.
         random_scale, random_brightness_contrast, affine, coarse_dropout:
             augmentations opt-in (default `False`) añadidas para Fed-ISIC2019
             (docs/FEDISIC2019_FLAMBY_REPRO.md §5.G); cada una con su
@@ -125,29 +145,47 @@ class AugmentationConfig(BaseModel):
     horizontal_flip: bool = True
     horizontal_flip_p: float = 0.5
     rotation_degrees: int = 15
+    rotation_p: float = 1.0
     vertical_flip: bool = False
     vertical_flip_p: float = 0.5
     blur: bool = False
     blur_p: float = 0.3
+    joint_flip: bool = False
+    joint_flip_p: float = 0.5
     random_scale: bool = False
     random_scale_p: float = 0.5
     random_brightness_contrast: bool = False
     random_brightness_contrast_p: float = 0.5
     affine: bool = False
     affine_p: float = 0.5
+    affine_translate: tuple[float, float] | None = None
     random_crop: bool = False
     coarse_dropout: bool = False
     coarse_dropout_p: float = 0.5
 
-    def extra_transform_kwargs(self) -> dict[str, bool | float]:
+    @model_validator(mode="after")
+    def _check_joint_flip_exclusive(self) -> "AugmentationConfig":
+        if self.joint_flip and (self.horizontal_flip or self.vertical_flip):
+            raise ValueError(
+                "augmentation.joint_flip=True no se puede combinar con horizontal_flip/"
+                "vertical_flip (horizontal_flip es True por default) -- fija ambos en "
+                "False explícitamente en el YAML si querés el flip combinado estilo "
+                "FLamby, o no actives joint_flip si querés los flips independientes."
+            )
+        return self
+
+    def extra_transform_kwargs(self) -> dict[str, bool | float | tuple[float, float] | None]:
         """kwargs de `TransformBuilder` para las augmentations opt-in de Fed-ISIC2019."""
         return {
+            "use_joint_flip": self.joint_flip,
+            "joint_flip_p": self.joint_flip_p,
             "use_random_scale": self.random_scale,
             "random_scale_p": self.random_scale_p,
             "use_random_brightness_contrast": self.random_brightness_contrast,
             "random_brightness_contrast_p": self.random_brightness_contrast_p,
             "use_affine": self.affine,
             "affine_p": self.affine_p,
+            "affine_translate": self.affine_translate,
             "use_random_crop": self.random_crop,
             "use_coarse_dropout": self.coarse_dropout,
             "coarse_dropout_p": self.coarse_dropout_p,

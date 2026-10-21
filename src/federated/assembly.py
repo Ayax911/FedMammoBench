@@ -107,6 +107,7 @@ def build_node_assembly(config: FederatedNodeConfig) -> NodeAssembly:
         horizontal_flip_p=aug.horizontal_flip_p,
         use_rotation=aug.rotation_degrees > 0,
         rotation_degrees=aug.rotation_degrees,
+        rotation_p=aug.rotation_p,
         use_vertical_flip=aug.vertical_flip,
         vertical_flip_p=aug.vertical_flip_p,
         use_blur=aug.blur,

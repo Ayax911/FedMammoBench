@@ -20,6 +20,16 @@ def main() -> None:
     parser.add_argument("--exp", required=True, help="Nombre de la celda (ej. fedisic2019_fedavg_r10)")
     parser.add_argument("--rounds", type=int, default=None, help="Sobrescribir número de rondas")
     parser.add_argument("--local-updates", type=int, default=None, help="Sobrescribir local_updates")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help=(
+            "Sobrescribir data.batch_size en los 6 node_*.yaml (escalón de "
+            "contingencia por OOM, ver docs/FIXES_FEDISIC2019_FLAMBY_REPRO.md "
+            "-- NO es el default del paper, documentar cuando se use)."
+        ),
+    )
     parser.add_argument("--timeout", type=int, default=3600, help="Timeout en segundos")
     args = parser.parse_args()
 
@@ -40,6 +50,19 @@ def main() -> None:
         cfg_data["federation"]["local_updates"] = args.local_updates
         modified = True
 
+    # Mismo patrón (backup + restore en finally) para batch_size en los 6
+    # node_*.yaml -- por defecto no se toca nada (args.batch_size is None).
+    node_backups: dict[Path, str] = {}
+    if args.batch_size is not None:
+        for client in CLIENTS:
+            node_yaml = cfg_dir / f"node_{client}.yaml"
+            orig = node_yaml.read_text()
+            node_data = yaml.safe_load(orig)
+            if node_data["data"]["batch_size"] != args.batch_size:
+                node_backups[node_yaml] = orig
+                node_data["data"]["batch_size"] = args.batch_size
+                node_yaml.write_text(yaml.dump(node_data, sort_keys=False))
+
     try:
         if modified:
             server_yaml.write_text(yaml.dump(cfg_data, sort_keys=False))
@@ -47,6 +70,14 @@ def main() -> None:
         print(f"=== Iniciando celda {args.exp} (rounds={cfg_data['federation']['rounds']}, updates={cfg_data['federation'].get('local_updates')}) ===")
         env = os.environ.copy()
         env["PYTHONPATH"] = "."
+        # Debe fijarse ANTES de que el proceso importe torch/inicialice CUDA --
+        # por eso va acá (env del subprocess), no dentro de client.py. Reduce
+        # fragmentación del allocator de CUDA cuando varios procesos comparten
+        # una GPU chica (confirmado necesario: con 6 nodos + gpu_lock_path
+        # serializando el cómputo, un solo proceso activo igual mostraba ~5GB
+        # "en uso" por fragmentación, no por el modelo en sí -- ver
+        # docs/FIXES_FEDISIC2019_FLAMBY_REPRO.md).
+        env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
         # Lanzar servidor
         srv_cmd = [sys.executable, "-m", "src.federated.server", "--config", str(server_yaml)]
@@ -98,6 +129,8 @@ def main() -> None:
     finally:
         if modified:
             server_yaml.write_text(orig_content)
+        for node_yaml, orig in node_backups.items():
+            node_yaml.write_text(orig)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,100 @@
+_wandb:
+    value:
+        cli_version: 0.29.0
+        e:
+            tv1azpbmfuevxieeoq3uh1yhwx3prqkg:
+                args:
+                    - --config
+                    - configs/federated/fedisic2019_fedadam_r10/server.yaml
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "249792131072"
+                        used: "115632037888"
+                email: j.mast8924@gmail.com
+                executable: /media/lenovo-mirp/TB2/DATA_TB2/04_PregradoJulian/FedMammoBench/.venv/bin/python
+                git:
+                    commit: 4c92ec00677cf6f1814a57aa8a904e0862c5d81e
+                    remote: https://github.com/Ayax911/FedMammoBench.git
+                gpu: NVIDIA GeForce RTX 2070
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Turing
+                      cudaCores: 2304
+                      memoryTotal: "8589934592"
+                      name: NVIDIA GeForce RTX 2070
+                      uuid: GPU-61f7097b-c7e6-9808-721d-ebeea4f352ab
+                host: lenovo-mirp-ThinkStation-P340
+                memory:
+                    total: "33341890560"
+                os: Linux-7.0.0-30-generic-x86_64-with-glibc2.39
+                program: -m src.federated.server
+                python: CPython 3.13.12
+                root: runs/federado/fedisic2019_fedadam_r10/server
+                startedAt: "2026-10-21T05:18:55.475308Z"
+                writerId: tv1azpbmfuevxieeoq3uh1yhwx3prqkg
+        m: []
+        python_version: 3.13.12
+        t:
+            "1":
+                - 1
+                - 41
+            "2":
+                - 1
+                - 41
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+            "4": 3.13.12
+            "5": 0.29.0
+            "12": 0.29.0
+            "13": linux-x86_64
+architecture:
+    value:
+        name: efficientnet_b0_imagenet
+        unfreeze_from: features
+        weights_path: null
+experiment_id:
+    value: fedisic2019_fedadam_r10
+federation:
+    value:
+        accept_failures: false
+        aggregation_scope: full
+        grpc_max_message_length: 536870912
+        local_epochs: 1
+        local_updates: 100
+        num_nodes: 6
+        round_timeout_seconds: null
+        rounds: 10
+        server_address: 127.0.0.1:8093
+head:
+    value:
+        hparams:
+            hidden_layers: []
+            in_features: 1280
+            input_dropout: 0.2
+            num_classes: 8
+        name: configurable_mlp
+strategy:
+    value:
+        hparams:
+            beta_1: 0.9
+            beta_2: 0.999
+            eta: 0.0032
+            eta_l: 0.01
+            tau: "1e-08"
+        name: fedadam
+tracking:
+    value:
+        best_metric_mode: min
+        best_metric_name: loss
+        checkpoint_dir: runs/federado/fedisic2019_fedadam_r10/server/weights
+        device: cpu
+        run_dir: runs/federado/fedisic2019_fedadam_r10/server
+        save_every_rounds: null
+        wandb_group: fedisic2019_fedadam_r10
+        wandb_project: research

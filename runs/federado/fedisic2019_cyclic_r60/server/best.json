@@ -1,0 +1,8 @@
+{
+  "best_round": 47,
+  "metric_name": "loss",
+  "metric_value": 4.594368508936406,
+  "checkpoint": "runs/federado/fedisic2019_cyclic_r60/server/weights/best_round47.pt",
+  "aggregation_scope": "full",
+  "model_hash": "d56387161c6f8dc8"
+}

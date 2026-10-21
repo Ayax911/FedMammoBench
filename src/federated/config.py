@@ -264,6 +264,20 @@ class NodeRunConfig(BaseModel):
         wandb_project: proyecto W&B opcional (`None` desactiva).
         wandb_group: grupo W&B — convención: `experiment_id`, ver
             `ServerTrackingConfig.wandb_group`.
+        gpu_lock_path: si se fija, `client.py` serializa el cómputo GPU
+            pesado (`train_n_updates`/`train_one_epoch`/`evaluate`) con un
+            `filelock.FileLock` sobre este archivo antes de cada llamada —
+            pensado para celdas con más nodos simultáneos de los que la
+            VRAM de una GPU chica aguanta (6 nodos × EfficientNet-B0 +
+            batch_size=64 del paper de FLamby no entran en 8GB, ver
+            docs/FIXES_FEDISIC2019_FLAMBY_REPRO.md). Los 6 nodos se conectan
+            y reportan a la ronda federada normalmente (la semántica de
+            Flower no cambia); solo el forward/backward queda serializado
+            — un nodo entrena, libera, el siguiente entrena. Mismo path en
+            los `node_*.yaml` de una celda para que se turnen entre sí; no
+            hace falta que coincida entre celdas distintas (ya corren
+            secuenciales en `run.sh`). `None` (default) no cambia nada —
+            byte-idéntico a como funcionaba antes de este campo.
 
     Example:
         >>> run = NodeRunConfig(
@@ -281,6 +295,7 @@ class NodeRunConfig(BaseModel):
     checkpoint_dir: Path
     wandb_project: str | None = None
     wandb_group: str | None = None
+    gpu_lock_path: Path | None = None
 
 
 class FederatedNodeConfig(BaseModel):

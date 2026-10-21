@@ -1,0 +1,42 @@
+{
+  "os":  "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+  "python":  "CPython 3.13.12",
+  "startedAt":  "2026-10-21T04:07:19.239385Z",
+  "args":  [
+    "--config",
+    "configs/federated/fedisic2019_fedprox_r10/node_vidir_molemax.yaml"
+  ],
+  "program":  "-m src.federated.client",
+  "git":  {
+    "remote":  "https://github.com/Ayax911/FedMammoBench.git",
+    "commit":  "4c92ec00677cf6f1814a57aa8a904e0862c5d81e"
+  },
+  "email":  "j.mast8924@gmail.com",
+  "root":  "runs/federado/fedisic2019_fedprox_r10/nodes/vidir_molemax",
+  "host":  "lenovo-mirp-ThinkStation-P340",
+  "executable":  "/media/lenovo-mirp/TB2/DATA_TB2/04_PregradoJulian/FedMammoBench/.venv/bin/python",
+  "cpu_count":  6,
+  "cpu_count_logical":  12,
+  "gpu":  "NVIDIA GeForce RTX 2070",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "249792131072",
+      "used":  "115649425408"
+    }
+  },
+  "memory":  {
+    "total":  "33341890560"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 2070",
+      "memoryTotal":  "8589934592",
+      "cudaCores":  2304,
+      "architecture":  "Turing",
+      "uuid":  "GPU-61f7097b-c7e6-9808-721d-ebeea4f352ab"
+    }
+  ],
+  "cudaVersion":  "13.0",
+  "writerId":  "kxt4xmzzqs26rcka3fzsuj5c5gdmlagq"
+}

@@ -1,8 +1,34 @@
 """Image transformation and data augmentation pipeline builder module."""
 
+import random
 from typing import Any, Callable
 
+import torch
 from torchvision import transforms  # pyright: ignore[reportMissingTypeStubs]
+from torchvision.transforms import functional as TF  # pyright: ignore[reportMissingTypeStubs]
+
+
+class _JointFlip:
+    """Replica `albumentations.Flip(p=...)` de FLamby: UNA sola tirada de probabilidad
+    `p`; si sale, elige horizontal/vertical/ambos con igual probabilidad (1/3 cada
+    uno). Deliberadamente distinto de componer `RandomHorizontalFlip`+
+    `RandomVerticalFlip` independientes: eso da 75% de probabilidad de algún flip
+    (25% cada combinación), mientras que `Flip(p=0.5)` da 50% (verificado contra la
+    firma real de `albumentations` instalada -- ver docs/FEDISIC2019_FLAMBY_REPRO.md).
+    """
+
+    def __init__(self, p: float = 0.5) -> None:
+        self.p = p
+
+    def __call__(self, img: torch.Tensor) -> torch.Tensor:
+        if random.random() >= self.p:
+            return img
+        direction = random.choice(("horizontal", "vertical", "both"))
+        if direction == "horizontal":
+            return TF.hflip(img)
+        if direction == "vertical":
+            return TF.vflip(img)
+        return TF.vflip(TF.hflip(img))
 
 
 class TransformBuilder:
@@ -18,11 +44,25 @@ class TransformBuilder:
         use_horizontal_flip: If True, adds random horizontal flip augmentation. Default is False.
         use_rotation: If True, adds random rotation augmentation. Default is False.
         rotation_degrees: Maximum degree range for random rotation (used if `use_rotation=True`). Default is 15.
+        rotation_p: Probability of applying the rotation step at all (used if `use_rotation=True`).
+            Default `1.0` reproduces the previous byte-identical behavior (rotation always
+            applied, since `transforms.RandomRotation` itself has no `p=`). FLamby's own
+            `albumentations.Rotate(50)` for Fed-ISIC2019 defaults to `p=0.5` — pass that
+            explicitly when replicating FLamby, don't rely on this default.
         horizontal_flip_p: Probability of applying horizontal flip (used if `use_horizontal_flip=True`). Default is 0.5.
         use_vertical_flip: If True, adds random vertical flip augmentation. Default is False.
             Ported from the INC project (classification_images/dataloaders/dataloader_images.py),
             which applies it in addition to horizontal flip and rotation.
         vertical_flip_p: Probability of applying vertical flip (used if `use_vertical_flip=True`). Default is 0.5.
+        use_joint_flip: If True, replaces independent horizontal/vertical flips with a single
+            FLamby-style `albumentations.Flip(p=...)` draw (see `_JointFlip`): one coin flip at
+            probability `joint_flip_p`, and if it lands, horizontal/vertical/both are chosen with
+            equal probability. Mutually exclusive with `use_horizontal_flip`/`use_vertical_flip` —
+            enable this ALONE, don't combine with those (composing independent H+V flips gives a
+            75% chance of some flip; FLamby's single draw gives `joint_flip_p`, default 50%).
+            Default `False` (no existing config is affected).
+        joint_flip_p: Probability used by `use_joint_flip`. Default `0.5`, matching
+            `albumentations.Flip`'s own default.
         use_blur: If True, randomly applies gaussian blur with probability `blur_p`. Default is False.
             Ported from the INC project's `RandomGaussianBlur` — implemented here via
             `transforms.RandomApply([GaussianBlur(...)], p=...)` instead of a bespoke
@@ -49,7 +89,11 @@ class TransformBuilder:
             `RandomAffine` translate + shear (opt-in). Default `affine_shear=0.1`
             matches FLamby's `albumentations.Affine(shear=0.1)` — a barely
             perceptible shear range, not a typo: that's what the paper's reference
-            implementation actually uses.
+            implementation actually uses. `affine_translate` defaults to `None`
+            (no translation) — FLamby's own `Affine(shear=0.1)` call leaves
+            `translate_percent` unset (`None` in the installed `albumentations` API,
+            verified against the real signature), so it never translates; pass an
+            explicit `(tx, ty)` only if you actually want translation on top of shear.
         crop_size / use_random_crop / random_crop_p: deterministic square crop down
             from `image_size` to `crop_size` — `RandomCrop` when `use_random_crop`
             is set (train), `CenterCrop` otherwise (eval), matching FLamby's
@@ -79,9 +123,12 @@ class TransformBuilder:
         use_horizontal_flip: bool = False,
         use_rotation: bool = False,
         rotation_degrees: int = 15,
+        rotation_p: float = 1.0,
         horizontal_flip_p: float = 0.5,
         use_vertical_flip: bool = False,
         vertical_flip_p: float = 0.5,
+        use_joint_flip: bool = False,
+        joint_flip_p: float = 0.5,
         use_blur: bool = False,
         blur_p: float = 0.3,
         blur_kernel_size: int = 3,
@@ -98,7 +145,7 @@ class TransformBuilder:
         use_affine: bool = False,
         affine_p: float = 0.5,
         affine_degrees: float = 0.0,
-        affine_translate: tuple[float, float] = (0.1, 0.1),
+        affine_translate: tuple[float, float] | None = None,
         affine_shear: float = 0.1,
         use_random_crop: bool = False,
         use_coarse_dropout: bool = False,
@@ -110,9 +157,12 @@ class TransformBuilder:
         self.use_horizontal_flip = use_horizontal_flip
         self.use_rotation = use_rotation
         self.rotation_degrees = rotation_degrees
+        self.rotation_p = rotation_p
         self.horizontal_flip_p = horizontal_flip_p
         self.use_vertical_flip = use_vertical_flip
         self.vertical_flip_p = vertical_flip_p
+        self.use_joint_flip = use_joint_flip
+        self.joint_flip_p = joint_flip_p
         self.use_blur = use_blur
         self.blur_p = blur_p
         self.blur_kernel_size = blur_kernel_size
@@ -158,7 +208,23 @@ class TransformBuilder:
             steps.append(transforms.RandomHorizontalFlip(p=self.horizontal_flip_p))
 
         if self.use_rotation:
-            steps.append(transforms.RandomRotation(degrees=self.rotation_degrees, fill=0))
+            # OJO: transforms.RandomApply.forward() llama torch.rand(1) SIEMPRE,
+            # incluso con p=1.0 -- envolverlo incondicionalmente correría un
+            # draw extra del RNG global en cada muestra y rompería la
+            # reproducibilidad bit a bit de cualquier config existente (todas
+            # usan rotación por default, rotation_degrees=15). Por eso el
+            # wrapper solo se usa cuando rotation_p<1.0 (el único caso en que
+            # cambia el comportamiento); con el default 1.0 el camino es
+            # exactamente el de siempre, sin draw adicional.
+            if self.rotation_p < 1.0:
+                steps.append(
+                    transforms.RandomApply(
+                        [transforms.RandomRotation(degrees=self.rotation_degrees, fill=0)],
+                        p=self.rotation_p,
+                    )
+                )
+            else:
+                steps.append(transforms.RandomRotation(degrees=self.rotation_degrees, fill=0))
 
         if self.use_vertical_flip:
             steps.append(transforms.RandomVerticalFlip(p=self.vertical_flip_p))
@@ -192,6 +258,13 @@ class TransformBuilder:
                     p=self.random_brightness_contrast_p,
                 )
             )
+
+        if self.use_joint_flip:
+            # Posición exacta del `Flip(p=0.5)` de FLamby: después de
+            # brightness/contrast, antes del affine (ver dataset.py oficial).
+            # Mutuamente excluyente con use_horizontal_flip/use_vertical_flip --
+            # AugmentationConfig lo valida (model_validator en src/config.py).
+            steps.append(_JointFlip(p=self.joint_flip_p))
 
         if self.use_affine:
             steps.append(

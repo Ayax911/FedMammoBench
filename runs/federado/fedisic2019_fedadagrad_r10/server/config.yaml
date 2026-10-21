@@ -1,0 +1,37 @@
+experiment_id: fedisic2019_fedadagrad_r10
+federation:
+  server_address: 127.0.0.1:8092
+  rounds: 10
+  local_epochs: 1
+  local_updates: 100
+  num_nodes: 6
+  aggregation_scope: full
+  accept_failures: false
+  round_timeout_seconds: null
+  grpc_max_message_length: 536870912
+strategy:
+  name: fedadagrad
+  hparams:
+    eta: 0.0316
+    eta_l: 0.01
+    tau: 1e-08
+architecture:
+  name: efficientnet_b0_imagenet
+  weights_path: null
+  unfreeze_from: features
+head:
+  name: configurable_mlp
+  hparams:
+    in_features: 1280
+    hidden_layers: []
+    input_dropout: 0.2
+    num_classes: 8
+tracking:
+  best_metric_name: loss
+  best_metric_mode: min
+  save_every_rounds: null
+  run_dir: runs/federado/fedisic2019_fedadagrad_r10/server
+  checkpoint_dir: runs/federado/fedisic2019_fedadagrad_r10/server/weights
+  device: cpu
+  wandb_project: research
+  wandb_group: fedisic2019_fedadagrad_r10
