@@ -358,3 +358,27 @@ riesgo ya documentado en `.claude/context/code/FEDERATED.md` ("defaults de
 `fedadam`/`fedyogi` = corrida muerta"). Causa probable: desbordamiento o
 división por `tau` en el update adaptativo del servidor al agregar sobre 8
 clases en vez de 2 — pendiente de diagnosticar, no corregido todavía.
+
+---
+
+## 8. Baseline Pooled Oficial de FLamby (referencia centralizada)
+
+Ejecución directa de `flamby/datasets/fed_isic2019/benchmark.py` del repo
+oficial de FLamby (entorno conda `flamby`, no el `.venv` de este repo), vía
+`run.sh`. Es el experimento "pooled" que el propio paper de FLamby usa como
+techo de referencia para comparar contra el régimen federado.
+
+| Métrica | Valor |
+|---|---|
+| Modelo | EfficientNet-b0 (pretrained ImageNet) + head de `Baseline` (FLamby) |
+| Épocas | 20 |
+| Crop de entrada | 200×200 (tras preprocesar a 224 por lado corto, ver `dataset_creation_scripts/resize_images.py`) |
+| Duración | 31.19 min |
+| **Best test balanced accuracy** | **0.772712** (época 19) |
+| Train loss final | 1.3453 |
+| Test loss final | 2.9372 |
+
+Artefactos en este repo: `runs/flamby/fed_isic2019/train.log` (log completo),
+`runs/flamby/fed_isic2019/results.json` (resumen) y
+`runs/flamby/fed_isic2019/weights/saved_model_state_dict` (checkpoint final,
+16 MB).

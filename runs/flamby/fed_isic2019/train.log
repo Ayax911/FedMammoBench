@@ -1,0 +1,156 @@
+device cuda:0
+Class weights extract from training dataset applied to loss function: tensor([  5.5813,   2.0472,   7.0204,  26.1194,   9.5369, 101.0707,  92.5224,
+         38.3443], device='cuda:0')
+Downloading: "https://github.com/lukemelas/EfficientNet-PyTorch/releases/download/1.0/efficientnet-b0-355c32eb.pth" to /home/lenovo-mirp/.cache/torch/hub/checkpoints/efficientnet-b0-355c32eb.pth
+  0%|          | 0.00/20.4M [00:00<?, ?B/s]  4%|▍         | 896k/20.4M [00:00<00:02, 8.35MB/s] 13%|█▎        | 2.62M/20.4M [00:00<00:01, 13.9MB/s] 29%|██▉       | 5.88M/20.4M [00:00<00:00, 22.8MB/s] 50%|████▉     | 10.1M/20.4M [00:00<00:00, 26.1MB/s] 63%|██████▎   | 12.8M/20.4M [00:00<00:00, 21.9MB/s] 93%|█████████▎| 18.9M/20.4M [00:00<00:00, 33.4MB/s]100%|██████████| 20.4M/20.4M [00:00<00:00, 22.6MB/s]
+Loaded pretrained weights for efficientnet-b0
+Number of features output by EfficientNet 1280
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.34s/it]100%|██████████| 1/1 [00:05<00:00,  5.34s/it]
+Test metric before training {'client_test_0': 0.12123823139290064}
+Epoch 0/19
+----------
+train Loss: 7.3164 Acc: 0.4955 Balanced acc: 0.4867
+test Loss: 5.6873 Acc: 0.5265 Balanced acc: 0.5673
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.95s/it]100%|██████████| 1/1 [00:05<00:00,  5.95s/it]
+Test metric {'client_test_0': 0.5673064458295416}
+
+Epoch 1/19
+----------
+train Loss: 5.2018 Acc: 0.5824 Balanced acc: 0.6051
+test Loss: 4.9498 Acc: 0.6058 Balanced acc: 0.6139
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.59s/it]100%|██████████| 1/1 [00:05<00:00,  5.59s/it]
+Test metric {'client_test_0': 0.6139326758103651}
+
+Epoch 2/19
+----------
+train Loss: 4.3202 Acc: 0.6195 Balanced acc: 0.6591
+test Loss: 3.8917 Acc: 0.6826 Balanced acc: 0.6674
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.62s/it]100%|██████████| 1/1 [00:05<00:00,  5.62s/it]
+Test metric {'client_test_0': 0.6673743526772182}
+
+Epoch 3/19
+----------
+train Loss: 3.2127 Acc: 0.6723 Balanced acc: 0.7202
+test Loss: 3.2010 Acc: 0.7026 Balanced acc: 0.7346
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:06<00:00,  6.05s/it]100%|██████████| 1/1 [00:06<00:00,  6.05s/it]
+Test metric {'client_test_0': 0.7345697137790336}
+
+Epoch 4/19
+----------
+train Loss: 2.7014 Acc: 0.7034 Balanced acc: 0.7621
+test Loss: 3.1213 Acc: 0.7000 Balanced acc: 0.7329
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.78s/it]100%|██████████| 1/1 [00:05<00:00,  5.78s/it]
+Test metric {'client_test_0': 0.7329347096713018}
+
+Epoch 5/19
+----------
+train Loss: 2.3336 Acc: 0.7264 Balanced acc: 0.7904
+test Loss: 3.0291 Acc: 0.7258 Balanced acc: 0.7324
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.61s/it]100%|██████████| 1/1 [00:05<00:00,  5.61s/it]
+Test metric {'client_test_0': 0.7324409146813242}
+
+Epoch 6/19
+----------
+train Loss: 2.0118 Acc: 0.7412 Balanced acc: 0.8056
+test Loss: 3.0434 Acc: 0.7383 Balanced acc: 0.7454
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.81s/it]100%|██████████| 1/1 [00:05<00:00,  5.81s/it]
+Test metric {'client_test_0': 0.7454155812649759}
+
+Epoch 7/19
+----------
+train Loss: 1.8478 Acc: 0.7560 Balanced acc: 0.8208
+test Loss: 2.9174 Acc: 0.7512 Balanced acc: 0.7674
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.77s/it]100%|██████████| 1/1 [00:05<00:00,  5.77s/it]
+Test metric {'client_test_0': 0.7674382033611158}
+
+Epoch 8/19
+----------
+train Loss: 1.7344 Acc: 0.7684 Balanced acc: 0.8303
+test Loss: 2.8259 Acc: 0.7452 Balanced acc: 0.7601
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.94s/it]100%|██████████| 1/1 [00:05<00:00,  5.94s/it]
+Test metric {'client_test_0': 0.7600755345790771}
+
+Epoch 9/19
+----------
+train Loss: 1.5868 Acc: 0.7761 Balanced acc: 0.8446
+test Loss: 2.8799 Acc: 0.7583 Balanced acc: 0.7636
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.59s/it]100%|██████████| 1/1 [00:05<00:00,  5.59s/it]
+Test metric {'client_test_0': 0.7635933284136701}
+
+Epoch 10/19
+----------
+train Loss: 1.5264 Acc: 0.7796 Balanced acc: 0.8448
+test Loss: 2.9853 Acc: 0.7598 Balanced acc: 0.7638
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.57s/it]100%|██████████| 1/1 [00:05<00:00,  5.57s/it]
+Test metric {'client_test_0': 0.7637616884293525}
+
+Epoch 11/19
+----------
+train Loss: 1.4865 Acc: 0.7844 Balanced acc: 0.8529
+test Loss: 2.9016 Acc: 0.7516 Balanced acc: 0.7683
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:06<00:00,  6.09s/it]100%|██████████| 1/1 [00:06<00:00,  6.09s/it]
+Test metric {'client_test_0': 0.7682911704415428}
+
+Epoch 12/19
+----------
+train Loss: 1.4610 Acc: 0.7865 Balanced acc: 0.8515
+test Loss: 2.8859 Acc: 0.7587 Balanced acc: 0.7674
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.62s/it]100%|██████████| 1/1 [00:05<00:00,  5.62s/it]
+Test metric {'client_test_0': 0.767447662791613}
+
+Epoch 13/19
+----------
+train Loss: 1.3783 Acc: 0.7927 Balanced acc: 0.8626
+test Loss: 2.9212 Acc: 0.7596 Balanced acc: 0.7692
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.79s/it]100%|██████████| 1/1 [00:05<00:00,  5.79s/it]
+Test metric {'client_test_0': 0.7691937426070988}
+
+Epoch 14/19
+----------
+train Loss: 1.3853 Acc: 0.7916 Balanced acc: 0.8594
+test Loss: 2.9385 Acc: 0.7589 Balanced acc: 0.7627
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:06<00:00,  6.19s/it]100%|██████████| 1/1 [00:06<00:00,  6.19s/it]
+Test metric {'client_test_0': 0.7626613194029992}
+
+Epoch 15/19
+----------
+train Loss: 1.3939 Acc: 0.7908 Balanced acc: 0.8554
+test Loss: 2.9279 Acc: 0.7591 Balanced acc: 0.7719
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.64s/it]100%|██████████| 1/1 [00:05<00:00,  5.64s/it]
+Test metric {'client_test_0': 0.7719387791102712}
+
+Epoch 16/19
+----------
+train Loss: 1.3831 Acc: 0.7950 Balanced acc: 0.8611
+test Loss: 2.9279 Acc: 0.7574 Balanced acc: 0.7692
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.68s/it]100%|██████████| 1/1 [00:05<00:00,  5.68s/it]
+Test metric {'client_test_0': 0.7692176029126387}
+
+Epoch 17/19
+----------
+train Loss: 1.3661 Acc: 0.7940 Balanced acc: 0.8645
+test Loss: 2.9337 Acc: 0.7589 Balanced acc: 0.7717
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:06<00:00,  6.20s/it]100%|██████████| 1/1 [00:06<00:00,  6.20s/it]
+Test metric {'client_test_0': 0.7716512934897752}
+
+Epoch 18/19
+----------
+train Loss: 1.3454 Acc: 0.7934 Balanced acc: 0.8636
+test Loss: 2.9406 Acc: 0.7591 Balanced acc: 0.7712
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.67s/it]100%|██████████| 1/1 [00:05<00:00,  5.67s/it]
+Test metric {'client_test_0': 0.7711613501408534}
+
+Epoch 19/19
+----------
+train Loss: 1.3453 Acc: 0.7986 Balanced acc: 0.8659
+test Loss: 2.9372 Acc: 0.7596 Balanced acc: 0.7727
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.92s/it]100%|██████████| 1/1 [00:05<00:00,  5.92s/it]
+Test metric {'client_test_0': 0.772711805062168}
+
+Training complete in 31m 11s
+Best test Balanced acc: 0.772712
+calc time in minutes 31.191798094908396
+Loaded pretrained weights for efficientnet-b0
+Number of features output by EfficientNet 1280
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:05<00:00,  5.68s/it]100%|██████████| 1/1 [00:05<00:00,  5.68s/it]
+{'client_test_0': 0.772711805062168}

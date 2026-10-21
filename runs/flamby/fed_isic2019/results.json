@@ -1,0 +1,16 @@
+{
+  "experiment": "flamby_fed_isic2019_benchmark",
+  "description": "Benchmark oficial pooled (centralizado) de FLamby para Fed-ISIC2019, ejecutado con flamby/datasets/fed_isic2019/benchmark.py del repo oficial (du Terrail et al., arXiv:2210.04620), entorno conda 'flamby'.",
+  "model": "EfficientNet-b0 (pretrained ImageNet) + Baseline head de FLamby",
+  "num_epochs": 20,
+  "image_crop_size": [200, 200],
+  "run_date": "2026-10-20",
+  "training_time_minutes": 31.19,
+  "best_test_balanced_accuracy": 0.772712,
+  "best_epoch": 19,
+  "final_train_loss": 1.3453,
+  "final_test_loss": 2.9372,
+  "log_file": "runs/flamby/fed_isic2019/train.log",
+  "weights_file": "runs/flamby/fed_isic2019/weights/saved_model_state_dict",
+  "notes": "Sirve como baseline 'pooled' de referencia para comparar contra las 7 celdas federadas en runs/federado/ (ver docs/FEDISIC2019_FLAMBY_REPRO_RESULTADOS.md)."
+}
