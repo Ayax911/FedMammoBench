@@ -1,376 +1,211 @@
-# FedMammoBench — Federated Learning for Mammography Classification
+# FedMammoBench
 
-Federated learning framework for binary mammography classification (benign / malignant) using [Flower](https://flower.ai/) + PyTorch + Ray.
+Clasificación binaria de mamografía (benigno / maligno) con un ResNet50 pre-entrenado en
+[RadImageNet](https://github.com/BMEII-AI/RadImageNet), en PyTorch. El entrenamiento **centralizado**
+(`src/`) es la línea base validada; encima hay una capa **federada** (`src/federated/`) con despliegue
+gRPC real sobre [Flower](https://flower.ai/) — sin simulación y sin Ray.
 
-**Version**: 0.3.0 | **Python**: 3.11 | **License**: MIT
+**Python**: 3.12 · **Flower**: `flwr==1.31.0` (pinneado exacto) · **Licencia**: MIT
+
+> Este repo se reescribió: el paquete legacy `fedmammobench` (registries, `pip install -e .`, comandos
+> `fedmammobench-*`, `configs/base.yaml`, backend Ray) **ya no existe**. Todo lo de abajo describe el
+> árbol actual.
 
 ---
 
-## Quick Start (5 minutes)
+## Inicio rápido
 
 ```bash
-# 1. Install
-git clone <repo>
-cd Federal-Learning
-pip install -e .
-
-# 2. Prepare a dataset manifest (see docs/DATA_PREPARATION.md), then run a
-#    federated simulation. Point data.manifest_path / data.image_root at your data.
-fedmammobench-federated --config configs/fedavg_cbis_ddsm.yaml
+git clone <repo> && cd FedMammoBench
+python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
-Artifacts (metrics, TensorBoard logs, config snapshot) are written to `runs/<config-name>/`.
+No hay paquete instalable ni paso de activación: se invoca siempre `.venv/bin/python` desde la raíz.
 
----
-
-## Execution Modes
-
-| Command | Config | Description | Estimated time |
-|---------|--------|-------------|----------------|
-| `fedmammobench-centralized` | `radimagenet_resnet50_centralized.yaml` | Centralized baseline | depends on data |
-| `fedmammobench-federated` | `fedavg_cbis_ddsm.yaml` | FL simulation (Ray) | depends on data |
-| `fedmammobench-federated` | `radimagenet_resnet50_fedavg.yaml` | FL simulation with RadImageNet | 10–30 min |
-| `fedmammobench-federated` | `fedavg_server_training.yaml` | Hybrid FL (server also trains) | depends on data |
-| `python scripts/run_server.py` | `radimagenet_resnet50_grpc_server_v2.yaml` | Real gRPC server | blocks |
-| `python scripts/run_client.py` | `radimagenet_resnet50_grpc_client_v2.yaml` | Real gRPC client | blocks |
-| `fedmammobench-evaluate` | any | Post-hoc evaluation on a checkpoint | < 1 min |
-
----
-
-## Configuration
-
-All configs inherit from `configs/base.yaml` via `defaults: base.yaml`.
-Override only what changes:
-
-```yaml
-# configs/my_experiment.yaml
-defaults: base.yaml
-name: my_experiment
-model:
-  name: resnet50
-  weight_source: radimagenet
-federated:
-  rounds: 20
-  num_clients: 4
-```
-
-**Run it:**
-```bash
-fedmammobench-federated --config configs/my_experiment.yaml
-```
-
-### Key configuration sections
-
-| Section | Key fields | Module |
-|---------|-----------|--------|
-| `data` | `name`, `manifest_path`, `val_fraction` | `data_config.py` |
-| `partitioning` | `scheme` (iid/dirichlet/quantity_skew), `alpha` | `data_config.py` |
-| `model` | `name`, `weight_source`, `freeze_backbone`, `unfreeze_at_epoch` | `model_config.py` |
-| `training` | `epochs`, `local_epochs`, `optimizer.lr`, `mixed_precision` | `training_config.py` |
-| `federated` | `num_clients`, `rounds`, `strategy.name`, `strategy.params` | `federated_config.py` |
-
-### Config validation
-
-Call `ExperimentConfig.validate()` after loading to catch errors early:
-
-```python
-from fedmammobench.configs import load_config
-cfg = load_config("configs/radimagenet_resnet50_fedavg.yaml")
-cfg.validate()  # raises ValueError or emits warnings on bad combinations
-```
-
----
-
-## Federated Strategies
-
-| Strategy | YAML | Description |
-|----------|------|-------------|
-| FedAvg | `strategy.name: fedavg` | Standard weighted averaging |
-| FedProx | `strategy.name: fedprox` + `strategy.params: {mu: 0.01}` | Proximal regularization for non-IID |
-| SCAFFOLD | `strategy.name: scaffold` | Variance reduction via control variates |
-| FedBN | `strategy.name: fedbn` | Batch-norm layers not aggregated |
-
----
-
-## Hybrid Server-Side Training
-
-By default the central node only aggregates client updates. Enable
-`federated.server_training` to also train on a dataset the server owns: after
-each round's aggregation, the server continues training from the aggregated
-weights for `local_epochs` and the result becomes the new global model.
-
-```yaml
-federated:
-  server_training:
-    enabled: true
-    manifest_path: /path/to/server_manifest.csv   # the server's own data
-    image_root: /path/to/server_images
-    local_epochs: 1
-    server_weight: 1.0   # new = (1-w)*aggregated + w*server_trained
-```
-
-This composes with any strategy above. See `configs/fedavg_server_training.yaml`.
-
----
-
-## Transfer Learning
-
-| `weight_source` | Requires | Best for |
-|-----------------|----------|---------|
-| `imagenet` | — | RGB natural images; baseline |
-| `radimagenet` | `$FEDMAMMOBENCH_RADIMAGENET_DIR` env var | Grayscale medical images |
-| `custom` | `checkpoint_path` | Fine-tuning from your own checkpoint |
-| `none` | — | Ablation: random init |
+Comprobación barata de que el árbol importa:
 
 ```bash
-export FEDMAMMOBENCH_RADIMAGENET_DIR=/path/to/radimagenet/checkpoints
-fedmammobench-federated --config configs/radimagenet_resnet50_fedavg.yaml
+.venv/bin/python -c "import src.cli; import src.evaluate; import src.gradcam"
+.venv/bin/python -c "import src.federated.server; import src.federated.client; import src.federated.evaluate_node"
 ```
 
-See [docs/TRANSFER_LEARNING_GUIDE.md](docs/TRANSFER_LEARNING_GUIDE.md) for setup instructions.
+Los configs cargan **rutas absolutas** (`image_root`, `weights_path`, manifests) de la workstation del
+laboratorio; ajústalas a tu máquina antes de entrenar. Ver [formato de manifest](docs/DATA_PREPARATION.md).
 
 ---
 
-## Multi-Node Deployment (gRPC)
+## Entrenamiento centralizado
 
 ```bash
-# On the aggregation server:
-python scripts/run_server.py \
-    --config configs/radimagenet_resnet50_grpc_server_v2.yaml
-
-# On each client node (different machines):
-python scripts/run_client.py \
-    --config configs/radimagenet_resnet50_grpc_client_v2.yaml \
-    --server 192.168.1.10:8080 \
-    --client-id 0 \
-    --manifest /path/to/node0_manifest.csv \
-    --data-dir /path/to/images
+.venv/bin/python -m src.cli --config configs/exp05_fedmammobench_full_weighted.yaml
 ```
 
-See [docs/FEDERATED_DEPLOYMENT_GUIDE.md](docs/FEDERATED_DEPLOYMENT_GUIDE.md) for the full topology.
+Esa es toda la interfaz: semilla → manifest → split → transforms → dataloaders → backbone + head →
+`Trainer.fit()` → re-evaluación del **mejor** checkpoint sobre val y test → plots, JSONs,
+`predictions.csv` y W&B. No hay resume.
 
----
-
-## Reproducing Article Results
+Evaluar un checkpoint ya entrenado sin reentrenar:
 
 ```bash
-# Centralized baseline
-fedmammobench-centralized --config configs/radimagenet_resnet50_centralized.yaml
-
-# Federated FedAvg (primary)
-fedmammobench-federated --config configs/radimagenet_resnet50_fedavg.yaml
-
-# Federated DenseNet121
-fedmammobench-federated --config configs/radimagenet_densenet121_fedavg.yaml
+.venv/bin/python -m src.evaluate --config configs/expNN.yaml --checkpoint runs/centralizado/expNN/weights/best_epoch123.pt
 ```
 
-All runs use `seed: 42` (set in `base.yaml`).  Effective configs are snapshotted
-to `runs/<name>/config.snapshot.yaml`.
+Grad-CAM sobre un checkpoint (`src/gradcam.py`, núcleo en `src/interpretability.py`; brief en
+[docs/GRADCAM.md](docs/GRADCAM.md)).
+
+Cada corrida centralizada regenera `experiment_registry.xlsx` (un consolidado config + resultados por
+experimento). A mano: `.venv/bin/python -m scripts.build_experiment_registry`.
+
+### Backbones disponibles
+
+ResNet50 con pesos RadImageNet o ImageNet, ResNet50 / ResNet18 desde cero, ResNet18 con pesos ImageNet
+(congelamiento configurable por capa), EfficientNet-B0 y una CNN propia. Detalle y contratos en
+[`src/models/DOCS.md`](src/models/DOCS.md).
+
+### Configuración
+
+Cada `configs/expNN_*.yaml` es **autocontenido** (sin herencia) y su encabezado es el log experimental
+real: receta, motivación y resultado. Validado con Pydantic (`extra="forbid"`: una clave mal escrita
+falla de inmediato). Para un barrido de hiperparámetros: `sweeps/` + `scripts/sweep_train.py`.
+
+Trampa frecuente: con `fedmammobench.csv` usa `metric_name: f1_macro`, no `f1` (este último se clava en
+`0.0` y devuelve el checkpoint sin entrenar).
+
+### Salidas
+
+Todo `run_dir` cuelga de `runs/centralizado/<expNN_...>/` (centralizado, auditorías, ensembles) o
+`runs/federado/<expNN_...>/` (servidor + `nodes/`): pesos del mejor checkpoint, `metrics.csv`,
+`val/` y `test/` con `metrics.json`, `predictions.csv`, gráficas y `config` efectivo.
 
 ---
 
-## Research Experiments (per-experiment configs)
+## Aprendizaje federado
 
-Structured experiments live under `configs/expNN/`. Each directory contains
-`server.yaml`, `client.yaml`, and optionally `pretrain.yaml`.
-
-| Exp | Mode | Description |
-|-----|------|-------------|
-| exp07 | Federated | FedAvg + ResNet50, warm-start from DDSM pretrain, 5 nodes, 15 epochs/round, 7 rounds |
-| exp08 | Centralized | Baseline centralizado con todos los datasets (17 139 imgs) |
-| exp09 | Federated | FedAvg + ResNet50 sin warm-start (ablación desde RadImageNet) |
-| exp10 | Centralized | Variante centralizada de ablación |
-| exp12 | Federated | FedAvg + ResNet50, igual a exp07 con métricas por época por nodo y predicciones enriquecidas |
-| exp13 | Federated | FedAvg + ResNet50 con RadImageNet directo + fine-tuning completo (freeze_backbone: false) |
-| exp14 | Federated | FedProx + ResNet50, 25 rounds, 3 epochs, aggressive fine-tuning, lower learning rates |
-
-### exp12 — FedAvg + warm-start + métricas extendidas
-
-exp12 replica exp07 (15 épocas locales, 7 rondas, warm-start desde DDSM) y añade:
-- **`clients/client_<id>/epoch_metrics.csv`** — train_loss, task_loss, val_loss, val_auc, val_f1, val_sensitivity, val_specificity por cada época local dentro de cada ronda (equivalente al CSV de entrenamiento centralizado).
-- **`clients/client_<id>/predictions.csv`** — predicciones enriquecidas con las columnas del manifest de cada nodo (`image_path`, `patient_id`, y columnas extra) para cada muestra del conjunto de validación.
+Un proceso servidor (que **nunca ve imágenes**) más un proceso por nodo, cada uno con su propio YAML
+bajo `configs/federated/<exp>/` (`server.yaml` + `node_<base>.yaml`). Topología de FedMammoBench: 4
+nodos, uno por base de datos (CMMD, KAU-BCMD, CDD-CESM, INbreast).
 
 ```bash
-# Paso 1: pretrain centralizado con DDSM (genera runs/exp12_pretrain_ddsm/final.pt)
-python scripts/run_centralized.py --config configs/exp12/pretrain.yaml
-
-# Paso 2: FL distribuido (gRPC)
-# En el servidor:
-python scripts/run_server.py --config configs/exp12/server.yaml
-
-# En cada nodo (N = 1..5):
-python scripts/run_client.py --config configs/exp12/client.yaml \
-    --server <SERVER_IP>:8080 \
-    --client-id <N> \
-    --manifest manifests/node<N>_manifest.csv
+.venv/bin/python -m src.federated.server --config configs/federated/exp40_fedavg_full/server.yaml
+.venv/bin/python -m src.federated.client --config configs/federated/exp40_fedavg_full/node_cmmd.yaml
+# ... un cliente por nodo
 ```
 
-Para lanzar desde GitHub Actions (reemplaza exp07 por exp12 en el batch):
-
-```
-workflow: Run Batch Experiments
-  experiments: exp12_fedavg_resnet50
-```
-
-### exp13 — FedAvg + RadImageNet directo + fine-tuning completo
-
-exp13 corrige configuraciones de exp07/exp12 para resolver capacidad limitada de aprendizaje:
-- **weight_source: radimagenet** (pesos iniciales de RadImageNet)
-- **freeze_backbone: false** (fine-tuning completo de toda la red, no solo layer4+fc)
-- **Sin descongelamiento progresivo** (local_unfreeze_at_epoch: null)
-- **Parámetros iguales a exp12** (15 épocas, 7 rondas, FedAvg)
-- **strict_load: true** (detección explícita de missing keys)
-
-Esta configuración comparte arquitectura con exp10 centralizado (freeze_backbone: false) pero en modo federado.
+O todo junto con Docker (servidor + un contenedor por nodo, host networking, solo Linux):
 
 ```bash
-# FL distribuido (gRPC) — sin pretrain, solo RadImageNet
-# En el servidor:
-python scripts/run_server.py --config configs/exp13/server.yaml
-
-# En cada nodo (N = 1..5):
-python scripts/run_client.py --config configs/exp13/client.yaml \
-    --server <SERVER_IP>:8080 \
-    --client-id <N> \
-    --manifest manifests/node<N>_manifest.csv
+EXPERIMENT=exp40_fedavg_full docker compose -f docker-compose.federated.yaml up
 ```
 
-### exp14 — FedProx + fine-tuning agresivo, 25 rounds
+La imagen es **solo-entorno** (el repo se monta en `/workspace`), así que un cambio de código nunca
+necesita rebuild.
 
-exp14 experimenta con configuración alternativa para mejorar convergencia en entorno no-IID:
-- **strategy: fedprox** con proximal_mu: 0.1 (regularización para no-IID data)
-- **freeze_backbone: false** (fine-tuning completo)
-- **25 rondas, 3 épocas locales** (más rondas, menos trabajo local)
-- **Learning rates bajos**: lr_head: 0.0005, lr_backbone: 0.00005
-- **weight_decay: 0.0001**
-- **scheduler.t_max: 25** (total rondas, no por-ronda)
+Re-evaluar un nodo contra el mejor modelo global:
 
 ```bash
-# FL distribuido (gRPC)
-# En el servidor:
-python scripts/run_server.py --config configs/exp14/server.yaml
-
-# En cada nodo (N = 1..5):
-python scripts/run_client.py --config configs/exp14/client.yaml \
-    --server <SERVER_IP>:8080 \
-    --client-id <N> \
-    --manifest manifests/node<N>_manifest.csv
+.venv/bin/python -m src.federated.evaluate_node --config <node.yaml> --server-run-dir runs/federado/<exp>/server
 ```
 
----
+### Estrategias
 
-## Outputs, Per-Node Metrics & Timing
+Registradas en `src/federated/strategies.py` (clases stock de `flwr.server.strategy` salvo las dos
+últimas, implementadas en `cyclic.py` y `scaffold.py`):
 
-Every federated run writes the following under `runs/<name>/`:
+| `strategy.name` | Notas |
+|---|---|
+| `fedavg` | Promedio ponderado por muestras |
+| `fedprox` | `proximal_mu` en `strategy.hparams`; se reporta `train_prox_loss` |
+| `fedadam`, `fedyogi`, `fedadagrad` | Los defaults de `fedadam`/`fedyogi` producen corridas muertas (NaN o AUC 0,5000 exacto): ajusta `eta`/`beta_*` |
+| `cyclic` | Entrenamiento secuencial por nodo |
+| `scaffold` | Variables de control |
 
-```
-runs/<name>/
-├── config.snapshot.yaml          # effective config used
-├── server_federated_metrics.csv  # GLOBAL model, federated-averaged across nodes
-├── server_metrics.csv            # GLOBAL model on the server holdout (if any)
-├── server_timing.csv             # per-round wall time, sum/max/mean node fit time
-├── timing_summary.csv            # total process time, rounds, avg s/round
-├── global_model.pt               # final aggregated GLOBAL model checkpoint
-├── tb/                           # server-level TensorBoard
-└── clients/
-    ├── client_0/
-    │   ├── fit_metrics.csv        # per-round train_loss, task_loss, fit_seconds
-    │   ├── eval_metrics.csv       # per-round accuracy, f1, roc_auc, eval_seconds
-    │   └── tb/                    # per-node TensorBoard
-    └── client_1/ ...
-```
+`fedbn` no está registrado a propósito. `aggregation_scope: full` agrega el modelo entero.
 
-- **Per-node metrics** (`clients/client_<id>/`) are each node's *local* view:
-  training loss and the metrics from evaluating the global model on that node's
-  own validation split, with the node's wall-clock `fit_seconds` / `eval_seconds`.
-- **Timing**: `server_timing.csv` records, per round, the server wall time plus
-  the **sum** (total compute across nodes), **max** (straggler / critical path),
-  and **mean** of node training times. `timing_summary.csv` records the overall
-  process time. The first round's wall time includes Ray/engine startup.
+### Fed-ISIC2019 (réplica de FLamby)
 
-### Verifying the global model
+Además de mamografía hay un grid federado que replica el benchmark Fed-ISIC2019 de FLamby (6 centros,
+EfficientNet-B0, 7 estrategias): `configs/federated/fedisic2019_*`, `scripts/fed_isic2019/` y
+[docs/FEDISIC2019_FLAMBY_REPRO.md](docs/FEDISIC2019_FLAMBY_REPRO.md) (+ `_RESULTADOS`).
 
-Per-node metrics measure *local* performance — they are **not** the global
-model's generalization. The global model is judged by:
+### Cómo leer un resultado federado
 
-1. `server_federated_metrics.csv` — the weighted average of every node's
-   evaluation of the global model (the primary federated verdict).
-2. `server_metrics.csv` — the global model on a server-owned holdout, when one is
-   configured (`data.name` ≠ `none` with a test split).
-3. The saved `global_model.pt`, which you can verify post-hoc on any held-out
-   test set:
-   ```bash
-   fedmammobench-evaluate --config configs/<your>.yaml --checkpoint runs/<name>/global_model.pt
-   ```
+- El AUC que guarda `best.json` del servidor es el **promedio por nodo ponderado por muestras**, no el
+  AUC del pool de predicciones. Para comparar contra un centralizado, **re-evalúa pooled** con
+  `src.evaluate` sobre el checkpoint global.
+- Distingue **AUC pooled** de **AUC intra-base**: el primero premia al modelo por reconocer de qué
+  hospital viene la imagen. Ver [docs/DECISION_PASAR_A_FEDERADO.md](docs/DECISION_PASAR_A_FEDERADO.md).
+- Con 0,5 fijo de umbral, kau-bcmd (4,3 % de malignos) queda en ~0 de sensibilidad pese a AUC ~0,9:
+  recalibra con `scripts/calibrate_threshold.py --by-database` antes de reportar por base.
 
 ---
 
-## Data Preparation
+## Datos
 
-See [docs/DATA_PREPARATION.md](docs/DATA_PREPARATION.md) for:
-- Downloading and formatting CBIS-DDSM, Mammo-Bench, VinDr-Mammo
-- CSV manifest column requirements
-- How to verify absence of patient leakage
+`manifests/fedmammobench_norm_{0_1,neg1_1}.csv`: 8.341 imágenes, split **6.671 / 836 / 834**
+(train / val / test), paciente-disjunto. Variantes `*_local.csv` apuntan a otra raíz de imágenes;
+`manifests/by_database/` tiene un manifest por nodo.
 
----
+| base | train | val | test | % maligno |
+|---|---:|---:|---:|---:|
+| cmmd | 3.776 | 474 | 472 | 48,9 % |
+| kau-bcmd | 1.764 | 220 | 222 | 4,3 % |
+| cdd-cesm | 803 | 100 | 100 | 33,3 % |
+| inbreast | 328 | 42 | 40 | 24,4 % |
 
-## Scientific Methodology
-
-See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for:
-- Patient-disjoint split protocol
-- Federated evaluation metrics and their limitations
-- FedAvg vs FedProx comparison guidelines
-- Known approximations to disclose in papers
-
----
-
-## Audit Checklist
-
-See [docs/EXPERIMENT_AUDIT.md](docs/EXPERIMENT_AUDIT.md) for the pre-publication
-checklist (data integrity, metric interpretation, strategy comparisons).
+Preparación y columnas requeridas: [docs/DATA_PREPARATION.md](docs/DATA_PREPARATION.md). Contexto de
+cada dataset: [docs/DATASETS_CONTEXTO.md](docs/DATASETS_CONTEXTO.md).
 
 ---
 
-## Development
+## Experimentos
 
-```bash
-pip install -e ".[dev]"
-pytest tests/ -v --tb=short
-```
+| rango | qué |
+|---|---|
+| exp01–39, 57–60 | Centralizados: backbone, head, congelamiento, pérdidas, anti-sobreajuste, búsqueda de hiperparámetros (exp37–39), ablaciones de pre-entrenamiento |
+| exp40–56 | Federados: FedAvg / FedProx / FedAdam / FedYogi × rondas y barrido de `mu` |
+| exp61–69 | ResNet18/ResNet50 desde cero, ResNet18 ImageNet con descongelamiento progresivo, CNN propia |
+| `fedisic2019_*` | Grid federado Fed-ISIC2019 |
 
-CI runs automatically on push to `main` and `feature/**` branches via `.github/workflows/ci.yml`.
-
-**Extending the framework** — adding a strategy, model, dataset, or config field?
-See [docs/EXTENDING.md](docs/EXTENDING.md) for the step-by-step pipeline per module.
-
----
-
-## Documentation Architecture
-
-This repository follows a strict **4-Layer Documentation Architecture**:
-
-1. **Layer 1 (Project Level)**: Global workflow guides located in `README.md` and the [`docs/`](docs/) directory.
-2. **Layer 2 (Module Level)**: Specialized functional specifications located in each package subfolder:
-   - [`src/DOCS.md`](src/DOCS.md): Top-level src utilities, config management, tracking, and CLI.
-   - [`src/datasets/DOCS.md`](src/datasets/DOCS.md): Data loading, transforms, and patient-disjoint splits.
-   - [`src/models/DOCS.md`](src/models/DOCS.md): Architecture specs, weight remapping, and layer freezing.
-   - [`src/train/DOCS.md`](src/train/DOCS.md): Training loops, loss specs, schedulers, and Trainer orchestrator.
-   - [`scripts/DOCS.md`](scripts/DOCS.md): Centralized, federated, and CLI execution scripts.
-3. **Layer 3 (Code Level)**: Fully typed, Google-style docstrings on all public functions, dataclasses, and module entrypoints.
-4. **Layer 4 (Inline Level)**: Inline code comments explaining domain rationale, state_dict key transformations, and clinical metrics.
+Resultado de referencia centralizado: exp37 (AUC test 0,9016, F1-macro 0,8071). Hallazgo importante: a
+nivel **paciente**, exp37 vs exp28 no es estadísticamente significativo (p = 0,933) — el ranking del
+sweep está inflado por medir AUC por imagen. El detalle de resultados está en
+[`.claude/context/experiments/`](.claude/context/experiments/) (`CENTRALIZED.md`, `FEDERATED.md`);
+auditorías y decisiones en [`docs/`](docs/).
 
 ---
 
-## Project Structure
+## Documentación
+
+- [`CLAUDE.md`](CLAUDE.md) — enrutador de contexto y mapa de qué documentación es vigente y cuál obsoleta.
+- Contratos por método: [`src/DOCS.md`](src/DOCS.md), [`src/datasets/DOCS.md`](src/datasets/DOCS.md),
+  [`src/models/DOCS.md`](src/models/DOCS.md), [`src/train/DOCS.md`](src/train/DOCS.md),
+  [`src/federated/DOCS.md`](src/federated/DOCS.md).
+- Diseño federado: [docs/FEDERATED_DESIGN.md](docs/FEDERATED_DESIGN.md).
+- Metodología: [docs/METHODOLOGY.md](docs/METHODOLOGY.md) · Sobreajuste:
+  [docs/AUDITORIA_SOBREAJUSTE_RESULTADOS.md](docs/AUDITORIA_SOBREAJUSTE_RESULTADOS.md).
+- [`PHASES.md`](PHASES.md) — qué se portó del proyecto INC y por qué cada default es el que es.
+
+## Estructura
 
 ```
 src/
-├── DOCS.md            Top-level core utilities, config, tracking, and CLI entrypoint (see src/DOCS.md)
-├── datasets/          Dataset loaders, transforms, manifests, and patient-aware partitioning (see src/datasets/DOCS.md)
-├── models/            Architecture builders, RadImageNet weight loaders, and layer freeze strategies (see src/models/DOCS.md)
-└── train/             Training pipelines and loss specifications (see src/train/DOCS.md)
-
-scripts/               Execution scripts for centralized, federated gRPC, and evaluation workflows (see scripts/DOCS.md)
-docs/                  Detailed research, deployment, and methodology guides
+├── cli.py, evaluate.py, gradcam.py   entrypoints
+├── config.py, eval_pipeline.py       esquema Pydantic y ensamblaje compartido
+├── datasets/                         manifest, split paciente-disjunto, transforms, dataloaders
+├── models/                           backbones, heads, congelamiento, carga de pesos
+├── train/                            Trainer, loop, pérdidas, early stopping
+└── federated/                        servidor, cliente, estrategias (Flower sobre gRPC)
+configs/                              expNN_*.yaml (centralizado) y federated/<exp>/ (server + nodos)
+manifests/                            CSV de datos y splits
+scripts/                              post-hoc: calibración de umbral, ensembles, auditorías, registro
+docs/                                 diseño, auditorías y briefs
+runs/{centralizado,federado}/         salidas
 ```
 
+No hay suite de tests ni CI de código; el único workflow (`.github/workflows/docker-publish.yml`)
+publica la imagen de entorno en Docker Hub con un tag `v*.*.*`. La verificación se hace manejando el
+código real con tensores sintéticos (ver `PHASES.md`).
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE).
